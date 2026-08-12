@@ -71,11 +71,18 @@
                             ValueChanged="OnVolumeChanged" ToolTip="Output volume sent to the selected device"/>
                     <TextBlock x:Name="VolumeLabel" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
                                Width="34" TextAlignment="Right"/>
-                    <CheckBox x:Name="LoopCheck" Content="Loop" Margin="12,0,0,0" VerticalAlignment="Center"
-                              Checked="OnLoopChanged" Unchecked="OnLoopChanged" ToolTip="Loop playback"/>
-                    <CheckBox x:Name="InterruptionCheck" Content="Pause for interruptions" Margin="10,0,0,0"
-                              VerticalAlignment="Center" Checked="OnInterruptionChanged" Unchecked="OnInterruptionChanged"
-                              ToolTip="Pause speech while the monitored input hears someone talking"/>
+                    <Button x:Name="PlaybackOptionsButton" Content="⚙" FontSize="14" Padding="8,4" Margin="12,0,0,0"
+                            ToolTip="Playback options" Click="OnPlaybackOptionsClick">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem x:Name="LoopMenuItem" Header="Loop playback" IsCheckable="True"
+                                          Click="OnLoopChanged"/>
+                                <MenuItem x:Name="InterruptionMenuItem" Header="Pause for interruptions" IsCheckable="True"
+                                          Click="OnInterruptionChanged"
+                                          ToolTip="Pause speech while the monitored input hears someone talking"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                 </StackPanel>
             </DockPanel>
 

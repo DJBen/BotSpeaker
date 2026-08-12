@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 
@@ -39,6 +40,21 @@ public partial class MainWindow : Window
             if (_model.HasApiKey) await _model.LoadVoicesIfNeededAsync();
         };
         Closing += OnWindowClosing;
+        PreviewKeyDown += OnWindowPreviewKeyDown;
+    }
+
+    private async void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // Space toggles play/pause while the window is foregrounded, unless the user
+        // is typing in an editable field or operating a control that consumes space.
+        if (e.Key != Key.Space || !_model.HasApiKey) return;
+        var focused = Keyboard.FocusedElement;
+        if (focused is PasswordBox) return;
+        if (focused is TextBoxBase editable && !editable.IsReadOnly) return;
+        if (focused is ComboBox || focused is ComboBoxItem) return;
+        if (!PlayButton.IsEnabled) return;
+        e.Handled = true;
+        await _model.PrimaryActionAsync();
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)
@@ -107,8 +123,8 @@ public partial class MainWindow : Window
                 < 0.67 => "🔉",
                 _ => "🔊",
             };
-            LoopCheck.IsChecked = _model.LoopEnabled;
-            InterruptionCheck.IsChecked = _model.InterruptionEnabled;
+            LoopMenuItem.IsChecked = _model.LoopEnabled;
+            InterruptionMenuItem.IsChecked = _model.InterruptionEnabled;
 
             DeviceDot.Fill = _model.SelectedDeviceAvailable ? Brushes.LimeGreen : Brushes.Orange;
             DeviceName.Text = _model.SelectedDeviceName;
@@ -314,16 +330,24 @@ public partial class MainWindow : Window
         _model.OutputVolume = e.NewValue;
     }
 
+    private void OnPlaybackOptionsClick(object sender, RoutedEventArgs e)
+    {
+        var menu = PlaybackOptionsButton.ContextMenu!;
+        menu.PlacementTarget = PlaybackOptionsButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     private void OnLoopChanged(object sender, RoutedEventArgs e)
     {
         if (_suppressUiEvents) return;
-        _model.LoopEnabled = LoopCheck.IsChecked == true;
+        _model.LoopEnabled = LoopMenuItem.IsChecked;
     }
 
     private void OnInterruptionChanged(object sender, RoutedEventArgs e)
     {
         if (_suppressUiEvents) return;
-        _model.InterruptionEnabled = InterruptionCheck.IsChecked == true;
+        _model.InterruptionEnabled = InterruptionMenuItem.IsChecked;
     }
 
     private void OnScrubStarted(object sender, DragStartedEventArgs e) => _isScrubbing = true;
