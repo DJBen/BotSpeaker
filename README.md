@@ -1,22 +1,33 @@
 # BotSpeaker
 
+**Testing multi-attendee meetings made easy.**
+
 <img width="463" height="609" alt="Screenshot 2026-08-11 at 6 26 49 PM" src="https://github.com/user-attachments/assets/dc4b369e-45b9-4c7f-9f81-0f75ef43c896" />
 
-BotSpeaker is a native macOS menu-bar application that turns meeting scripts into ElevenLabs speech and routes the result to a virtual audio device such as [BlackHole](https://existential.audio/blackhole/). Meeting applications can select BlackHole as their microphone and receive BotSpeaker's generated voice as live input.
+BotSpeaker is a native macOS and Windows utility that turns meeting scripts into ElevenLabs speech and sends it to a virtual microphone. It lets you simulate additional attendees in Microsoft Teams, Zoom, Google Meet, and other meeting applications while retaining control over voice, timing, volume, interruptions, and playback position.
 
-The macOS application and Xcode project live in [`macOS/`](macOS/). A native Windows (WPF) port that routes through [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) lives in [`Windows/`](Windows/).
+The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/). The Windows app uses WPF and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
+
+## Download
+
+[Download BotSpeaker 0.1.0 from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases/tag/0.1.0).
+
+- **macOS 14 or later:** `BotSpeaker-0.1.0-universal.dmg`, signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
+- **Windows 10/11 x64:** `BotSpeaker-Windows-x64-0.1.0.zip`, a self-contained build that does not require a separate .NET installation.
+
+The repository is currently private, so release downloads require repository access.
 
 ## Features
 
-- Native SwiftUI app with a normal window and a menu-bar control surface
-- ElevenLabs API-key setup, validation, and Keychain storage
+- Native SwiftUI menu-bar app on macOS and native WPF system-tray app on Windows
+- ElevenLabs API-key setup, validation, and platform-encrypted storage
 - ElevenLabs voice selection
 - Sequential, sentence-aware speech generation for long scripts
 - Persistent audio-chunk caching per script, voice, model, and surrounding context
 - Three read-only example meeting scripts plus named custom scripts
 - Separate custom-script editor window
 - Play, pause, stop, seek, and progress-aware text highlighting
-- Persistent output-volume control applied before audio reaches BlackHole
+- Persistent output-volume control applied before audio reaches the virtual device
 - Optional looping, disabled by default
 - Adaptive interruption detection that:
   - learns the selected input's ambient level;
@@ -24,16 +35,19 @@ The macOS application and Xcode project live in [`macOS/`](macOS/). A native Win
   - pauses speech immediately, without waiting for a sentence boundary; and
   - resumes after 0.75 seconds continuously near ambient level.
 
-## Requirements
+## Runtime requirements
 
-- macOS 14 or later
-- Xcode 16 or later
 - An ElevenLabs API key
-- [BlackHole 2ch](https://existential.audio/blackhole/) or another virtual audio device
+- **macOS:** macOS 14 or later and [BlackHole 2ch](https://existential.audio/blackhole/) or another virtual audio device
+- **Windows:** Windows 10/11 x64 and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) or another virtual audio device
 
-BlackHole is not bundled with BotSpeaker. Review BlackHole's licensing terms before redistributing it with another application.
+Virtual audio drivers are not bundled with BotSpeaker. Review their licensing terms before redistributing them with another application.
 
-## Build and run
+## Build from source
+
+### macOS
+
+Requires Xcode 16 or later.
 
 Open [`macOS/BotSpeaker.xcodeproj`](macOS/BotSpeaker.xcodeproj) in Xcode, select the **BotSpeaker** scheme, and press Run.
 
@@ -49,7 +63,19 @@ xcodebuild \
 
 On first launch, enter an ElevenLabs API key. BotSpeaker validates the key and stores it in the macOS Keychain.
 
+### Windows
+
+Requires the .NET 10 SDK. See the [Windows build and setup guide](Windows/README.md), or run:
+
+```powershell
+dotnet run --project Windows/BotSpeaker
+```
+
+The Windows app encrypts the API key with Windows DPAPI for the current user.
+
 ## Route speech into a meeting
+
+### macOS
 
 1. Install BlackHole 2ch.
 2. Open BotSpeaker settings and select **BlackHole 2ch** as the output device.
@@ -60,17 +86,27 @@ On first launch, enter an ElevenLabs API key. BotSpeaker validates the key and s
 
 BlackHole is silent through local speakers by default. To monitor BotSpeaker locally, create a Multi-Output Device in Audio MIDI Setup containing BlackHole and headphones, select that device in BotSpeaker, and continue using BlackHole as the meeting microphone.
 
+### Windows
+
+1. Install VB-Audio Virtual Cable and reboot if requested.
+2. Select **CABLE Input** as BotSpeaker's output device.
+3. Select **CABLE Output** as the microphone in Teams, Zoom, Meet, or another meeting app.
+4. Select a script and ElevenLabs voice, then press **Play**.
+
+See [Windows/README.md](Windows/README.md) for monitoring and storage details.
+
 ## Interruption handling
 
-Enable **Pause for interruptions** from the playback gear menu and choose the input to monitor in Settings. BotSpeaker calibrates against ambient sound, pauses when the rolling 0.4-second input window exceeds its adaptive threshold, and resumes after the input remains near ambient for 0.75 seconds.
+Enable **Pause for interruptions** from the playback-options menu and choose the input to monitor in Settings. BotSpeaker calibrates against ambient sound, pauses when the rolling 0.4-second input window exceeds its adaptive threshold, and resumes after the input remains near ambient for 0.75 seconds.
 
-Headphones or direct BlackHole routing are recommended so the monitored microphone does not hear BotSpeaker's own output.
+Headphones or direct virtual-device routing are recommended so the monitored microphone does not hear BotSpeaker's own output.
 
 ## Project structure
 
 ```text
 BotSpeaker/
 ├── README.md
+├── scripts/                    # Release packaging and publishing
 ├── macOS/
 │   ├── BotSpeaker.xcodeproj/
 │   └── BotSpeaker/
@@ -79,9 +115,9 @@ BotSpeaker/
     └── BotSpeaker/
 ```
 
-Generated MP3 and timing files are stored in the user's caches directory. API credentials are stored in Keychain and are never written to the repository.
+Generated MP3 and timing files are stored in the platform's user cache. API credentials are stored in macOS Keychain or encrypted with Windows DPAPI and are never written to the repository.
 
-## Create a signed DMG
+## Publish a release
 
 BotSpeaker is configured for Apple Developer team `52RD2GH5DP`. A public macOS release requires:
 
@@ -91,24 +127,24 @@ BotSpeaker is configured for Apple Developer team `52RD2GH5DP`. A public macOS r
 
 Copy `.env.template` to `.env` and enter the API key ID, issuer ID, and base64-encoded `.p8` contents. The release script decodes the key into its temporary build directory with owner-only permissions and removes it when the command exits. The completed `.env` is ignored by Git.
 
-Build, sign, notarize, staple, and validate a universal DMG with:
+Build, sign, notarize, staple, and validate a universal DMG locally with:
 
 ```sh
-./scripts/release-macos.sh 0.1.0
+./scripts/release-macos.sh 0.2.0
 ```
 
-The DMG and its SHA-256 checksum are written to `dist/`. To additionally create and push an immutable `0.1.0` tag and attach both files to a GitHub Release, run:
+The DMG and its SHA-256 checksum are written to `dist/`. To additionally create and push the version tag and attach both files to a GitHub Release, run:
 
 ```sh
-./scripts/release-macos.sh 0.1.0 --publish-github
+./scripts/release-macos.sh 0.2.0 --publish-github
 ```
 
-The same `0.1.0` GitHub Release is used for every platform. On the Windows release machine, upload a signed MSIX, MSI, or EXE and its generated checksum with:
+The same versioned GitHub Release is used for every platform. On the Windows release machine, upload a signed MSIX, MSI, or EXE and its generated checksum with:
 
 ```powershell
 .\scripts\publish-windows-release.ps1 `
-  -Version 0.1.0 `
-  -InstallerPath .\dist\BotSpeaker-0.1.0-win-x64.msix
+  -Version 0.2.0 `
+  -InstallerPath .\dist\BotSpeaker-0.2.0-win-x64.msix
 ```
 
 The Windows publisher refuses unsigned installers and existing asset names. Either platform can create the shared release first; the other adds its artifacts afterward.
