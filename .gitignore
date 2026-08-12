@@ -1,5 +1,29 @@
-DerivedData/
-.build/
+# macOS
 .DS_Store
-*.xcuserstate
+
+# Xcode build output
+DerivedData/
+build/
+*.dSYM
+*.dSYM.zip
+*.ipa
+
+# Xcode user state
 xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/xcuserdata/
+Packages/
+
+# Other Swift tooling
+.index-build/
+.sourcekit-lsp/
+*.hmap
+
+# Dependency-manager build products
+Carthage/Build/
