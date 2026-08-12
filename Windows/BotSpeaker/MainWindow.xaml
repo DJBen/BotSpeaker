@@ -1,0 +1,156 @@
+<Window x:Class="BotSpeaker.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bot Speaker"
+        Width="580" Height="700"
+        MinWidth="520" MinHeight="560">
+    <Grid>
+        <!-- Composer -->
+        <DockPanel x:Name="ComposerPanel" Margin="16" LastChildFill="True">
+            <!-- Header -->
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                <Button x:Name="SettingsButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                        Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- Script card -->
+            <Border DockPanel.Dock="Top" Background="#14808080" CornerRadius="9" Padding="10" Margin="0,0,0,10">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                        <ComboBox x:Name="ScriptCombo" MinWidth="170" MaxWidth="230"
+                                  SelectionChanged="OnScriptSelected" ToolTip="Choose a named script"/>
+                        <Button x:Name="EditScriptButton" Content="Add Text" Margin="8,0,0,0" Padding="8,3"
+                                Click="OnEditScriptClick"
+                                ToolTip="Create or edit a named custom script"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock x:Name="ScriptTitle" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="ScriptDetail" FontSize="11" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="ScriptKind" FontSize="10" Foreground="Gray"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Voice row -->
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                <TextBlock Text="Voice" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <Button x:Name="RefreshVoicesButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                        Content="⟳" FontSize="14" ToolTip="Refresh ElevenLabs voices" Click="OnRefreshVoicesClick"/>
+                <ComboBox x:Name="VoiceCombo" SelectionChanged="OnVoiceSelected"/>
+            </DockPanel>
+            <TextBlock x:Name="VoiceError" DockPanel.Dock="Top" FontSize="11" Foreground="DarkOrange"
+                       Visibility="Collapsed" TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+            <!-- Legend + generation progress -->
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                    <Ellipse x:Name="DeviceDot" Width="8" Height="8" Fill="Orange" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="DeviceName" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="320"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Interruption banner -->
+            <TextBlock x:Name="InterruptionBanner" DockPanel.Dock="Bottom" FontSize="11" Foreground="DarkOrange"
+                       Visibility="Collapsed" Margin="0,6,0,0" Text="👂 Paused for an interruption"/>
+
+            <!-- Transport controls -->
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button x:Name="StopButton" Content="⏹" FontSize="14" Padding="8,4" Click="OnStopClick" ToolTip="Stop"/>
+                    <Button x:Name="PlayButton" Margin="8,0,0,0" Padding="14,4" FontWeight="Bold"
+                            Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                            Click="OnPlayClick" Content="▶ Play" MinWidth="100"/>
+                    <Button x:Name="RegenerateButton" Content="⟳" FontSize="14" Padding="8,4" Margin="8,0,0,0"
+                            Click="OnRegenerateClick" ToolTip="Regenerate audio"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock x:Name="VolumeIcon" Text="🔊" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Slider x:Name="VolumeSlider" Width="100" Minimum="0" Maximum="1" VerticalAlignment="Center"
+                            ValueChanged="OnVolumeChanged" ToolTip="Output volume sent to the selected device"/>
+                    <TextBlock x:Name="VolumeLabel" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
+                               Width="34" TextAlignment="Right"/>
+                    <CheckBox x:Name="LoopCheck" Content="Loop" Margin="12,0,0,0" VerticalAlignment="Center"
+                              Checked="OnLoopChanged" Unchecked="OnLoopChanged" ToolTip="Loop playback"/>
+                    <CheckBox x:Name="InterruptionCheck" Content="Pause for interruptions" Margin="10,0,0,0"
+                              VerticalAlignment="Center" Checked="OnInterruptionChanged" Unchecked="OnInterruptionChanged"
+                              ToolTip="Pause speech while the monitored input hears someone talking"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Progress slider -->
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <Slider x:Name="ProgressSlider" Minimum="0" Maximum="0.01" IsMoveToPointEnabled="True"
+                        Thumb.DragStarted="OnScrubStarted" Thumb.DragCompleted="OnScrubCompleted"
+                        ValueChanged="OnProgressSliderChanged" IsEnabled="False"/>
+                <DockPanel>
+                    <TextBlock x:Name="TimeElapsed" FontSize="11" Foreground="Gray" Text="0:00"/>
+                    <TextBlock x:Name="TimeRemaining" FontSize="11" Foreground="Gray" Text="−0:00" HorizontalAlignment="Right"/>
+                </DockPanel>
+            </StackPanel>
+
+            <!-- Error message -->
+            <TextBlock x:Name="ErrorText" DockPanel.Dock="Bottom" FontSize="11" Foreground="Red"
+                       Visibility="Collapsed" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+            <!-- Highlight legend / generating status -->
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Rectangle Width="12" Height="8" Fill="#5934C759" RadiusX="2" RadiusY="2" VerticalAlignment="Center"/>
+                    <TextBlock Text="Spoken" FontSize="11" Foreground="Gray" Margin="4,0,10,0" VerticalAlignment="Center"/>
+                    <Rectangle Width="12" Height="8" Fill="#8C2E6BD6" RadiusX="2" RadiusY="2" VerticalAlignment="Center"/>
+                    <TextBlock Text="Speaking" FontSize="11" Foreground="Gray" Margin="4,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="💾 Cached per script" FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ProgressBar x:Name="GenerationProgress" Width="70" Height="8" Visibility="Collapsed"
+                                 VerticalAlignment="Center"/>
+                    <TextBlock x:Name="GenerationLabel" FontSize="11" Foreground="Gray" Margin="6,0,0,0"
+                               Visibility="Collapsed" VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Script text with highlighting -->
+            <Border BorderBrush="#40808080" BorderThickness="1" CornerRadius="8">
+                <RichTextBox x:Name="ScriptViewer" IsReadOnly="True" IsDocumentEnabled="True"
+                             BorderThickness="0" Padding="8" VerticalScrollBarVisibility="Auto"/>
+            </Border>
+        </DockPanel>
+
+        <!-- First-run overlay -->
+        <Grid x:Name="FirstRunPanel" Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+              Visibility="Collapsed">
+            <StackPanel Margin="28" MaxWidth="440" VerticalAlignment="Center">
+                <TextBlock Text="🔊" FontSize="38"/>
+                <TextBlock Text="Set up Bot Speaker" FontSize="20" FontWeight="Bold" Margin="0,8,0,0"/>
+                <TextBlock Text="Turn text into speech and send it directly to a virtual meeting microphone."
+                           Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,16"/>
+
+                <TextBlock Text="1. ElevenLabs API key" FontWeight="Bold"/>
+                <PasswordBox x:Name="FirstRunKeyBox" Margin="0,6,0,2" Padding="4"/>
+                <TextBlock Text="Stored encrypted with Windows DPAPI for your user account."
+                           FontSize="11" Foreground="Gray" Margin="0,0,0,14"/>
+
+                <TextBlock Text="2. Virtual audio cable" FontWeight="Bold"/>
+                <TextBlock x:Name="CableStatus" Margin="0,6,0,2" FontSize="12"/>
+                <TextBlock x:Name="CableHelp" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                           Text="Install VB-Audio Virtual Cable, then relaunch Bot Speaker or refresh the audio devices in Settings."/>
+                <TextBlock Margin="0,2,0,0">
+                    <Hyperlink NavigateUri="https://vb-audio.com/Cable/" RequestNavigate="OnLinkNavigate">Download VB-CABLE…</Hyperlink>
+                </TextBlock>
+
+                <TextBlock x:Name="FirstRunError" Foreground="Red" FontSize="11" TextWrapping="Wrap"
+                           Visibility="Collapsed" Margin="0,10,0,0"/>
+
+                <DockPanel Margin="0,18,0,0">
+                    <Button Content="Quit" Padding="10,4" Click="OnQuitClick"/>
+                    <Button x:Name="FirstRunContinueButton" Content="Validate &amp; Continue" Padding="10,4"
+                            HorizontalAlignment="Right" FontWeight="Bold"
+                            Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                            Click="OnValidateKeyClick"/>
+                </DockPanel>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

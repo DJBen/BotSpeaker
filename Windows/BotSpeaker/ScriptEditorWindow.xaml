@@ -1,0 +1,31 @@
+<Window x:Class="BotSpeaker.ScriptEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Custom Script"
+        Width="640" Height="580"
+        MinWidth="520" MinHeight="440"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="20" LastChildFill="True">
+        <TextBlock x:Name="Heading" DockPanel.Dock="Top" FontSize="18" FontWeight="Bold" Text="Add a custom script"/>
+        <TextBlock DockPanel.Dock="Top" Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,12"
+                   Text="Give the text a recognizable name. Its generated ElevenLabs chunks will be cached separately."/>
+
+        <TextBox x:Name="TitleBox" DockPanel.Dock="Top" Padding="4" Margin="0,0,0,10"
+                 ToolTip="Script name (for example, Weekly pipeline update)"/>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <TextBlock x:Name="WordCount" Text="0 words" FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
+            <TextBlock x:Name="SaveError" FontSize="11" Foreground="Red" VerticalAlignment="Center"
+                       Margin="10,0,0,0" Visibility="Collapsed"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Padding="12,4" Click="OnCancelClick" IsCancel="True"/>
+                <Button Content="Save Script" Padding="12,4" Margin="8,0,0,0" FontWeight="Bold"
+                        Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                        Click="OnSaveClick" IsDefault="True"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TextBox x:Name="BodyBox" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" Padding="6" TextChanged="OnTextChanged"/>
+    </DockPanel>
+</Window>

@@ -27,3 +27,7 @@ Packages/
 
 # Dependency-manager build products
 Carthage/Build/
+
+# .NET build output (Windows app)
+Windows/**/bin/
+Windows/**/obj/
