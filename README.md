@@ -1,5 +1,7 @@
 # BotSpeaker
 
+<img width="463" height="609" alt="Screenshot 2026-08-11 at 6 26 49 PM" src="https://github.com/user-attachments/assets/dc4b369e-45b9-4c7f-9f81-0f75ef43c896" />
+
 BotSpeaker is a native macOS menu-bar application that turns meeting scripts into ElevenLabs speech and routes the result to a virtual audio device such as [BlackHole](https://existential.audio/blackhole/). Meeting applications can select BlackHole as their microphone and receive BotSpeaker's generated voice as live input.
 
 The macOS application and Xcode project live in [`macOS/`](macOS/).
