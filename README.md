@@ -80,3 +80,37 @@ BotSpeaker/
 ```
 
 Generated MP3 and timing files are stored in the user's caches directory. API credentials are stored in Keychain and are never written to the repository.
+
+## Create a signed DMG
+
+BotSpeaker is configured for Apple Developer team `52RD2GH5DP`. A public macOS release requires:
+
+- a Developer ID Application certificate for that team in the login keychain;
+- an App Store Connect API key authorized to notarize software; and
+- [`create-dmg`](https://github.com/sindresorhus/create-dmg), installed with `npm install --global create-dmg`.
+
+Copy `.env.template` to `.env` and enter the API key ID, issuer ID, and base64-encoded `.p8` contents. The release script decodes the key into its temporary build directory with owner-only permissions and removes it when the command exits. The completed `.env` is ignored by Git.
+
+Build, sign, notarize, staple, and validate a universal DMG with:
+
+```sh
+./scripts/release-macos.sh 0.1.0
+```
+
+The DMG and its SHA-256 checksum are written to `dist/`. To additionally create and push an immutable `0.1.0` tag and attach both files to a GitHub Release, run:
+
+```sh
+./scripts/release-macos.sh 0.1.0 --publish-github
+```
+
+The same `0.1.0` GitHub Release is used for every platform. On the Windows release machine, upload a signed MSIX, MSI, or EXE and its generated checksum with:
+
+```powershell
+.\scripts\publish-windows-release.ps1 `
+  -Version 0.1.0 `
+  -InstallerPath .\dist\BotSpeaker-0.1.0-win-x64.msix
+```
+
+The Windows publisher refuses unsigned installers and existing asset names. Either platform can create the shared release first; the other adds its artifacts afterward.
+
+Because this repository is currently private, only collaborators can download its GitHub release assets. Making the repository public later will also make its releases publicly downloadable.

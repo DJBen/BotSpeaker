@@ -1,5 +1,7 @@
 # macOS
 .DS_Store
+.env
+dist/
 
 # Xcode build output
 DerivedData/
