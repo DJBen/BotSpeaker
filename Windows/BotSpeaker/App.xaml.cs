@@ -44,8 +44,10 @@ public partial class App : Application
         exitItem.Click += (_, _) => ExitApplication();
         menu.Items.AddRange([openItem, _playPauseItem, stopItem, new Forms.ToolStripSeparator(), exitItem]);
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "BotSpeaker.ico");
-        _appIcon = new Drawing.Icon(iconPath);
+        using (var iconStream = typeof(App).Assembly.GetManifestResourceStream("BotSpeaker.Assets.BotSpeaker.ico"))
+        {
+            _appIcon = iconStream is not null ? new Drawing.Icon(iconStream) : Drawing.SystemIcons.Application;
+        }
         _trayIcon = new Forms.NotifyIcon
         {
             Icon = _appIcon,

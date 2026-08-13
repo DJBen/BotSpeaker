@@ -31,7 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\BotSpeaker.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Embedded so the tray icon survives single-file publish (no loose Assets dir). -->
+    <EmbeddedResource Include="Assets\BotSpeaker.ico" />
     <Resource Include="Assets\BotSpeaker.png" />
   </ItemGroup>
 
