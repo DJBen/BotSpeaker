@@ -28,17 +28,7 @@ struct FirstRunView: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("2. BlackHole").font(.headline)
-                if model.devices.outputDevices.contains(where: \ .isBlackHole) {
-                    Label("BlackHole detected", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else {
-                    Label("BlackHole is not installed", systemImage: "exclamationmark.circle")
-                        .foregroundStyle(.orange)
-                    Link("Download BlackHole…", destination: URL(string: "https://existential.audio/blackhole/")!)
-                    Text("Install BlackHole 2ch, then relaunch Bot Speaker or refresh the audio devices in Settings.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                BlackHoleStatusView(model: model)
             }
 
             if let error {

@@ -15,6 +15,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var voices: [ElevenLabsVoice] = []
     @Published private(set) var isLoadingVoices = false
     @Published private(set) var voiceLoadError: String?
+    /// Result of the most recent manual device refresh, shown next to the refresh button.
+    @Published private(set) var deviceRefreshFeedback: String?
 
     let player = AudioPlaybackController()
     let devices = AudioDeviceManager()
@@ -137,6 +139,27 @@ final class AppModel: ObservableObject {
 
         if interruptionEnabled {
             Task { await startInterruptionMonitoring() }
+        }
+    }
+
+    /// Re-scans Core Audio, adopts BlackHole if it just showed up, and reports what happened.
+    func refreshAudioDevices() {
+        let hadBlackHole = devices.blackHoleStatus == .active
+        devices.refresh()
+
+        switch devices.blackHoleStatus {
+        case .active:
+            if selectedDeviceUID.isEmpty || devices.outputDevices.allSatisfy({ $0.uid != selectedDeviceUID }),
+               let blackHole = devices.outputDevices.first(where: { $0.isBlackHole }) {
+                selectedDeviceUID = blackHole.uid
+            }
+            deviceRefreshFeedback = hadBlackHole
+                ? "Devices up to date."
+                : "BlackHole found and selected."
+        case .installedButNotLoaded:
+            deviceRefreshFeedback = "Still not loaded — restart Core Audio."
+        case .notInstalled:
+            deviceRefreshFeedback = "No BlackHole device found."
         }
     }
 

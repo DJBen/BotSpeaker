@@ -50,13 +50,7 @@ struct SettingsView: View {
                         Text(device.name).tag(device.uid)
                     }
                 }
-                HStack {
-                    Button("Refresh Devices") { model.devices.refresh() }
-                    Spacer()
-                    Button("Install BlackHole…") {
-                        NSWorkspace.shared.open(URL(string: "https://existential.audio/blackhole/")!)
-                    }
-                }
+                BlackHoleStatusView(model: model)
                 Text("In Zoom, Meet, or Teams, select the same BlackHole device as your microphone.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -11,13 +11,34 @@ struct AudioDevice: Identifiable, Hashable {
     var isBlackHole: Bool { name.localizedCaseInsensitiveContains("BlackHole") }
 }
 
+/// What Core Audio and the on-disk driver folder jointly say about BlackHole.
+enum BlackHoleStatus: Equatable {
+    /// Core Audio is publishing a BlackHole device — nothing to do.
+    case active
+    /// The driver bundle is on disk but Core Audio has not picked it up. `coreaudiod`
+    /// only scans the HAL plug-in folder when it starts, so a fresh install stays
+    /// invisible until the daemon is restarted or the Mac is rebooted.
+    case installedButNotLoaded
+    /// No driver bundle found — and, if `driverFolderReadable` is false, we could not
+    /// look either, so "not installed" is a guess rather than a fact.
+    case notInstalled(driverFolderReadable: Bool)
+}
+
 @MainActor
 final class AudioDeviceManager: ObservableObject {
     @Published private(set) var outputDevices: [AudioDevice] = []
     @Published private(set) var inputDevices: [AudioDevice] = []
+    @Published private(set) var blackHoleStatus: BlackHoleStatus = .notInstalled(driverFolderReadable: true)
+
+    /// Shell command that makes Core Audio rescan the HAL folder. Sandboxed apps cannot
+    /// run this themselves, so we hand it to the user instead.
+    static let coreAudioRestartCommand = "sudo killall coreaudiod"
+
+    private static let halPluginDirectory = "/Library/Audio/Plug-Ins/HAL"
 
     func refresh() {
         let devices = Self.readDevices()
+        blackHoleStatus = Self.readBlackHoleStatus(devices: devices)
         outputDevices = devices.filter { Self.channelCount(for: $0.id, scope: kAudioDevicePropertyScopeOutput) > 0 }.sorted {
             if $0.isBlackHole != $1.isBlackHole { return $0.isBlackHole }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -26,6 +47,18 @@ final class AudioDeviceManager: ObservableObject {
             if $0.isBlackHole != $1.isBlackHole { return !$0.isBlackHole }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    private static func readBlackHoleStatus(devices: [AudioDevice]) -> BlackHoleStatus {
+        if devices.contains(where: \.isBlackHole) { return .active }
+
+        // The sandbox may deny this read; treat an unreadable folder as "unknown"
+        // rather than claiming the driver is missing.
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: halPluginDirectory) else {
+            return .notInstalled(driverFolderReadable: false)
+        }
+        let hasDriverBundle = entries.contains { $0.localizedCaseInsensitiveContains("BlackHole") }
+        return hasDriverBundle ? .installedButNotLoaded : .notInstalled(driverFolderReadable: true)
     }
 
     static func deviceID(forUID uid: String) -> AudioDeviceID? {
