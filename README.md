@@ -20,6 +20,7 @@ The repository is currently private, so release downloads require repository acc
 ## Features
 
 - Native SwiftUI menu-bar app on macOS and native WPF system-tray app on Windows
+- Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
 - ElevenLabs API-key setup, validation, and platform-encrypted storage
 - ElevenLabs voice selection
 - Sequential, sentence-aware speech generation for long scripts
@@ -148,5 +149,7 @@ The same versioned GitHub Release is used for every platform. On the Windows rel
 ```
 
 The Windows publisher refuses unsigned installers and existing asset names. Either platform can create the shared release first; the other adds its artifacts afterward.
+
+The macOS publisher also signs the DMG with BotSpeaker's Sparkle EdDSA key and attaches `appcast.xml` to the GitHub Release. The Sparkle private key is stored in the login Keychain under account `ai.djben.BotSpeaker`; preserve or securely export this key before moving release production to another Mac. Because anonymous GitHub release downloads are required for Sparkle, automatic updates become available once this repository is public. Until then, collaborators can continue installing releases manually from GitHub.
 
 Because this repository is currently private, only collaborators can download its GitHub release assets. Making the repository public later will also make its releases publicly downloadable.

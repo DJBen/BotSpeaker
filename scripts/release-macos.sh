@@ -115,6 +115,7 @@ DIST_DIR="$REPO_ROOT/dist"
 DMG_NAME="BotSpeaker-${VERSION}-universal.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 CHECKSUM_PATH="$DMG_PATH.sha256"
+APPCAST_PATH="$DIST_DIR/appcast.xml"
 ARCHIVE_PATH="$BUILD_DIR/BotSpeaker.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
 NOTARY_RESULT="$BUILD_DIR/notary-result.json"
@@ -124,6 +125,7 @@ if [[ -e "$DMG_PATH" || -e "$CHECKSUM_PATH" ]]; then
     echo "Error: release output already exists for $VERSION in $DIST_DIR" >&2
     exit 1
 fi
+rm -f "$APPCAST_PATH"
 
 echo "Building BotSpeaker $VERSION ($BUILD_NUMBER) for arm64 and x86_64..."
 xcodebuild archive \
@@ -202,6 +204,48 @@ spctl --assess --verbose=2 --type open --context context:primary-signature "$DMG
 SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 printf '%s  %s\n' "$SHA256" "$DMG_NAME" >"$CHECKSUM_PATH"
 
+SIGN_UPDATE=""
+for candidate in "$HOME"/Library/Developer/Xcode/DerivedData/BotSpeaker-*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update; do
+    if [[ -x "$candidate" ]]; then
+        SIGN_UPDATE="$candidate"
+        break
+    fi
+done
+if [[ -z "$SIGN_UPDATE" ]]; then
+    echo "Error: Sparkle sign_update was not found. Resolve packages and build BotSpeaker first." >&2
+    exit 1
+fi
+
+SPARKLE_SIGNATURE="$($SIGN_UPDATE --account ai.djben.BotSpeaker "$DMG_PATH")"
+ED_SIGNATURE="$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
+ED_LENGTH="$(sed -n 's/.*length="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
+if [[ -z "$ED_SIGNATURE" || -z "$ED_LENGTH" ]]; then
+    echo "Error: Sparkle did not return a valid update signature." >&2
+    exit 1
+fi
+
+DMG_URL="https://github.com/DJBen/BotSpeaker/releases/download/${TAG}/${DMG_NAME}"
+cat >"$APPCAST_PATH" <<APPCAST_EOF
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>BotSpeaker Updates</title>
+    <language>en</language>
+    <item>
+      <title>BotSpeaker ${VERSION}</title>
+      <pubDate>$(date -R)</pubDate>
+      <sparkle:version>${BUILD_NUMBER}</sparkle:version>
+      <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="${DMG_URL}"
+                 type="application/octet-stream"
+                 sparkle:edSignature="${ED_SIGNATURE}"
+                 length="${ED_LENGTH}" />
+    </item>
+  </channel>
+</rss>
+APPCAST_EOF
+
 if $PUBLISH_GITHUB; then
     if ! gh release view "$TAG" >/dev/null 2>&1; then
         if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -231,19 +275,20 @@ if $PUBLISH_GITHUB; then
     fi
 
     EXISTING_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-    for asset in "$DMG_NAME" "$(basename "$CHECKSUM_PATH")"; do
+    for asset in "$DMG_NAME" "$(basename "$CHECKSUM_PATH")" "$(basename "$APPCAST_PATH")"; do
         if grep -Fxq "$asset" <<<"$EXISTING_ASSETS"; then
             echo "Error: GitHub release $TAG already contains $asset" >&2
             exit 1
         fi
     done
 
-    gh release upload "$TAG" "$DMG_PATH" "$CHECKSUM_PATH"
+    gh release upload "$TAG" "$DMG_PATH" "$CHECKSUM_PATH" "$APPCAST_PATH"
 fi
 
 echo "Release complete:"
 echo "  DMG: $DMG_PATH"
 echo "  SHA-256: $SHA256"
+echo "  Sparkle appcast: $APPCAST_PATH"
 if ! $PUBLISH_GITHUB; then
     echo "  GitHub publishing was skipped. Re-run with --publish-github when ready."
 fi
