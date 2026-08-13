@@ -51,7 +51,10 @@ public partial class MainWindow : Window
         var focused = Keyboard.FocusedElement;
         if (focused is PasswordBox) return;
         if (focused is TextBoxBase editable && !editable.IsReadOnly) return;
-        if (focused is ComboBox || focused is ComboBoxItem) return;
+        // A closed ComboBox keeps focus after a selection; only yield space to it
+        // while its dropdown is open.
+        if (focused is ComboBox combo && combo.IsDropDownOpen) return;
+        if (focused is ComboBoxItem) return;
         if (!PlayButton.IsEnabled) return;
         e.Handled = true;
         await _model.PrimaryActionAsync();
