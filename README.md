@@ -20,7 +20,7 @@ The repository is currently private, so release downloads require repository acc
 ## Example configurations
 | Mac | Windows |
 | --- | --- |
-| | <img width="767" height="974" alt="image" src="https://github.com/user-attachments/assets/69365248-974d-42ac-8f32-c263a2e6defa" /> |
+| <img width="304" height="300" alt="Screenshot 2026-08-13 at 1 18 01 PM" src="https://github.com/user-attachments/assets/3c9ad85e-ef01-4839-9e5d-017787c66d33" /> | <img width="304" alt="image" src="https://github.com/user-attachments/assets/69365248-974d-42ac-8f32-c263a2e6defa" /> |
 
 ## Features
 
