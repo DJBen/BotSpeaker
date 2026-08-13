@@ -131,9 +131,6 @@ struct ComposerView: View {
             HStack(spacing: 12) {
                 AnnotationKey(color: .green.opacity(0.35), label: "Spoken")
                 AnnotationKey(color: .accentColor.opacity(0.55), label: "Speaking")
-                Label("Cached per script", systemImage: "internaldrive")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 if model.isGenerating {
                     ProgressView(
