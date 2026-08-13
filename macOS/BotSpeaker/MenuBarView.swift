@@ -60,11 +60,6 @@ struct ComposerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if model.selectedScript.isCustom {
-                        Label("Custom script", systemImage: "doc.text")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
                 }
 
                 Spacer()
