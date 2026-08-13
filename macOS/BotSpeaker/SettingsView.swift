@@ -66,9 +66,8 @@ struct SettingsView: View {
             }
 
             Section("Software Update") {
-                LabeledContent("Current version", value: appVersion)
                 HStack {
-                    Text("BotSpeaker checks for updates automatically.")
+                    Text("Version \(appVersion)")
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Check for Updates…") {
