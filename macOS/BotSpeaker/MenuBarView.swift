@@ -30,6 +30,15 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 520, minHeight: 560)
         .task { await model.loadVoicesIfNeeded() }
+        .onKeyPress(.space) {
+            guard model.hasAPIKey,
+                  !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !(model.isGenerating && !model.player.hasAudio) else {
+                return .ignored
+            }
+            Task { await model.primaryAction() }
+            return .handled
+        }
     }
 }
 
