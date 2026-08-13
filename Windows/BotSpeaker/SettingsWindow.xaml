@@ -9,27 +9,39 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="20">
             <TextBlock Text="ElevenLabs" FontSize="15" FontWeight="Bold"/>
-            <PasswordBox x:Name="KeyBox" Margin="0,8,0,4" Padding="4"/>
-            <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <Button x:Name="SaveKeyButton" Content="Save Key" Padding="10,4" Click="OnSaveKeyClick"/>
-                    <TextBlock x:Name="KeySavedLabel" Text="🛡 Saved (DPAPI encrypted)" Foreground="Gray"
-                               VerticalAlignment="Center" Margin="10,0,0,0" Visibility="Collapsed"/>
-                </StackPanel>
-                <Button x:Name="RemoveKeyButton" Content="Remove" Padding="10,4" HorizontalAlignment="Right"
-                        Foreground="Red" Visibility="Collapsed" Click="OnRemoveKeyClick"/>
+            <DockPanel Margin="0,10,0,0">
+                <TextBlock x:Name="KeyStatusLabel" Text="🔑 API key not configured" Foreground="Gray"
+                           VerticalAlignment="Center"/>
+                <Button x:Name="EditKeyButton" Content="Add API Key…" Padding="10,4" HorizontalAlignment="Right"
+                        Click="OnEditKeyClick"/>
             </DockPanel>
+            <Popup x:Name="KeyPopup" PlacementTarget="{Binding ElementName=EditKeyButton}" Placement="Bottom"
+                   StaysOpen="False" AllowsTransparency="True" Opened="OnKeyPopupOpened">
+                <Border Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                        BorderBrush="#60808080" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,4,8,8"
+                        Width="380">
+                    <StackPanel>
+                        <TextBlock x:Name="KeyPopupHeading" Text="Add ElevenLabs API Key" FontWeight="Bold"/>
+                        <TextBlock Text="The key is validated with ElevenLabs, then stored encrypted with Windows DPAPI for your user account."
+                                   FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                        <PasswordBox x:Name="KeyBox" Padding="4"/>
+                        <TextBlock x:Name="KeyPopupError" FontSize="11" Foreground="Red" TextWrapping="Wrap"
+                                   Visibility="Collapsed" Margin="0,8,0,0"/>
+                        <DockPanel Margin="0,12,0,0">
+                            <Button x:Name="RemoveKeyButton" Content="Remove Key" Padding="10,4" Foreground="Red"
+                                    Visibility="Collapsed" Click="OnRemoveKeyClick"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Cancel" Padding="10,4" Click="OnKeyPopupCancel"/>
+                                <Button x:Name="SaveKeyButton" Content="Save Key" Padding="10,4" Margin="8,0,0,0"
+                                        FontWeight="Bold" Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                                        Click="OnSaveKeyClick"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
 
             <DockPanel Margin="0,14,0,0">
-                <TextBlock Text="Voice" Width="110" VerticalAlignment="Center"/>
-                <Button x:Name="RefreshVoicesButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                        Content="⟳" FontSize="14" ToolTip="Refresh ElevenLabs voices" Click="OnRefreshVoicesClick"/>
-                <ComboBox x:Name="VoiceCombo" SelectionChanged="OnVoiceSelected"/>
-            </DockPanel>
-            <TextBlock x:Name="VoiceError" FontSize="11" Foreground="DarkOrange" Visibility="Collapsed"
-                       TextWrapping="Wrap" Margin="110,4,0,0"/>
-
-            <DockPanel Margin="0,8,0,0">
                 <TextBlock Text="Voice ID" Width="110" VerticalAlignment="Center"/>
                 <TextBox x:Name="VoiceIdBox" Padding="3" LostFocus="OnVoiceIdChanged"/>
             </DockPanel>

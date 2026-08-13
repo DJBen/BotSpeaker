@@ -28,7 +28,6 @@
                     <StackPanel>
                         <TextBlock x:Name="ScriptTitle" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="ScriptDetail" FontSize="11" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock x:Name="ScriptKind" FontSize="10" Foreground="Gray"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -109,7 +108,6 @@
                     <TextBlock Text="Spoken" FontSize="11" Foreground="Gray" Margin="4,0,10,0" VerticalAlignment="Center"/>
                     <Rectangle Width="12" Height="8" Fill="#8C2E6BD6" RadiusX="2" RadiusY="2" VerticalAlignment="Center"/>
                     <TextBlock Text="Speaking" FontSize="11" Foreground="Gray" Margin="4,0,10,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="💾 Cached per script" FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <ProgressBar x:Name="GenerationProgress" Width="70" Height="8" Visibility="Collapsed"

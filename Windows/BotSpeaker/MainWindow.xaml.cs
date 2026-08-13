@@ -81,7 +81,6 @@ public partial class MainWindow : Window
             var script = _model.SelectedScript;
             ScriptTitle.Text = script.Title;
             ScriptDetail.Text = $"{script.Detail} · {script.WordCount} words";
-            ScriptKind.Text = script.IsCustom ? "📄 Custom script" : "🔒 Built-in example · Read only";
             EditScriptButton.Content = script.IsCustom ? "Edit" : "Add Text";
 
             var scripts = _model.AvailableScripts;

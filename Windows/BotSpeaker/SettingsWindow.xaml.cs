@@ -37,32 +37,12 @@ public partial class SettingsWindow : Window
         _suppressUiEvents = true;
         try
         {
-            SaveKeyButton.Content = _model.HasApiKey ? "Replace Key" : "Save Key";
-            KeySavedLabel.Visibility = _model.HasApiKey ? Visibility.Visible : Visibility.Collapsed;
+            KeyStatusLabel.Text = _model.HasApiKey
+                ? "🛡 API key saved (DPAPI encrypted)"
+                : "🔑 API key not configured";
+            EditKeyButton.Content = _model.HasApiKey ? "Replace API Key…" : "Add API Key…";
+            KeyPopupHeading.Text = _model.HasApiKey ? "Replace ElevenLabs API Key" : "Add ElevenLabs API Key";
             RemoveKeyButton.Visibility = _model.HasApiKey ? Visibility.Visible : Visibility.Collapsed;
-
-            var voices = _model.Voices;
-            if (_model.IsLoadingVoices)
-            {
-                VoiceCombo.ItemsSource = new List<string> { "Loading ElevenLabs voices…" };
-                VoiceCombo.SelectedIndex = 0;
-                VoiceCombo.IsEnabled = false;
-            }
-            else
-            {
-                VoiceCombo.IsEnabled = true;
-                var entries = voices.Select(v => v.DisplayName).ToList();
-                int selectedIndex = voices.FindIndex(v => v.Id == _model.VoiceId);
-                if (selectedIndex < 0)
-                {
-                    entries.Insert(0, _model.SelectedVoiceName);
-                    selectedIndex = 0;
-                }
-                VoiceCombo.ItemsSource = entries;
-                VoiceCombo.SelectedIndex = selectedIndex;
-            }
-            VoiceError.Text = _model.VoiceLoadError ?? "";
-            VoiceError.Visibility = _model.VoiceLoadError is null ? Visibility.Collapsed : Visibility.Visible;
 
             if (!VoiceIdBox.IsFocused) VoiceIdBox.Text = _model.VoiceId;
             if (!ModelIdBox.IsFocused) ModelIdBox.Text = _model.ModelId;
@@ -87,51 +67,56 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void OnEditKeyClick(object sender, RoutedEventArgs e)
+    {
+        KeyBox.Clear();
+        SetKeyPopupError(null);
+        KeyPopup.IsOpen = true;
+    }
+
+    private void OnKeyPopupOpened(object sender, EventArgs e) => KeyBox.Focus();
+
+    private void OnKeyPopupCancel(object sender, RoutedEventArgs e)
+    {
+        KeyBox.Clear();
+        KeyPopup.IsOpen = false;
+    }
+
     private async void OnSaveKeyClick(object sender, RoutedEventArgs e)
     {
         SaveKeyButton.IsEnabled = false;
-        ShowFeedback(null);
+        SaveKeyButton.Content = "Validating…";
+        SetKeyPopupError(null);
         try
         {
             await _model.ValidateAndSaveApiKeyAsync(KeyBox.Password);
             KeyBox.Clear();
+            KeyPopup.IsOpen = false;
             ShowFeedback("API key validated and saved.");
         }
         catch (Exception error)
         {
-            ShowFeedback(error.Message);
+            SetKeyPopupError(error.Message);
         }
         finally
         {
             SaveKeyButton.IsEnabled = true;
+            SaveKeyButton.Content = "Save Key";
         }
     }
 
     private void OnRemoveKeyClick(object sender, RoutedEventArgs e)
     {
         _model.RemoveApiKey();
+        KeyBox.Clear();
+        KeyPopup.IsOpen = false;
         ShowFeedback("API key removed.");
     }
 
-    private async void OnRefreshVoicesClick(object sender, RoutedEventArgs e) =>
-        await _model.RefreshVoicesAsync();
-
-    private void OnVoiceSelected(object sender, SelectionChangedEventArgs e)
+    private void SetKeyPopupError(string? message)
     {
-        if (_suppressUiEvents || _model.IsLoadingVoices) return;
-        var voices = _model.Voices;
-        int index = VoiceCombo.SelectedIndex;
-        bool hasPlaceholder = voices.FindIndex(v => v.Id == _model.VoiceId) < 0
-            && VoiceCombo.Items.Count == voices.Count + 1;
-        if (hasPlaceholder)
-        {
-            if (index == 0) return;
-            index--;
-        }
-        if (index >= 0 && index < voices.Count && voices[index].Id != _model.VoiceId)
-        {
-            _model.VoiceId = voices[index].Id;
-        }
+        KeyPopupError.Text = message ?? "";
+        KeyPopupError.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnVoiceIdChanged(object sender, RoutedEventArgs e)
