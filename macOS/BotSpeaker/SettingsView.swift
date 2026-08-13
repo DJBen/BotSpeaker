@@ -5,23 +5,30 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @State private var key = ""
     @State private var feedback: String?
+    @State private var keyEditorError: String?
     @State private var isSaving = false
+    @State private var isShowingKeyEditor = false
+    @FocusState private var isKeyFieldFocused: Bool
 
     var body: some View {
         Form {
             Section("ElevenLabs") {
-                SecureField(model.hasAPIKey ? "Enter a replacement key" : "Paste API key", text: $key)
                 HStack {
-                    Button(model.hasAPIKey ? "Replace Key" : "Save Key") { saveKey() }
-                        .disabled(key.isEmpty || isSaving)
                     if model.hasAPIKey {
                         Label("Saved in Keychain", systemImage: "checkmark.shield.fill")
                             .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Remove", role: .destructive) {
-                            do { try model.removeAPIKey(); feedback = "API key removed." }
-                            catch { feedback = error.localizedDescription }
-                        }
+                    } else {
+                        Label("API key not configured", systemImage: "key.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(model.hasAPIKey ? "Replace API Key…" : "Add API Key…") {
+                        key = ""
+                        keyEditorError = nil
+                        isShowingKeyEditor = true
+                    }
+                    .popover(isPresented: $isShowingKeyEditor, arrowEdge: .trailing) {
+                        apiKeyEditor
                     }
                 }
                 VoicePicker(model: model)
@@ -74,18 +81,71 @@ struct SettingsView: View {
         .task { await model.loadVoicesIfNeeded() }
     }
 
+    private var apiKeyEditor: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(model.hasAPIKey ? "Replace ElevenLabs API Key" : "Add ElevenLabs API Key")
+                .font(.headline)
+            Text("The key is validated with ElevenLabs, then stored securely in your macOS Keychain.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SecureField("Paste API key", text: $key)
+                .textFieldStyle(.roundedBorder)
+                .focused($isKeyFieldFocused)
+                .onSubmit(saveKey)
+
+            if let keyEditorError {
+                Label(keyEditorError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                if model.hasAPIKey {
+                    Button("Remove Key", role: .destructive) { removeKey() }
+                }
+                Spacer()
+                Button("Cancel") {
+                    isShowingKeyEditor = false
+                    key = ""
+                }
+                Button(isSaving ? "Validating…" : "Save Key") { saveKey() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+            }
+        }
+        .padding(16)
+        .frame(width: 380)
+        .onAppear { isKeyFieldFocused = true }
+    }
+
     private func saveKey() {
+        guard !isSaving else { return }
         isSaving = true
-        feedback = nil
+        keyEditorError = nil
         Task {
             do {
                 try await model.validateAndSaveAPIKey(key)
                 key = ""
                 feedback = "API key validated and saved."
+                isShowingKeyEditor = false
             } catch {
-                feedback = error.localizedDescription
+                keyEditorError = error.localizedDescription
             }
             isSaving = false
+        }
+    }
+
+    private func removeKey() {
+        do {
+            try model.removeAPIKey()
+            feedback = "API key removed."
+            key = ""
+            isShowingKeyEditor = false
+        } catch {
+            keyEditorError = error.localizedDescription
         }
     }
 }
