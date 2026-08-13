@@ -1,12 +1,26 @@
+# Builds, packages, and publishes the Windows app to the shared versioned GitHub
+# release — the Windows counterpart of release-macos.sh.
+#
+# Produces a self-contained single-file BotSpeaker.exe (no .NET install needed),
+# zips it with a SHA-256 checksum into dist/, and uploads both to the release,
+# creating the tag/release if this platform gets there first.
+#
+# Signing: pass -CertificateThumbprint to Authenticode-sign the exe with signtool
+# before packaging. Without a certificate, pass -AllowUnsigned to make shipping an
+# unsigned build an explicit choice rather than a silent default.
+#
+#   .\scripts\publish-windows-release.ps1 -Version 0.2.0 -AllowUnsigned
+#   .\scripts\publish-windows-release.ps1 -Version 0.2.0 -CertificateThumbprint <sha1>
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
     [string] $Version,
 
-    [Parameter(Mandatory = $true)]
-    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
-    [string] $InstallerPath
+    [string] $CertificateThumbprint,
+
+    [switch] $AllowUnsigned
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,27 +41,27 @@ function Invoke-CheckedCommand {
     }
 }
 
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    throw 'GitHub CLI is required. Install it with: winget install GitHub.cli'
+foreach ($Tool in @('gh', 'git')) {
+    if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
+        throw "$Tool is required. Install it with: winget install $(if ($Tool -eq 'gh') { 'GitHub.cli' } else { 'Git.Git' })"
+    }
 }
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    throw 'Git is required. Install it with: winget install Git.Git'
+# Prefer a user-local .NET install (DOTNET_ROOT) over PATH, matching dev setups
+# where no machine-wide SDK exists.
+$Dotnet = if ($env:DOTNET_ROOT -and (Test-Path "$env:DOTNET_ROOT\dotnet.exe")) {
+    "$env:DOTNET_ROOT\dotnet.exe"
+} elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    (Get-Command dotnet).Source
+} else {
+    throw 'The .NET SDK is required. Install it from https://dotnet.microsoft.com/download or set DOTNET_ROOT.'
+}
+
+if (-not $CertificateThumbprint -and -not $AllowUnsigned) {
+    throw 'No -CertificateThumbprint given. Pass -AllowUnsigned to explicitly publish an unsigned build.'
 }
 
 Invoke-CheckedCommand gh auth status
-
-$ResolvedInstaller = (Resolve-Path -LiteralPath $InstallerPath).Path
-$Installer = Get-Item -LiteralPath $ResolvedInstaller
-$AllowedExtensions = @('.msix', '.msixbundle', '.msi', '.exe')
-if ($Installer.Extension.ToLowerInvariant() -notin $AllowedExtensions) {
-    throw "Expected a Windows installer ($($AllowedExtensions -join ', ')), received $($Installer.Extension)"
-}
-
-$Signature = Get-AuthenticodeSignature -LiteralPath $ResolvedInstaller
-if ($Signature.Status -ne 'Valid') {
-    throw "The Windows installer does not have a valid Authenticode signature: $($Signature.Status)"
-}
 
 $RepoRoot = (& git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $RepoRoot) {
@@ -63,6 +77,51 @@ try {
     if ($WorkingTreeChanges.Count -gt 0) {
         throw 'Commit all release source changes before publishing to GitHub.'
     }
+
+    $ProjectFile = Join-Path $RepoRoot 'Windows\BotSpeaker\BotSpeaker.csproj'
+    $ProjectVersion = ([xml](Get-Content -LiteralPath $ProjectFile)).Project.PropertyGroup.Version
+    if ($ProjectVersion -ne $Version) {
+        throw "BotSpeaker.csproj declares version $ProjectVersion, but you are releasing $Version. Update <Version> and commit first."
+    }
+
+    $DistDirectory = Join-Path $RepoRoot 'dist'
+    $PublishDirectory = Join-Path $DistDirectory 'windows-publish'
+    if (Test-Path $PublishDirectory) {
+        Remove-Item -Recurse -Force $PublishDirectory
+    }
+
+    Invoke-CheckedCommand $Dotnet publish (Join-Path $RepoRoot 'Windows\BotSpeaker') `
+        -c Release -r win-x64 --self-contained true `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        -o $PublishDirectory -nologo
+
+    $ExePath = Join-Path $PublishDirectory 'BotSpeaker.exe'
+    if (-not (Test-Path -LiteralPath $ExePath)) {
+        throw "Publish did not produce $ExePath"
+    }
+
+    if ($CertificateThumbprint) {
+        if (-not (Get-Command signtool -ErrorAction SilentlyContinue)) {
+            throw 'signtool is required for signing. Install the Windows SDK or add signtool to PATH.'
+        }
+        Invoke-CheckedCommand signtool sign /sha1 $CertificateThumbprint /fd SHA256 `
+            /tr http://timestamp.digicert.com /td SHA256 $ExePath
+        $Signature = Get-AuthenticodeSignature -LiteralPath $ExePath
+        if ($Signature.Status -ne 'Valid') {
+            throw "Signing failed; Authenticode status is $($Signature.Status)."
+        }
+    }
+    else {
+        Write-Warning 'Publishing an UNSIGNED build; Windows SmartScreen will warn users who run it.'
+    }
+
+    $ZipName = "BotSpeaker-Windows-x64-$Version.zip"
+    $ZipPath = Join-Path $DistDirectory $ZipName
+    Compress-Archive -LiteralPath $ExePath -DestinationPath $ZipPath -Force
+
+    $ChecksumPath = "$ZipPath.sha256"
+    $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash.ToLowerInvariant()
+    Set-Content -LiteralPath $ChecksumPath -NoNewline -Encoding utf8 -Value "$Hash  $ZipName`n"
 
     $Tag = $Version
     $ReleaseExists = $true
@@ -102,19 +161,14 @@ try {
         throw "Unable to inspect GitHub release $Tag"
     }
 
-    $ChecksumPath = "$ResolvedInstaller.sha256"
-    $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ResolvedInstaller).Hash.ToLowerInvariant()
-    Set-Content -LiteralPath $ChecksumPath -NoNewline -Encoding utf8 `
-        -Value "$Hash  $($Installer.Name)`n"
-
-    foreach ($Asset in @($Installer.Name, (Split-Path -Leaf $ChecksumPath))) {
+    foreach ($Asset in @($ZipName, (Split-Path -Leaf $ChecksumPath))) {
         if ($AssetNames -contains $Asset) {
             throw "GitHub release $Tag already contains $Asset; refusing to overwrite it."
         }
     }
 
-    Invoke-CheckedCommand gh release upload $Tag $ResolvedInstaller $ChecksumPath
-    Write-Host "Published $($Installer.Name) and its checksum to GitHub release $Tag."
+    Invoke-CheckedCommand gh release upload $Tag $ZipPath $ChecksumPath
+    Write-Host "Published $ZipName and its checksum to GitHub release $Tag."
 }
 finally {
     Pop-Location

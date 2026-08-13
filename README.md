@@ -13,7 +13,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 [Download BotSpeaker 0.1.1 from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases/tag/0.1.1).
 
 - **macOS 14 or later:** `BotSpeaker-0.1.1-universal.dmg`, signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
-- **Windows 10/11 x64:** The 0.1.1 Windows download will be added from the Windows release machine.
+- **Windows 10/11 x64:** `BotSpeaker-Windows-x64-0.1.1.zip`, a self-contained portable exe — unzip and run, no .NET install required. Currently unsigned, so Windows SmartScreen may warn on first launch.
 
 The repository is currently private, so release downloads require repository access.
 
@@ -140,15 +140,13 @@ The DMG and its SHA-256 checksum are written to `dist/`. To additionally create 
 ./scripts/release-macos.sh 0.2.0 --publish-github
 ```
 
-The same versioned GitHub Release is used for every platform. On the Windows release machine, upload a signed MSIX, MSI, or EXE and its generated checksum with:
+The same versioned GitHub Release is used for every platform. On the Windows release machine, build, package, and upload the self-contained exe and its checksum with:
 
 ```powershell
-.\scripts\publish-windows-release.ps1 `
-  -Version 0.2.0 `
-  -InstallerPath .\dist\BotSpeaker-0.2.0-win-x64.msix
+.\scripts\publish-windows-release.ps1 -Version 0.2.0 -AllowUnsigned
 ```
 
-The Windows publisher refuses unsigned installers and existing asset names. Either platform can create the shared release first; the other adds its artifacts afterward.
+The script verifies that `BotSpeaker.csproj` declares the same version, publishes a single-file win-x64 build, zips it with a SHA-256 checksum into `dist/`, and uploads both. Pass `-CertificateThumbprint <sha1>` instead of `-AllowUnsigned` to Authenticode-sign the exe with `signtool` before packaging; unsigned publishing always requires the explicit flag. The publisher refuses a dirty working tree, a tag that does not match `HEAD`, and existing asset names. Either platform can create the shared release first; the other adds its artifacts afterward.
 
 The macOS publisher also signs the DMG with BotSpeaker's Sparkle EdDSA key and attaches `appcast.xml` to the GitHub Release. The Sparkle private key is stored in the login Keychain under account `ai.djben.BotSpeaker`; preserve or securely export this key before moving release production to another Mac. Because anonymous GitHub release downloads are required for Sparkle, automatic updates become available once this repository is public. Until then, collaborators can continue installing releases manually from GitHub.
 
