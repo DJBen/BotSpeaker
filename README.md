@@ -17,6 +17,11 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 
 The repository is currently private, so release downloads require repository access.
 
+## Example configurations
+| Mac | Windows |
+| --- | --- |
+| | <img width="767" height="974" alt="image" src="https://github.com/user-attachments/assets/69365248-974d-42ac-8f32-c263a2e6defa" /> |
+
 ## Features
 
 - Native SwiftUI menu-bar app on macOS and native WPF system-tray app on Windows
