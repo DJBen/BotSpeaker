@@ -1,6 +1,6 @@
 # BotSpeaker
 
-**Testing multi-attendee meetings made easy.**
+**You can test a multi-party meeting in the same room with distinctive bot speakers.**
 
 <img width="463" height="609" alt="Screenshot 2026-08-11 at 6 26 49 PM" src="https://github.com/user-attachments/assets/dc4b369e-45b9-4c7f-9f81-0f75ef43c896" />
 
