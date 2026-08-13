@@ -10,6 +10,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\BotSpeaker.ico</ApplicationIcon>
     <Version>0.1.0</Version>
   </PropertyGroup>
 
@@ -27,6 +28,11 @@
     <EmbeddedResource Include="Examples\product-launch.txt" />
     <EmbeddedResource Include="Examples\enterprise-discovery.txt" />
     <EmbeddedResource Include="Examples\incident-review.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\BotSpeaker.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Resource Include="Assets\BotSpeaker.png" />
   </ItemGroup>
 
 </Project>

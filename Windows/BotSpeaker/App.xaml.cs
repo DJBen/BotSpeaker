@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using Forms = System.Windows.Forms;
 using Drawing = System.Drawing;
@@ -10,6 +11,7 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private Forms.NotifyIcon? _trayIcon;
     private Forms.ToolStripMenuItem? _playPauseItem;
+    private Drawing.Icon? _appIcon;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -42,9 +44,11 @@ public partial class App : Application
         exitItem.Click += (_, _) => ExitApplication();
         menu.Items.AddRange([openItem, _playPauseItem, stopItem, new Forms.ToolStripSeparator(), exitItem]);
 
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "BotSpeaker.ico");
+        _appIcon = new Drawing.Icon(iconPath);
         _trayIcon = new Forms.NotifyIcon
         {
-            Icon = Drawing.SystemIcons.Application,
+            Icon = _appIcon,
             Text = "Bot Speaker",
             Visible = true,
             ContextMenuStrip = menu,
@@ -73,6 +77,8 @@ public partial class App : Application
             _trayIcon.Dispose();
             _trayIcon = null;
         }
+        _appIcon?.Dispose();
+        _appIcon = null;
         Shutdown();
     }
 }
