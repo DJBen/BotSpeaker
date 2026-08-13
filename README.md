@@ -13,7 +13,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 [Download BotSpeaker 0.1.2 from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases/tag/0.1.2).
 
 - **macOS 14 or later:** `BotSpeaker-0.1.2-universal.dmg`, signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
-- **Windows 10/11 x64:** `BotSpeaker-Windows-x64-0.1.1.zip`, carried forward unchanged from the 0.1.1 release. It is a self-contained portable exe—unzip and run, with no .NET installation required. It is currently unsigned, so Windows SmartScreen may warn on first launch.
+- **Windows 10/11 x64:** `BotSpeaker-Windows-x64-0.1.2.zip`, a self-contained portable exe—unzip and run, with no .NET installation required. It is currently unsigned, so Windows SmartScreen may warn on first launch.
 
 The repository is currently private, so release downloads require repository access.
 
