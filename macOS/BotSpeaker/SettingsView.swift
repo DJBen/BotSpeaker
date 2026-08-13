@@ -31,7 +31,6 @@ struct SettingsView: View {
                         apiKeyEditor
                     }
                 }
-                VoicePicker(model: model)
                 DisclosureGroup("Advanced voice settings") {
                     TextField("Voice ID", text: Binding(get: { model.voiceID }, set: { model.voiceID = $0 }))
                         .textFieldStyle(.roundedBorder)
