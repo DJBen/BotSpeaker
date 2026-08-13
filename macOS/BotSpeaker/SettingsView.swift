@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var updates: UpdateController
     @State private var key = ""
     @State private var feedback: String?
     @State private var keyEditorError: String?
@@ -64,14 +65,31 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Software Update") {
+                LabeledContent("Current version", value: appVersion)
+                HStack {
+                    Text("BotSpeaker checks for updates automatically.")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check for Updates…") {
+                        updates.checkForUpdates()
+                    }
+                    .disabled(!updates.canCheckForUpdates)
+                }
+            }
+
             if let feedback {
                 Text(feedback).font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 390)
+        .frame(width: 520, height: 460)
         .padding()
         .task { await model.loadVoicesIfNeeded() }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
     }
 
     private var apiKeyEditor: some View {
