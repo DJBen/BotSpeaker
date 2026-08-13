@@ -144,10 +144,11 @@ public partial class MainWindow : Window
         {
             StopButton.IsEnabled = player.HasAudio || _model.IsGenerating;
             bool textEmpty = _model.Text.Trim().Length == 0;
-            bool preparing = _model.IsGenerating && !player.HasAudio;
-            PlayButton.IsEnabled = !preparing && !textEmpty;
-            PlayButton.Content = preparing ? "Preparing…"
-                : player.IsBuffering ? "Buffering…"
+            // Stay clickable while generating: hitting it during "Preparing…" or
+            // "Buffering…" toggles the pending autoplay off (and back on).
+            PlayButton.IsEnabled = !textEmpty;
+            PlayButton.Content = player.IsBuffering
+                ? (player.HasAudio ? "Buffering…" : "Preparing…")
                 : player.IsPlaying ? "⏸ Pause"
                 : "▶ Play";
             RegenerateButton.IsEnabled = !textEmpty;
