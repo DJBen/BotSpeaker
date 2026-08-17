@@ -20,25 +20,39 @@ struct MenuBarView: View {
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @State private var isShowingScriptEditor = false
+    @State private var isSidebarVisible = true
 
     var body: some View {
         Group {
             if model.hasAPIKey {
-                NavigationSplitView {
-                    ScriptLibrarySidebar(
+                HStack(spacing: 0) {
+                    if isSidebarVisible {
+                        ScriptLibrarySidebar(
+                            model: model,
+                            onAdd: {
+                                model.prepareNewScript()
+                                isShowingScriptEditor = true
+                            },
+                            onEdit: {
+                                model.prepareScriptEditor()
+                                isShowingScriptEditor = true
+                            }
+                        )
+                        .frame(width: 310)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        Divider()
+                    }
+
+                    ComposerView(
                         model: model,
-                        onAdd: {
-                            model.prepareNewScript()
-                            isShowingScriptEditor = true
-                        },
-                        onEdit: {
-                            model.prepareScriptEditor()
-                            isShowingScriptEditor = true
+                        player: model.player,
+                        context: .mainWindow,
+                        onToggleSidebar: {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                isSidebarVisible.toggle()
+                            }
                         }
                     )
-                    .navigationSplitViewColumnWidth(min: 270, ideal: 310, max: 380)
-                } detail: {
-                    ComposerView(model: model, player: model.player, context: .mainWindow)
                 }
             } else {
                 FirstRunView(model: model)
@@ -100,6 +114,31 @@ private struct ScriptLibrarySidebar: View {
                     }
                 }
 
+                if !model.selectedScript.isCustom {
+                    Section("Create \(model.selectedScript.title)") {
+                        Text("Enter the speaker’s name. It replaces {{name}} once in a new, independent script.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextField("Speaker name", text: $model.templateSpeakerName)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit(createNamedScript)
+
+                        if let templateError {
+                            Label(templateError, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+
+                        Button(action: createNamedScript) {
+                            Label("Create Named Script", systemImage: "person.crop.circle.badge.plus")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+
                 Section("My scripts") {
                     if model.customScripts.isEmpty {
                         Text("Create a named role or add your own script.")
@@ -115,37 +154,6 @@ private struct ScriptLibrarySidebar: View {
                 }
             }
             .listStyle(.sidebar)
-
-            if !model.selectedScript.isCustom {
-                Divider()
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Create this role")
-                        .font(.headline)
-                    Text("The name replaces {{name}} once and becomes part of an independent script.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    TextField("Speaker name", text: $model.templateSpeakerName)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(createNamedScript)
-
-                    if let templateError {
-                        Label(templateError, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Button(action: createNamedScript) {
-                        Label("Create Named Script", systemImage: "person.crop.circle.badge.plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding(16)
-            }
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -201,6 +209,7 @@ struct ComposerView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var player: AudioPlaybackController
     let context: Context
+    var onToggleSidebar: (() -> Void)? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
@@ -208,6 +217,13 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
+                if let onToggleSidebar {
+                    Button(action: onToggleSidebar) {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show or hide scripts")
+                }
                 Label("Bot Speaker", systemImage: "waveform")
                     .font(.headline)
                 Spacer()
