@@ -20,35 +20,33 @@ struct MenuBarView: View {
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @State private var isShowingScriptEditor = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         Group {
             if model.hasAPIKey {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
+                NavigationSplitView {
                     ScriptLibrarySidebar(
                         model: model,
                         onAdd: {
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
-                        onEdit: {
+                        onEdit: { scriptID in
+                            model.selectScript(id: scriptID)
                             model.prepareScriptEditor()
                             isShowingScriptEditor = true
                         },
-                        onToggleSidebar: toggleSidebar
+                        onDelete: { model.deleteCustomScript(id: $0) },
+                        onReplicate: { model.selectScript(id: $0) }
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
                 } detail: {
                     ComposerView(
                         model: model,
                         player: model.player,
-                        context: .mainWindow,
-                        onToggleSidebar: toggleSidebar,
-                        showsSidebarToggle: columnVisibility == .detailOnly
+                        context: .mainWindow
                     )
                 }
-                .toolbar(removing: .sidebarToggle)
             } else {
                 FirstRunView(model: model)
             }
@@ -70,68 +68,77 @@ struct MainWindowView: View {
         }
     }
 
-    private func toggleSidebar() {
-        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-    }
 }
 
 private struct ScriptLibrarySidebar: View {
     @ObservedObject var model: AppModel
     let onAdd: () -> Void
-    let onEdit: () -> Void
-    let onToggleSidebar: () -> Void
+    let onEdit: (String) -> Void
+    let onDelete: (UUID) -> Void
+    let onReplicate: (String) -> Void
+    @State private var scriptPendingDeletion: SpeechScript?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Scripts")
-                        .font(.title2.bold())
-                }
-                Spacer()
-                Button(action: onAdd) {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.plain)
-                .help("Add a custom script")
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                }
-                .buttonStyle(.plain)
-                .disabled(!model.selectedScript.isCustom)
-                .help(model.selectedScript.isCustom ? "Edit selected script" : "Create a named copy before editing")
-                Button(action: onToggleSidebar) {
-                    Image(systemName: "sidebar.left")
-                }
-                .buttonStyle(.plain)
-                .help("Hide scripts")
-            }
-            .padding([.horizontal, .top], 16)
-            .padding(.bottom, 10)
-
-            List(selection: scriptSelection) {
-                Section("Role templates") {
-                    ForEach(model.bundledScripts) { script in
-                        ScriptRow(script: script, icon: "person.text.rectangle")
-                            .tag(script.id)
-                    }
-                }
-
-                Section("My scripts") {
-                    if model.customScripts.isEmpty {
-                        Text("Create a named role or add your own script.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .listRowSeparator(.hidden)
-                    } else {
-                        ForEach(model.availableScripts.filter(\.isCustom)) { script in
-                            ScriptRow(script: script, icon: "waveform")
-                                .tag(script.id)
+        List(selection: scriptSelection) {
+            Section("Role templates") {
+                ForEach(model.bundledScripts) { script in
+                    ScriptRow(script: script, icon: "person.text.rectangle")
+                        .tag(script.id)
+                        .contextMenu {
+                            Button("Replicate…") {
+                                onReplicate(script.id)
+                            }
                         }
+                }
+            }
+
+            Section("My scripts") {
+                if model.customScripts.isEmpty {
+                    Text("Create a named role or add your own script.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(model.availableScripts.filter(\.isCustom)) { script in
+                        ScriptRow(script: script, icon: "waveform")
+                            .tag(script.id)
+                            .contextMenu {
+                                Button("Edit…") {
+                                    onEdit(script.id)
+                                }
+                                Divider()
+                                Button("Delete…", role: .destructive) {
+                                    scriptPendingDeletion = script
+                                }
+                            }
                     }
                 }
             }
-            .listStyle(.sidebar)
+        }
+        .listStyle(.sidebar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: onAdd) {
+                    Label("Add Script", systemImage: "plus")
+                }
+                .help("Add a custom script")
+            }
+        }
+        .alert(
+            "Delete \(scriptPendingDeletion?.title ?? "script")?",
+            isPresented: deletionAlertIsPresented
+        ) {
+            Button("Cancel", role: .cancel) {
+                scriptPendingDeletion = nil
+            }
+            Button("Delete", role: .destructive) {
+                if case let .custom(id) = scriptPendingDeletion?.kind {
+                    onDelete(id)
+                }
+                scriptPendingDeletion = nil
+            }
+        } message: {
+            Text("This permanently removes the saved script. This action can’t be undone.")
         }
     }
 
@@ -142,6 +149,13 @@ private struct ScriptLibrarySidebar: View {
                 guard let id else { return }
                 model.selectScript(id: id)
             }
+        )
+    }
+
+    private var deletionAlertIsPresented: Binding<Bool> {
+        Binding(
+            get: { scriptPendingDeletion != nil },
+            set: { if !$0 { scriptPendingDeletion = nil } }
         )
     }
 }
@@ -176,8 +190,6 @@ struct ComposerView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var player: AudioPlaybackController
     let context: Context
-    var onToggleSidebar: (() -> Void)? = nil
-    var showsSidebarToggle = false
     @Environment(\.openWindow) private var openWindow
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
@@ -186,13 +198,6 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                if showsSidebarToggle, let onToggleSidebar {
-                    Button(action: onToggleSidebar) {
-                        Image(systemName: "sidebar.left")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Show or hide scripts")
-                }
                 Label("Bot Speaker", systemImage: "waveform")
                     .font(.headline)
                 Spacer()

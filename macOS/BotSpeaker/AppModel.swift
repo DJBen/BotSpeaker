@@ -245,6 +245,32 @@ final class AppModel: ObservableObject {
         scriptDraftText = ""
     }
 
+    func deleteCustomScript(id: UUID) {
+        guard let index = customScripts.firstIndex(where: { $0.id == id }) else { return }
+        let scriptID = "custom:\(id.uuidString)"
+        let wasSelected = selectedScriptID == scriptID
+
+        if wasSelected {
+            cancelGeneration(resetPlayer: true)
+            currentSpeechSignature = nil
+            errorMessage = nil
+        }
+        customScripts.remove(at: index)
+        persistCustomScripts()
+
+        if editingCustomScriptID == id {
+            editingCustomScriptID = nil
+            scriptDraftTitle = ""
+            scriptDraftText = ""
+        }
+
+        if wasSelected {
+            let fallback = customScripts.first.map { "custom:\($0.id.uuidString)" }
+                ?? ExampleExcerpt.incidentManager.speechScript.id
+            selectScript(id: fallback)
+        }
+    }
+
     /// Creates a durable custom script from a built-in role template. Name
     /// substitution happens here once; later playback does not depend on the
     /// sidebar field and receives its own cache namespace.
