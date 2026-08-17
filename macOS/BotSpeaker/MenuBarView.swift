@@ -80,7 +80,6 @@ private struct ScriptLibrarySidebar: View {
     @ObservedObject var model: AppModel
     let onAdd: () -> Void
     let onEdit: () -> Void
-    @State private var templateError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -114,31 +113,6 @@ private struct ScriptLibrarySidebar: View {
                     }
                 }
 
-                if !model.selectedScript.isCustom {
-                    Section("Create \(model.selectedScript.title)") {
-                        Text("Enter the speaker’s name. It replaces {{name}} once in a new, independent script.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        TextField("Speaker name", text: $model.templateSpeakerName)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit(createNamedScript)
-
-                        if let templateError {
-                            Label(templateError, systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-
-                        Button(action: createNamedScript) {
-                            Label("Create Named Script", systemImage: "person.crop.circle.badge.plus")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-
                 Section("My scripts") {
                     if model.customScripts.isEmpty {
                         Text("Create a named role or add your own script.")
@@ -163,19 +137,9 @@ private struct ScriptLibrarySidebar: View {
             get: { model.selectedScriptID },
             set: { id in
                 guard let id else { return }
-                templateError = nil
                 model.selectScript(id: id)
             }
         )
-    }
-
-    private func createNamedScript() {
-        do {
-            try model.createNamedScriptFromSelectedTemplate()
-            templateError = nil
-        } catch {
-            templateError = error.localizedDescription
-        }
     }
 }
 
@@ -213,6 +177,7 @@ struct ComposerView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
+    @State private var templateError: String?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -235,15 +200,17 @@ struct ComposerView: View {
             scriptHeader
 
             if !model.selectedScript.isCustom {
-                Label(
-                    context == .mainWindow
-                        ? "Enter a speaker name in the left pane to create a playable copy of this role."
-                        : "Open the full app to create a named script before playback.",
-                    systemImage: "person.crop.circle.badge.plus"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if context == .mainWindow {
+                    templateNameEntry
+                } else {
+                    Label(
+                        "Open the full app to create a named script before playback.",
+                        systemImage: "person.crop.circle.badge.plus"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
             VoicePicker(model: model)
@@ -315,6 +282,46 @@ struct ComposerView: View {
             }
         }
         .padding(16)
+    }
+
+    private var templateNameEntry: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Label("Speaker name", systemImage: "person.crop.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 104, alignment: .leading)
+
+                TextField("Enter a name", text: $model.templateSpeakerName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(createNamedScript)
+
+                Button("Create Script", action: createNamedScript)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let templateError {
+                    Label(templateError, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                } else {
+                    Text("Replaces {{name}} once and creates an independent, playable copy.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .padding(.leading, 112)
+        }
+    }
+
+    private func createNamedScript() {
+        do {
+            try model.createNamedScriptFromSelectedTemplate()
+            templateError = nil
+        } catch {
+            templateError = error.localizedDescription
+        }
     }
 
     @ViewBuilder
