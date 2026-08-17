@@ -36,7 +36,8 @@ struct MainWindowView: View {
                             onEdit: {
                                 model.prepareScriptEditor()
                                 isShowingScriptEditor = true
-                            }
+                            },
+                            onToggleSidebar: toggleSidebar
                         )
                         .frame(width: 310)
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -47,11 +48,8 @@ struct MainWindowView: View {
                         model: model,
                         player: model.player,
                         context: .mainWindow,
-                        onToggleSidebar: {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                isSidebarVisible.toggle()
-                            }
-                        }
+                        onToggleSidebar: toggleSidebar,
+                        showsSidebarToggle: !isSidebarVisible
                     )
                 }
             } else {
@@ -74,12 +72,19 @@ struct MainWindowView: View {
             return .handled
         }
     }
+
+    private func toggleSidebar() {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isSidebarVisible.toggle()
+        }
+    }
 }
 
 private struct ScriptLibrarySidebar: View {
     @ObservedObject var model: AppModel
     let onAdd: () -> Void
     let onEdit: () -> Void
+    let onToggleSidebar: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,12 +100,19 @@ private struct ScriptLibrarySidebar: View {
                 Button(action: onAdd) {
                     Image(systemName: "plus")
                 }
+                .buttonStyle(.plain)
                 .help("Add a custom script")
                 Button(action: onEdit) {
                     Image(systemName: "pencil")
                 }
+                .buttonStyle(.plain)
                 .disabled(!model.selectedScript.isCustom)
                 .help(model.selectedScript.isCustom ? "Edit selected script" : "Create a named copy before editing")
+                Button(action: onToggleSidebar) {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.plain)
+                .help("Hide scripts")
             }
             .padding([.horizontal, .top], 16)
             .padding(.bottom, 10)
@@ -128,8 +140,9 @@ private struct ScriptLibrarySidebar: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(SidebarVisualEffect())
     }
 
     private var scriptSelection: Binding<String?> {
@@ -141,6 +154,18 @@ private struct ScriptLibrarySidebar: View {
             }
         )
     }
+}
+
+private struct SidebarVisualEffect: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct ScriptRow: View {
@@ -174,6 +199,7 @@ struct ComposerView: View {
     @ObservedObject var player: AudioPlaybackController
     let context: Context
     var onToggleSidebar: (() -> Void)? = nil
+    var showsSidebarToggle = false
     @Environment(\.openWindow) private var openWindow
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
@@ -182,7 +208,7 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                if let onToggleSidebar {
+                if showsSidebarToggle, let onToggleSidebar {
                     Button(action: onToggleSidebar) {
                         Image(systemName: "sidebar.left")
                     }
