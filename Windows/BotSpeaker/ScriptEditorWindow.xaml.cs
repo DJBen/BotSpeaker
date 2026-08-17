@@ -19,6 +19,16 @@ public partial class ScriptEditorWindow : Window
         };
     }
 
+    public void PrepareForNewScript()
+    {
+        _editingCustomScriptId = null;
+        Heading.Text = "Add a custom script";
+        TitleBox.Text = "";
+        BodyBox.Text = "";
+        SaveError.Visibility = Visibility.Collapsed;
+        UpdateWordCount();
+    }
+
     public void PrepareForSelectedScript()
     {
         var selected = _model.SelectedScript;

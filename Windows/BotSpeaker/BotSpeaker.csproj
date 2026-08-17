@@ -25,9 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Examples\product-launch.txt" />
-    <EmbeddedResource Include="Examples\enterprise-discovery.txt" />
-    <EmbeddedResource Include="Examples\incident-review.txt" />
+    <EmbeddedResource Include="Examples\incident-review-manager.txt" />
+    <EmbeddedResource Include="Examples\incident-review-technical-lead.txt" />
+    <EmbeddedResource Include="Examples\incident-review-support-lead.txt" />
   </ItemGroup>
 
   <ItemGroup>

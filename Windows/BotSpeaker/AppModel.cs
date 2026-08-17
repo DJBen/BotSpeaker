@@ -49,7 +49,10 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public List<SpeechScript> AvailableScripts =>
         BundledScripts.Concat(CustomScripts.Select(c =>
-            new SpeechScript($"custom:{c.Id}", c.Title, "Custom script", c.Text, c.Id))).ToList();
+            new SpeechScript($"custom:{c.Id}", c.Title, c.Detail ?? "Custom script", c.Text, c.Id))).ToList();
+
+    /// <summary>Built-in scripts are role templates; only named copies are playable.</summary>
+    public List<SpeechScript> PlayableScripts => AvailableScripts.Where(s => s.IsCustom).ToList();
 
     public SpeechScript SelectedScript =>
         AvailableScripts.FirstOrDefault(s => s.Id == SelectedScriptId) ?? BundledScripts[0];
@@ -150,6 +153,11 @@ public sealed class AppModel : INotifyPropertyChanged
         var initialScript = AvailableScripts.FirstOrDefault(s => s.Id == requestedId) ?? BundledScripts[0];
         _selectedScriptId = initialScript.Id;
         _text = initialScript.Text;
+        if (initialScript.IsCustom)
+        {
+            Settings.LastPlayableScriptId = initialScript.Id;
+            Settings.Save();
+        }
 
         HasApiKey = !string.IsNullOrEmpty(_credentials.Read());
         Player.IsLooping = Settings.LoopEnabled;
@@ -243,8 +251,78 @@ public sealed class AppModel : INotifyPropertyChanged
         SelectedScriptId = script.Id;
         Text = script.Text;
         Settings.SelectedScriptId = script.Id;
+        if (script.IsCustom)
+        {
+            Settings.LastPlayableScriptId = script.Id;
+        }
         Settings.Save();
         Notify(nameof(SelectedScript));
+    }
+
+    public void DeleteCustomScript(Guid id)
+    {
+        var index = CustomScripts.FindIndex(c => c.Id == id);
+        if (index < 0) return;
+        var scriptId = $"custom:{id}";
+        bool wasSelected = SelectedScriptId == scriptId;
+
+        if (wasSelected)
+        {
+            CancelGeneration(resetPlayer: true);
+            _currentSpeechSignature = null;
+            ErrorMessage = null;
+        }
+        CustomScripts.RemoveAt(index);
+
+        if (Settings.LastPlayableScriptId == scriptId)
+        {
+            Settings.LastPlayableScriptId = CustomScripts.Count > 0
+                ? $"custom:{CustomScripts[0].Id}"
+                : "";
+        }
+        Settings.Save();
+
+        if (wasSelected)
+        {
+            var fallback = CustomScripts.Count > 0
+                ? $"custom:{CustomScripts[0].Id}"
+                : BundledScripts[0].Id;
+            SelectScript(fallback);
+        }
+        Notify(nameof(AvailableScripts));
+    }
+
+    /// <summary>
+    /// Creates a durable custom script from a built-in role template. Name
+    /// substitution happens here once; later playback does not depend on the
+    /// name field and receives its own cache namespace.
+    /// </summary>
+    public void CreateNamedScriptFromSelectedTemplate(string speakerName)
+    {
+        var template = SelectedScript;
+        if (template.IsCustom)
+        {
+            throw new AppException("Choose an incident-review role template first.");
+        }
+        var name = speakerName.Trim();
+        if (name.Length == 0) throw new AppException("Enter the speaker's name.");
+
+        var resolvedText = template.Text.Replace(ExampleExcerpt.NamePlaceholder, name);
+        if (resolvedText == template.Text)
+        {
+            throw new AppException("This template does not contain a name placeholder.");
+        }
+
+        var script = new CustomSpeechScript
+        {
+            Title = $"{name} — {template.Title}",
+            Text = resolvedText,
+            Detail = template.Detail,
+        };
+        CustomScripts.Add(script);
+        Settings.Save();
+        SelectScript($"custom:{script.Id}");
+        Notify(nameof(AvailableScripts));
     }
 
     public SpeechScript SaveCustomScript(Guid? editingId, string title, string text)
@@ -301,6 +379,12 @@ public sealed class AppModel : INotifyPropertyChanged
         }
 
         var script = SelectedScript;
+        if (!script.IsCustom)
+        {
+            // Guards the tray Play item and hotkey; the composer hides playback for templates.
+            ErrorMessage = "Create a named script from this template before playback.";
+            return;
+        }
         var signature = $"{script.Id}|{VoiceId}|{ModelId}|{trimmed}";
         if (!forceRegenerate && _currentSpeechSignature == signature && (Player.HasAudio || IsGenerating))
         {

@@ -14,6 +14,7 @@ public sealed class AppSettings
     public bool InterruptionEnabled { get; set; }
     public string InterruptionInputId { get; set; } = "";
     public string SelectedScriptId { get; set; } = "";
+    public string LastPlayableScriptId { get; set; } = "";
     public List<CustomSpeechScript> CustomScripts { get; set; } = [];
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };

@@ -15,21 +15,29 @@ public sealed class CustomSpeechScript
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "";
     public string Text { get; set; } = "";
+    public string? Detail { get; set; }
 }
 
+/// <summary>
+/// A role-specific script from one shared incident-review scenario. Built-in
+/// scripts are templates: {{name}} is resolved once when a user creates a
+/// named copy, so playback and caching never depend on mutable profile data.
+/// </summary>
 public sealed record ExampleExcerpt(string Id, string Role, string Meeting, string Text)
 {
+    public const string NamePlaceholder = "{{name}}";
+
     public SpeechScript SpeechScript => new($"example:{Id}", Role, Meeting, Text, CustomId: null);
 
-    public static readonly ExampleExcerpt ProductLaunch = Load(
-        "product-launch", "Senior Product Manager", "Launch readiness review");
-    public static readonly ExampleExcerpt EnterpriseDiscovery = Load(
-        "enterprise-discovery", "Enterprise Account Executive", "Executive discovery call");
-    public static readonly ExampleExcerpt IncidentReview = Load(
-        "incident-review", "Engineering Manager", "Production incident review");
+    public static readonly ExampleExcerpt IncidentManager = Load(
+        "incident-review-manager", "Engineering Manager", "Authentication incident review");
+    public static readonly ExampleExcerpt IncidentTechnicalLead = Load(
+        "incident-review-technical-lead", "Technical Lead", "Authentication incident review");
+    public static readonly ExampleExcerpt IncidentSupportLead = Load(
+        "incident-review-support-lead", "Customer Support Lead", "Authentication incident review");
 
     public static readonly IReadOnlyList<ExampleExcerpt> All =
-        [ProductLaunch, EnterpriseDiscovery, IncidentReview];
+        [IncidentManager, IncidentTechnicalLead, IncidentSupportLead];
 
     private static ExampleExcerpt Load(string id, string role, string meeting)
     {

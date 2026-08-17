@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         // Space toggles play/pause while the window is foregrounded, unless the user
         // is typing in an editable field or operating a control that consumes space.
         if (e.Key != Key.Space || !_model.HasApiKey) return;
+        if (!_model.SelectedScript.IsCustom) return;
         var focused = Keyboard.FocusedElement;
         if (focused is PasswordBox) return;
         if (focused is TextBoxBase editable && !editable.IsReadOnly) return;
@@ -84,11 +85,15 @@ public partial class MainWindow : Window
             var script = _model.SelectedScript;
             ScriptTitle.Text = script.Title;
             ScriptDetail.Text = $"{script.Detail} · {script.WordCount} words";
-            EditScriptButton.Content = script.IsCustom ? "Edit" : "Add Text";
 
-            var scripts = _model.AvailableScripts;
-            ScriptCombo.ItemsSource = scripts.Select(s => s.IsCustom ? s.Title : $"{s.Title} — {s.Detail}").ToList();
-            ScriptCombo.SelectedIndex = scripts.FindIndex(s => s.Id == _model.SelectedScriptId);
+            UpdateSidebar();
+
+            // Templates are not playable; they show the speaker-name entry instead.
+            bool isCustom = script.IsCustom;
+            TemplateNamePanel.Visibility = isCustom ? Visibility.Collapsed : Visibility.Visible;
+            TransportPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+            TimelinePanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+            LegendPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
 
             var voices = _model.Voices;
             if (_model.IsLoadingVoices)
@@ -278,26 +283,136 @@ public partial class MainWindow : Window
         _settingsWindow.Activate();
     }
 
-    private void OnScriptSelected(object sender, SelectionChangedEventArgs e)
+    private void UpdateSidebar()
+    {
+        var bundled = _model.BundledScripts;
+        TemplateList.ItemsSource = bundled.Select(s => BuildSidebarItem(s, isTemplate: true)).ToList();
+        TemplateList.SelectedIndex = bundled.FindIndex(s => s.Id == _model.SelectedScriptId);
+
+        var custom = _model.PlayableScripts;
+        CustomList.ItemsSource = custom.Select(s => BuildSidebarItem(s, isTemplate: false)).ToList();
+        CustomList.SelectedIndex = custom.FindIndex(s => s.Id == _model.SelectedScriptId);
+        CustomEmptyHint.Visibility = custom.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private ListBoxItem BuildSidebarItem(SpeechScript script, bool isTemplate)
+    {
+        var panel = new StackPanel { Margin = new Thickness(2, 3, 2, 3) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = (isTemplate ? "👤 " : "🔊 ") + script.Title,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{script.Detail} · {script.WordCount} words",
+            FontSize = 10,
+            Foreground = Brushes.Gray,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+
+        var item = new ListBoxItem { Content = panel, Tag = script.Id };
+        var menu = new ContextMenu();
+        if (isTemplate)
+        {
+            var replicate = new MenuItem { Header = "Replicate…" };
+            replicate.Click += (_, _) => _model.SelectScript(script.Id);
+            menu.Items.Add(replicate);
+        }
+        else
+        {
+            var edit = new MenuItem { Header = "Edit…" };
+            edit.Click += (_, _) =>
+            {
+                _model.SelectScript(script.Id);
+                OpenScriptEditor(forNewScript: false);
+            };
+            var delete = new MenuItem { Header = "Delete…" };
+            delete.Click += (_, _) => ConfirmDeleteScript(script);
+            menu.Items.Add(edit);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(delete);
+        }
+        item.ContextMenu = menu;
+        return item;
+    }
+
+    private void OnTemplateListSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressUiEvents) return;
-        var scripts = _model.AvailableScripts;
-        int index = ScriptCombo.SelectedIndex;
-        if (index >= 0 && index < scripts.Count)
+        if (TemplateList.SelectedItem is ListBoxItem { Tag: string id })
         {
-            _model.SelectScript(scripts[index].Id);
+            _model.SelectScript(id);
         }
     }
 
-    private void OnEditScriptClick(object sender, RoutedEventArgs e)
+    private void OnCustomListSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressUiEvents) return;
+        if (CustomList.SelectedItem is ListBoxItem { Tag: string id })
+        {
+            _model.SelectScript(id);
+        }
+    }
+
+    private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);
+
+    private void OpenScriptEditor(bool forNewScript)
     {
         if (_scriptEditor is null || !_scriptEditor.IsLoaded)
         {
             _scriptEditor = new ScriptEditorWindow(_model) { Owner = this };
         }
-        _scriptEditor.PrepareForSelectedScript();
+        if (forNewScript)
+        {
+            _scriptEditor.PrepareForNewScript();
+        }
+        else
+        {
+            _scriptEditor.PrepareForSelectedScript();
+        }
         _scriptEditor.Show();
         _scriptEditor.Activate();
+    }
+
+    private void ConfirmDeleteScript(SpeechScript script)
+    {
+        if (script.CustomId is not Guid id) return;
+        var result = MessageBox.Show(
+            this,
+            "This permanently removes the saved script. This action can't be undone.",
+            $"Delete {script.Title}?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result == MessageBoxResult.Yes)
+        {
+            _model.DeleteCustomScript(id);
+        }
+    }
+
+    private void OnCreateScriptClick(object sender, RoutedEventArgs e) => CreateNamedScript();
+
+    private void OnSpeakerNameKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        CreateNamedScript();
+    }
+
+    private void CreateNamedScript()
+    {
+        try
+        {
+            _model.CreateNamedScriptFromSelectedTemplate(SpeakerNameBox.Text);
+            SpeakerNameBox.Clear();
+            TemplateHint.Text = "Replaces {{name}} once and creates an independent, playable copy.";
+            TemplateHint.Foreground = Brushes.Gray;
+        }
+        catch (AppException error)
+        {
+            TemplateHint.Text = "⚠ " + error.Message;
+            TemplateHint.Foreground = Brushes.Red;
+        }
     }
 
     private async void OnRefreshVoicesClick(object sender, RoutedEventArgs e) =>
