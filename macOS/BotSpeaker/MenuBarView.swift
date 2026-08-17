@@ -13,7 +13,10 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 440)
-        .task { await model.loadVoicesIfNeeded() }
+        .task {
+            model.restoreLastPlayableScriptForMenuBar()
+            await model.loadVoicesIfNeeded()
+        }
     }
 }
 
