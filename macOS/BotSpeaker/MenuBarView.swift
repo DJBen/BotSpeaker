@@ -20,38 +20,35 @@ struct MenuBarView: View {
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @State private var isShowingScriptEditor = false
-    @State private var isSidebarVisible = true
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         Group {
             if model.hasAPIKey {
-                HStack(spacing: 0) {
-                    if isSidebarVisible {
-                        ScriptLibrarySidebar(
-                            model: model,
-                            onAdd: {
-                                model.prepareNewScript()
-                                isShowingScriptEditor = true
-                            },
-                            onEdit: {
-                                model.prepareScriptEditor()
-                                isShowingScriptEditor = true
-                            },
-                            onToggleSidebar: toggleSidebar
-                        )
-                        .frame(width: 310)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        Divider()
-                    }
-
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    ScriptLibrarySidebar(
+                        model: model,
+                        onAdd: {
+                            model.prepareNewScript()
+                            isShowingScriptEditor = true
+                        },
+                        onEdit: {
+                            model.prepareScriptEditor()
+                            isShowingScriptEditor = true
+                        },
+                        onToggleSidebar: toggleSidebar
+                    )
+                    .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
+                } detail: {
                     ComposerView(
                         model: model,
                         player: model.player,
                         context: .mainWindow,
                         onToggleSidebar: toggleSidebar,
-                        showsSidebarToggle: !isSidebarVisible
+                        showsSidebarToggle: columnVisibility == .detailOnly
                     )
                 }
+                .toolbar(removing: .sidebarToggle)
             } else {
                 FirstRunView(model: model)
             }
@@ -74,9 +71,7 @@ struct MainWindowView: View {
     }
 
     private func toggleSidebar() {
-        withAnimation(.easeInOut(duration: 0.16)) {
-            isSidebarVisible.toggle()
-        }
+        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
     }
 }
 
@@ -92,9 +87,6 @@ private struct ScriptLibrarySidebar: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Scripts")
                         .font(.title2.bold())
-                    Text("Incident review cast")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onAdd) {
@@ -140,9 +132,7 @@ private struct ScriptLibrarySidebar: View {
                 }
             }
             .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
-        .background(SidebarVisualEffect())
     }
 
     private var scriptSelection: Binding<String?> {
@@ -154,18 +144,6 @@ private struct ScriptLibrarySidebar: View {
             }
         )
     }
-}
-
-private struct SidebarVisualEffect: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct ScriptRow: View {
