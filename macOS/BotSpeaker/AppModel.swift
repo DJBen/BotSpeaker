@@ -45,6 +45,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var playableScripts: [SpeechScript] {
+        availableScripts.filter(\.isCustom)
+    }
+
     var selectedScript: SpeechScript {
         availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.incidentManager.speechScript
     }

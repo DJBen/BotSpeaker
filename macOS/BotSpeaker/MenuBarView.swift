@@ -99,7 +99,7 @@ private struct ScriptLibrarySidebar: View {
                         .foregroundStyle(.secondary)
                         .listRowSeparator(.hidden)
                 } else {
-                    ForEach(model.availableScripts.filter(\.isCustom)) { script in
+                    ForEach(model.playableScripts) { script in
                         ScriptRow(script: script, icon: "waveform")
                             .tag(script.id)
                             .contextMenu {
@@ -234,19 +234,21 @@ struct ComposerView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator))
             .frame(minHeight: 220)
 
-            HStack(spacing: 12) {
-                AnnotationKey(color: .green.opacity(0.35), label: "Spoken")
-                AnnotationKey(color: .accentColor.opacity(0.55), label: "Speaking")
-                Spacer()
-                if model.isGenerating {
-                    ProgressView(
-                        value: Double(player.generatedChunkCount),
-                        total: Double(max(player.totalChunkCount, 1))
-                    )
-                    .frame(width: 70)
-                    Text("Generating \(player.generatedChunkCount)/\(player.totalChunkCount)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            if model.selectedScript.isCustom {
+                HStack(spacing: 12) {
+                    AnnotationKey(color: .green.opacity(0.35), label: "Spoken")
+                    AnnotationKey(color: .accentColor.opacity(0.55), label: "Speaking")
+                    Spacer()
+                    if model.isGenerating {
+                        ProgressView(
+                            value: Double(player.generatedChunkCount),
+                            total: Double(max(player.totalChunkCount, 1))
+                        )
+                        .frame(width: 70)
+                        Text("Generating \(player.generatedChunkCount)/\(player.totalChunkCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -257,8 +259,10 @@ struct ComposerView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            timeline
-            playbackControls
+            if model.selectedScript.isCustom {
+                timeline
+                playbackControls
+            }
 
             if model.interruptionMonitor.isHearingAudio || player.isWaitingForInterruption {
                 HStack(spacing: 6) {
@@ -354,7 +358,7 @@ struct ComposerView: View {
                             openWindow(id: "composer")
                         }
                     } else {
-                        ForEach(model.availableScripts.filter(\.isCustom)) { script in
+                        ForEach(model.playableScripts) { script in
                             Button {
                                 model.selectScript(id: script.id)
                             } label: {
