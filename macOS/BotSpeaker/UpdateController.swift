@@ -15,6 +15,9 @@ final class UpdateController: ObservableObject {
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        if updaterController.updater.automaticallyChecksForUpdates {
+            updaterController.updater.checkForUpdatesInBackground()
+        }
         observation = updaterController.updater.observe(
             \.canCheckForUpdates,
             options: [.initial, .new]
