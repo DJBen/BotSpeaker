@@ -25,6 +25,7 @@ struct CustomSpeechScript: Codable, Identifiable, Hashable {
     let id: UUID
     var title: String
     var text: String
+    var detail: String?
 }
 
 extension ExampleExcerpt {

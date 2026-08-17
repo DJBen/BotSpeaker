@@ -9,12 +9,7 @@ struct BotSpeakerApp: App {
         WindowGroup("Bot Speaker", id: "composer") {
             MainWindowView(model: model)
         }
-        .defaultSize(width: 560, height: 620)
-
-        Window("Custom Script", id: "script-editor") {
-            CustomScriptEditorWindow(model: model)
-        }
-        .defaultSize(width: 620, height: 560)
+        .defaultSize(width: 1040, height: 720)
 
         MenuBarExtra {
             MenuBarView(model: model)

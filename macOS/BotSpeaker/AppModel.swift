@@ -3,9 +3,10 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published private(set) var text = ExampleExcerpt.productLaunch.text
-    @Published private(set) var selectedScriptID = ExampleExcerpt.productLaunch.speechScript.id
+    @Published private(set) var text = ExampleExcerpt.incidentManager.text
+    @Published private(set) var selectedScriptID = ExampleExcerpt.incidentManager.speechScript.id
     @Published private(set) var customScripts: [CustomSpeechScript] = []
+    @Published var templateSpeakerName = ""
     @Published var scriptDraftTitle = ""
     @Published var scriptDraftText = ""
     @Published private(set) var editingCustomScriptID: UUID?
@@ -37,7 +38,7 @@ final class AppModel: ObservableObject {
             SpeechScript(
                 id: "custom:\($0.id.uuidString)",
                 title: $0.title,
-                detail: "Custom script",
+                detail: $0.detail ?? "Custom script",
                 text: $0.text,
                 kind: .custom($0.id)
             )
@@ -45,7 +46,7 @@ final class AppModel: ObservableObject {
     }
 
     var selectedScript: SpeechScript {
-        availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.productLaunch.speechScript
+        availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.incidentManager.speechScript
     }
 
     var voiceID: String {
@@ -115,9 +116,9 @@ final class AppModel: ObservableObject {
         }
 
         let requestedID = UserDefaults.standard.string(forKey: Defaults.selectedScriptID)
-            ?? ExampleExcerpt.productLaunch.speechScript.id
+            ?? ExampleExcerpt.incidentManager.speechScript.id
         let initialScript = availableScripts.first(where: { $0.id == requestedID })
-            ?? ExampleExcerpt.productLaunch.speechScript
+            ?? ExampleExcerpt.incidentManager.speechScript
         selectedScriptID = initialScript.id
         text = initialScript.text
 
@@ -238,6 +239,42 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func prepareNewScript() {
+        editingCustomScriptID = nil
+        scriptDraftTitle = ""
+        scriptDraftText = ""
+    }
+
+    /// Creates a durable custom script from a built-in role template. Name
+    /// substitution happens here once; later playback does not depend on the
+    /// sidebar field and receives its own cache namespace.
+    func createNamedScriptFromSelectedTemplate() throws {
+        guard case .example = selectedScript.kind else {
+            throw AppError("Choose an incident-review role template first.")
+        }
+        let name = templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw AppError("Enter the speaker’s name.") }
+
+        let template = selectedScript
+        let resolvedText = template.text.replacingOccurrences(of: ExampleExcerpt.namePlaceholder, with: name)
+        guard resolvedText != template.text else {
+            throw AppError("This template does not contain a name placeholder.")
+        }
+
+        let id = UUID()
+        customScripts.append(
+            CustomSpeechScript(
+                id: id,
+                title: "\(name) — \(template.title)",
+                text: resolvedText,
+                detail: template.detail
+            )
+        )
+        persistCustomScripts()
+        templateSpeakerName = ""
+        selectScript(id: "custom:\(id.uuidString)")
+    }
+
     func saveScriptDraft() throws {
         let title = scriptDraftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let scriptText = scriptDraftText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -252,7 +289,7 @@ final class AppModel: ObservableObject {
             customScripts[index].text = scriptText
         } else {
             id = UUID()
-            customScripts.append(CustomSpeechScript(id: id, title: title, text: scriptText))
+            customScripts.append(CustomSpeechScript(id: id, title: title, text: scriptText, detail: nil))
         }
         persistCustomScripts()
 
