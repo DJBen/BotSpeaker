@@ -72,7 +72,16 @@ observe the room, participant, and turn documents — the macOS app through the
 Firebase SDK's real-time snapshot listeners, and the Windows app by polling the
 same documents over the Firestore REST API on a short interval. Both clients
 issue identical writes (including `REQUEST_TIME` server-timestamp transforms),
-so one ruleset governs both. Audio, ElevenLabs keys, and complete scripts are never
+so one ruleset governs both.
+
+Because Firestore bills one read per document returned, a poller that re-listed
+every participant and turn each tick would burn through the project's read
+quota in minutes on a long meeting. Instead, every state-changing commit on
+either platform also touches an `activityAt` server-timestamp marker on the
+room document — the one room field the rules allow a non-host participant to
+update. Each poll tick then costs a single room read, and the collections are
+re-listed only when the marker moves, plus a 30-second full resync that keeps
+heartbeat freshness visible. Heartbeats deliberately do not move the marker. Audio, ElevenLabs keys, and complete scripts are never
 uploaded as session setup data; only the active paragraph is attached to its
 turn when that speaker begins preparing it.
 
@@ -118,3 +127,6 @@ configuration. They do not grant database access; anonymous authentication plus
   activity across machines where clock synchronization is uncertain.
 - The Windows client polls rather than listens, so remote state changes (start,
   pause, skip, stop) can take a couple of seconds to reflect there.
+- Participant presence (heartbeats) reaches polling clients on the 30-second
+  resync rather than immediately; the 90-second green-indicator window absorbs
+  that delay.

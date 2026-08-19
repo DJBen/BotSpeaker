@@ -155,6 +155,24 @@ EVENT_BODY="$(jq -n \
   '{writes:[{update:{name:$document,fields:{type:{stringValue:"started"},participantUID:{stringValue:$participant},clientTimestamp:{timestampValue:$started}}},updateTransforms:[{fieldPath:"timestamp",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
 firestore_request "$CLIENT_TOKEN" POST "$COMMIT_URL" "$EVENT_BODY" >/dev/null
 
+# A paired participant may touch the room's activityAt poll marker (and only
+# that field) so polling clients notice state changes cheaply.
+ROOM_DOCUMENT="projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/orchestrationRooms/${ROOM_ID}"
+BUMP_BODY="$(jq -n \
+  --arg document "$ROOM_DOCUMENT" \
+  '{writes:[{update:{name:$document,fields:{}},updateMask:{fieldPaths:[]},updateTransforms:[{fieldPath:"activityAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+firestore_request "$CLIENT_TOKEN" POST "$COMMIT_URL" "$BUMP_BODY" >/dev/null
+
+INTRUDER_BUMP_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${INTRUDER_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$BUMP_BODY")"
+[[ "$INTRUDER_BUMP_STATUS" == "403" ]] || {
+  echo "Expected an unpaired activity bump to return 403, received ${INTRUDER_BUMP_STATUS}." >&2
+  exit 1
+}
+
 FORBIDDEN_ROOM_UPDATE="$(jq -n '{fields:{status:{stringValue:"stopped"}}}')"
 FORBIDDEN_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request PATCH \
   "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}?updateMask.fieldPaths=status" \
@@ -170,4 +188,4 @@ TURN_RESULT="$(firestore_request "$HOST_TOKEN" GET "${FIRESTORE_ROOT}/orchestrat
 jq -e '.fields.status.stringValue == "speaking" and (.fields.startedAtServer.timestampValue | length > 0)' <<<"$TURN_RESULT" >/dev/null
 
 echo "Orchestration backend integration test passed."
-echo "Verified host authority, pairing, preparation readiness, participant access, turn reporting, server timestamps, and unpaired-client denial."
+echo "Verified host authority, pairing, preparation readiness, participant access, turn reporting, server timestamps, activity-marker bumps, and unpaired-client denial."

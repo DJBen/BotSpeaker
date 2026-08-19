@@ -20,6 +20,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PairingLifetime = TimeSpan.FromHours(4);
+    private static readonly TimeSpan CollectionResyncInterval = TimeSpan.FromSeconds(30);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -91,6 +92,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private bool _hasReportedPlaybackStart;
     private bool _isAdvancing;
     private bool _isPolling;
+    private string? _lastRoomActivityMarker;
+    private DateTime _lastCollectionSyncUtc = DateTime.MinValue;
     private OrchestrationSessionStatus _previousSessionStatus = OrchestrationSessionStatus.Lobby;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _heartbeatTimer;
@@ -171,7 +174,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["activeTurnIndex"] = -1,
                     ["totalTurns"] = 0,
                 },
-                ServerTimestampFields = ["createdAt", "updatedAt"],
+                ServerTimestampFields = ["createdAt", "updatedAt", "activityAt"],
                 MustExist = false,
             });
 
@@ -229,7 +232,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 DocumentPath = RoomPath(sessionId),
                 Fields = new() { ["pairingOpen"] = isOpen },
                 UpdateMask = ["pairingOpen"],
-                ServerTimestampFields = ["updatedAt"],
+                ServerTimestampFields = ["updatedAt", "activityAt"],
                 MustExist = true,
             },
             new FirestoreWrite
@@ -316,7 +319,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["orderedParticipantIDs"] = ordered.Select(p => p.Id).ToList(),
                 },
                 UpdateMask = ["status", "pairingOpen", "activeTurnIndex", "totalTurns", "orderedParticipantIDs"],
-                ServerTimestampFields = ["startedAt", "updatedAt"],
+                ServerTimestampFields = ["startedAt", "updatedAt", "activityAt"],
                 MustExist = true,
             });
             writes.Add(new FirestoreWrite
@@ -349,14 +352,18 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         if (ActiveTurn is not OrchestrationTurn turn || turn.Status.IsTerminal()) return;
         await PerformBusyOperationAsync(async () =>
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = TurnPath(sessionId, turn.Id),
-                Fields = new() { ["status"] = OrchestrationTurnStatus.Skipped.RawValue() },
-                UpdateMask = ["status"],
-                ServerTimestampFields = ["endedAtServer", "updatedAt"],
-                MustExist = true,
-            });
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
+                {
+                    DocumentPath = TurnPath(sessionId, turn.Id),
+                    Fields = new() { ["status"] = OrchestrationTurnStatus.Skipped.RawValue() },
+                    UpdateMask = ["status"],
+                    ServerTimestampFields = ["endedAtServer", "updatedAt"],
+                    MustExist = true,
+                },
+                RoomActivityBump(sessionId),
+            ]);
             await PollAsync();
         });
     }
@@ -377,7 +384,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                         ["pairingOpen"] = false,
                     },
                     UpdateMask = ["status", "pairingOpen"],
-                    ServerTimestampFields = ["endedAt", "updatedAt"],
+                    ServerTimestampFields = ["endedAt", "updatedAt", "activityAt"],
                     MustExist = true,
                 },
                 new()
@@ -418,18 +425,22 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         }
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = ParticipantPath(sessionId, uid),
-                Fields = new()
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
                 {
-                    ["status"] = "left",
-                    ["isConnected"] = false,
+                    DocumentPath = ParticipantPath(sessionId, uid),
+                    Fields = new()
+                    {
+                        ["status"] = "left",
+                        ["isConnected"] = false,
+                    },
+                    UpdateMask = ["status", "isConnected"],
+                    ServerTimestampFields = ["lastSeenAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["status", "isConnected"],
-                ServerTimestampFields = ["lastSeenAt"],
-                MustExist = true,
-            });
+                RoomActivityBump(sessionId),
+            ]);
             if (IsHost)
             {
                 await _database.CommitAsync(new FirestoreWrite
@@ -552,37 +563,45 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         };
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = ParticipantPath(roomId, uid),
-                Fields = fields,
-                ServerTimestampFields = ["joinedAt", "lastSeenAt"],
-                MustExist = false,
-            });
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
+                {
+                    DocumentPath = ParticipantPath(roomId, uid),
+                    Fields = fields,
+                    ServerTimestampFields = ["joinedAt", "lastSeenAt"],
+                    MustExist = false,
+                },
+                RoomActivityBump(roomId),
+            ]);
         }
         catch (AppException)
         {
             // Rejoining with the same identity: the create precondition fails, so
             // refresh only the fields the update rule allows a participant to change.
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = ParticipantPath(roomId, uid),
-                Fields = new()
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
                 {
-                    ["displayName"] = local.Name,
-                    ["scriptTitle"] = local.ScriptTitle,
-                    ["voiceName"] = local.VoiceName,
-                    ["segmentCount"] = local.Segments.Count,
-                    ["preparedSegmentCount"] = 0,
-                    ["preparationError"] = "",
-                    ["supportsPrefetch"] = true,
-                    ["status"] = "preparing",
-                    ["isConnected"] = true,
+                    DocumentPath = ParticipantPath(roomId, uid),
+                    Fields = new()
+                    {
+                        ["displayName"] = local.Name,
+                        ["scriptTitle"] = local.ScriptTitle,
+                        ["voiceName"] = local.VoiceName,
+                        ["segmentCount"] = local.Segments.Count,
+                        ["preparedSegmentCount"] = 0,
+                        ["preparationError"] = "",
+                        ["supportsPrefetch"] = true,
+                        ["status"] = "preparing",
+                        ["isConnected"] = true,
+                    },
+                    UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "supportsPrefetch", "status", "isConnected"],
+                    ServerTimestampFields = ["lastSeenAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "supportsPrefetch", "status", "isConnected"],
-                ServerTimestampFields = ["lastSeenAt"],
-                MustExist = true,
-            });
+                RoomActivityBump(roomId),
+            ]);
         }
     }
 
@@ -606,13 +625,21 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         PairingOpen = true;
         ErrorMessage = null;
         _model.ActivateRemoteControl("Paired and waiting for the host");
+        _lastRoomActivityMarker = null;
+        _lastCollectionSyncUtc = DateTime.MinValue;
         _pollTimer.Start();
         _heartbeatTimer.Start();
         _ = PollAsync();
         ScheduleNextPrefetch();
     }
 
-    // Polling — the Windows analog of the macOS snapshot listeners.
+    // Polling — the Windows analog of the macOS snapshot listeners. Every state-
+    // changing commit on either platform also touches the room's activityAt
+    // marker, so each tick costs one room read; the participant and turn
+    // collections are re-listed only when the marker moves (or on a slow resync
+    // that keeps heartbeat freshness visible), not on every tick. Firestore
+    // bills a read per document returned, and re-listing a long meeting's turns
+    // 40 times a minute is what exhausted the project's read quota.
 
     private async Task PollAsync()
     {
@@ -622,7 +649,16 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         {
             var room = await _database.GetDocumentAsync(RoomPath(sessionId));
             if (SessionId != sessionId) return;
-            if (room is not null) ApplyRoom(room);
+            bool syncCollections = true;
+            if (room is not null)
+            {
+                var marker = $"{room.Timestamp("activityAt")?.Ticks}|{room.Timestamp("updatedAt")?.Ticks}";
+                syncCollections = marker != _lastRoomActivityMarker
+                    || DateTime.UtcNow - _lastCollectionSyncUtc >= CollectionResyncInterval;
+                _lastRoomActivityMarker = marker;
+                ApplyRoom(room);
+            }
+            if (!syncCollections) return;
 
             var participants = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/participants");
             if (SessionId != sessionId) return;
@@ -631,6 +667,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             var turns = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/turns");
             if (SessionId != sessionId) return;
             ApplyTurns(turns);
+            _lastCollectionSyncUtc = DateTime.UtcNow;
         }
         catch (Exception error) when (error is AppException or System.Net.Http.HttpRequestException)
         {
@@ -641,6 +678,20 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             _isPolling = false;
         }
     }
+
+    /// <summary>
+    /// A field-transform-only room write: touches activityAt without changing
+    /// any other field, which is the one room update the security rules allow
+    /// participants to make. Included in every state-changing batch so pollers
+    /// notice the change on their next room read.
+    /// </summary>
+    private static FirestoreWrite RoomActivityBump(string roomId) => new()
+    {
+        DocumentPath = RoomPath(roomId),
+        UpdateMask = [],
+        ServerTimestampFields = ["activityAt"],
+        MustExist = true,
+    };
 
     private void ApplyRoom(FirestoreDocument room)
     {
@@ -801,18 +852,22 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = TurnPath(sessionId, turn.Id),
-                Fields = new()
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
                 {
-                    ["status"] = OrchestrationTurnStatus.Preparing.RawValue(),
-                    ["text"] = text,
+                    DocumentPath = TurnPath(sessionId, turn.Id),
+                    Fields = new()
+                    {
+                        ["status"] = OrchestrationTurnStatus.Preparing.RawValue(),
+                        ["text"] = text,
+                    },
+                    UpdateMask = ["status", "text"],
+                    ServerTimestampFields = ["updatedAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["status", "text"],
-                ServerTimestampFields = ["updatedAt"],
-                MustExist = true,
-            }, cancellation.Token);
+                RoomActivityBump(sessionId),
+            ], cancellation.Token);
             await WriteEventAsync(sessionId, turn.Id, "preparing", cancellation: cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             await EnsureLocalSegmentPreparedAsync(turn.SegmentIndex, cancellation.Token);
@@ -989,19 +1044,23 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private async Task PublishPreparationStateAsync(string? error, CancellationToken cancellation)
     {
         if (SessionId is not string sessionId || _userId is not string uid) return;
-        await _database.CommitAsync(new FirestoreWrite
-        {
-            DocumentPath = ParticipantPath(sessionId, uid),
-            Fields = new()
+        await _database.CommitAsync(
+        [
+            new FirestoreWrite
             {
-                ["preparedSegmentCount"] = PreparedLocalSegmentCount,
-                ["preparationError"] = error ?? "",
-                ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                DocumentPath = ParticipantPath(sessionId, uid),
+                Fields = new()
+                {
+                    ["preparedSegmentCount"] = PreparedLocalSegmentCount,
+                    ["preparationError"] = error ?? "",
+                    ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                },
+                UpdateMask = ["preparedSegmentCount", "preparationError", "status"],
+                ServerTimestampFields = ["lastSeenAt"],
+                MustExist = true,
             },
-            UpdateMask = ["preparedSegmentCount", "preparationError", "status"],
-            ServerTimestampFields = ["lastSeenAt"],
-            MustExist = true,
-        }, cancellation);
+            RoomActivityBump(sessionId),
+        ], cancellation);
     }
 
     private string CacheNamespace(int segmentIndex) =>
@@ -1034,18 +1093,22 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = TurnPath(sessionId, turnId),
-                Fields = new()
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
                 {
-                    ["status"] = OrchestrationTurnStatus.Speaking.RawValue(),
-                    ["startedAtClient"] = clientTime,
+                    DocumentPath = TurnPath(sessionId, turnId),
+                    Fields = new()
+                    {
+                        ["status"] = OrchestrationTurnStatus.Speaking.RawValue(),
+                        ["startedAtClient"] = clientTime,
+                    },
+                    UpdateMask = ["status", "startedAtClient"],
+                    ServerTimestampFields = ["startedAtServer", "updatedAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["status", "startedAtClient"],
-                ServerTimestampFields = ["startedAtServer", "updatedAt"],
-                MustExist = true,
-            });
+                RoomActivityBump(sessionId),
+            ]);
             await WriteEventAsync(sessionId, turnId, "started", clientTime);
         }
         catch (Exception error)
@@ -1088,6 +1151,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     MustExist = true,
                 },
                 EventWrite(sessionId, turnId, "completed", clientTime),
+                RoomActivityBump(sessionId),
             ]);
             await PollAsync();
         }
@@ -1104,19 +1168,23 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _hasReportedPlaybackStart = false;
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
-            {
-                DocumentPath = TurnPath(sessionId, turnId),
-                Fields = new()
+            await _database.CommitAsync(
+            [
+                new FirestoreWrite
                 {
-                    ["status"] = OrchestrationTurnStatus.Failed.RawValue(),
-                    ["error"] = message,
-                    ["endedAtClient"] = DateTime.UtcNow,
+                    DocumentPath = TurnPath(sessionId, turnId),
+                    Fields = new()
+                    {
+                        ["status"] = OrchestrationTurnStatus.Failed.RawValue(),
+                        ["error"] = message,
+                        ["endedAtClient"] = DateTime.UtcNow,
+                    },
+                    UpdateMask = ["status", "error", "endedAtClient"],
+                    ServerTimestampFields = ["endedAtServer", "updatedAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["status", "error", "endedAtClient"],
-                ServerTimestampFields = ["endedAtServer", "updatedAt"],
-                MustExist = true,
-            });
+                RoomActivityBump(sessionId),
+            ]);
             await WriteEventAsync(sessionId, turnId, "failed", error: message);
         }
         catch (Exception error)
@@ -1153,7 +1221,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     DocumentPath = RoomPath(sessionId),
                     Fields = new() { ["activeTurnIndex"] = nextIndex },
                     UpdateMask = ["activeTurnIndex"],
-                    ServerTimestampFields = ["updatedAt"],
+                    ServerTimestampFields = ["updatedAt", "activityAt"],
                     MustExist = true,
                 });
             }
@@ -1168,7 +1236,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                         ["activeTurnIndex"] = Turns.Count,
                     },
                     UpdateMask = ["status", "activeTurnIndex"],
-                    ServerTimestampFields = ["endedAt", "updatedAt"],
+                    ServerTimestampFields = ["endedAt", "updatedAt", "activityAt"],
                     MustExist = true,
                 });
             }
@@ -1223,7 +1291,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 DocumentPath = RoomPath(sessionId),
                 Fields = new() { ["status"] = status.RawValue() },
                 UpdateMask = ["status"],
-                ServerTimestampFields = ["updatedAt"],
+                ServerTimestampFields = ["updatedAt", "activityAt"],
                 MustExist = true,
             });
             await PollAsync();
@@ -1303,6 +1371,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _turnExecutionCancellation = null;
         _activeExecutionTurnId = null;
         _hasReportedPlaybackStart = false;
+        _lastRoomActivityMarker = null;
+        _lastCollectionSyncUtc = DateTime.MinValue;
     }
 
     private static string RoomPath(string roomId) => $"orchestrationRooms/{roomId}";

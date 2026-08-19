@@ -112,7 +112,8 @@ final class OrchestrationController: ObservableObject {
                 "activeTurnIndex": -1,
                 "totalTurns": 0,
                 "createdAt": FieldValue.serverTimestamp(),
-                "updatedAt": FieldValue.serverTimestamp()
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
             ])
 
             try await self.pairingReference(code).setData([
@@ -167,7 +168,8 @@ final class OrchestrationController: ObservableObject {
             let batch = self.database.batch()
             batch.updateData([
                 "pairingOpen": isOpen,
-                "updatedAt": FieldValue.serverTimestamp()
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
             ], forDocument: self.roomReference(sessionID))
             batch.updateData(["isOpen": isOpen], forDocument: self.pairingReference(self.pairingCode))
             try await batch.commit()
@@ -227,7 +229,8 @@ final class OrchestrationController: ObservableObject {
                 "totalTurns": plan.count,
                 "orderedParticipantIDs": ordered.map(\.id),
                 "startedAt": FieldValue.serverTimestamp(),
-                "updatedAt": FieldValue.serverTimestamp()
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
             ], forDocument: self.roomReference(sessionID))
             batch.updateData(["isOpen": false], forDocument: self.pairingReference(self.pairingCode))
             try await batch.commit()
@@ -238,7 +241,8 @@ final class OrchestrationController: ObservableObject {
         guard isHost, let sessionID, sessionStatus == .running else { return }
         await updateRoom(sessionID, data: [
             "status": OrchestrationSessionStatus.paused.rawValue,
-            "updatedAt": FieldValue.serverTimestamp()
+            "updatedAt": FieldValue.serverTimestamp(),
+            "activityAt": FieldValue.serverTimestamp()
         ])
     }
 
@@ -246,18 +250,22 @@ final class OrchestrationController: ObservableObject {
         guard isHost, let sessionID, sessionStatus == .paused else { return }
         await updateRoom(sessionID, data: [
             "status": OrchestrationSessionStatus.running.rawValue,
-            "updatedAt": FieldValue.serverTimestamp()
+            "updatedAt": FieldValue.serverTimestamp(),
+            "activityAt": FieldValue.serverTimestamp()
         ])
     }
 
     func skipCurrentTurn() async {
         guard isHost, let sessionID, let turn = activeTurn, !turn.status.isTerminal else { return }
         await performBusyOperation {
-            try await self.turnReference(roomID: sessionID, turnID: turn.id).updateData([
+            let batch = self.database.batch()
+            batch.updateData([
                 "status": OrchestrationTurnStatus.skipped.rawValue,
                 "endedAtServer": FieldValue.serverTimestamp(),
                 "updatedAt": FieldValue.serverTimestamp()
-            ])
+            ], forDocument: self.turnReference(roomID: sessionID, turnID: turn.id))
+            self.addRoomActivityBump(to: batch, roomID: sessionID)
+            try await batch.commit()
         }
     }
 
@@ -269,7 +277,8 @@ final class OrchestrationController: ObservableObject {
                 "status": OrchestrationSessionStatus.stopped.rawValue,
                 "pairingOpen": false,
                 "endedAt": FieldValue.serverTimestamp(),
-                "updatedAt": FieldValue.serverTimestamp()
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
             ], forDocument: self.roomReference(sessionID))
             batch.updateData(["isOpen": false], forDocument: self.pairingReference(self.pairingCode))
             if let turn = self.activeTurn, !turn.status.isTerminal {
@@ -293,11 +302,14 @@ final class OrchestrationController: ObservableObject {
             await stopMeeting()
         }
         do {
-            try await participantReference(roomID: sessionID, uid: uid).updateData([
+            let batch = database.batch()
+            batch.updateData([
                 "status": "left",
                 "isConnected": false,
                 "lastSeenAt": FieldValue.serverTimestamp()
-            ])
+            ], forDocument: participantReference(roomID: sessionID, uid: uid))
+            addRoomActivityBump(to: batch, roomID: sessionID)
+            try await batch.commit()
             if isHost {
                 try await pairingReference(pairingCode).updateData(["isOpen": false])
             }
@@ -399,7 +411,8 @@ final class OrchestrationController: ObservableObject {
         uid: String,
         local: LocalSpeaker
     ) async throws {
-        try await participantReference(roomID: roomID, uid: uid).setData([
+        let batch = database.batch()
+        batch.setData([
             "uid": uid,
             "roomID": roomID,
             "pairingCode": code,
@@ -414,7 +427,9 @@ final class OrchestrationController: ObservableObject {
             "isConnected": true,
             "joinedAt": FieldValue.serverTimestamp(),
             "lastSeenAt": FieldValue.serverTimestamp()
-        ])
+        ], forDocument: participantReference(roomID: roomID, uid: uid))
+        addRoomActivityBump(to: batch, roomID: roomID)
+        try await batch.commit()
     }
 
     private func activateSession(
@@ -768,7 +783,10 @@ final class OrchestrationController: ObservableObject {
         ]
         data["preparationError"] = error ?? ""
         do {
-            try await participantReference(roomID: sessionID, uid: uid).updateData(data)
+            let batch = database.batch()
+            batch.updateData(data, forDocument: participantReference(roomID: sessionID, uid: uid))
+            addRoomActivityBump(to: batch, roomID: sessionID)
+            try await batch.commit()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -844,6 +862,7 @@ final class OrchestrationController: ObservableObject {
                     "clientTimestamp": Timestamp(date: clientTime),
                     "timestamp": FieldValue.serverTimestamp()
                 ], forDocument: eventReference(roomID: sessionID, turnID: turnID))
+                addRoomActivityBump(to: batch, roomID: sessionID)
                 try await batch.commit()
             } catch {
                 errorMessage = error.localizedDescription
@@ -891,14 +910,16 @@ final class OrchestrationController: ObservableObject {
                 ], forDocument: turnReference(roomID: sessionID, turnID: next.id))
                 batch.updateData([
                     "activeTurnIndex": nextIndex,
-                    "updatedAt": FieldValue.serverTimestamp()
+                    "updatedAt": FieldValue.serverTimestamp(),
+                    "activityAt": FieldValue.serverTimestamp()
                 ], forDocument: roomReference(sessionID))
             } else {
                 batch.updateData([
                     "status": OrchestrationSessionStatus.completed.rawValue,
                     "activeTurnIndex": turns.count,
                     "endedAt": FieldValue.serverTimestamp(),
-                    "updatedAt": FieldValue.serverTimestamp()
+                    "updatedAt": FieldValue.serverTimestamp(),
+                    "activityAt": FieldValue.serverTimestamp()
                 ], forDocument: roomReference(sessionID))
             }
             try await batch.commit()
@@ -925,7 +946,21 @@ final class OrchestrationController: ObservableObject {
     }
 
     private func updateTurn(roomID: String, turnID: String, data: [String: Any]) async throws {
-        try await turnReference(roomID: roomID, turnID: turnID).updateData(data)
+        let batch = database.batch()
+        batch.updateData(data, forDocument: turnReference(roomID: roomID, turnID: turnID))
+        addRoomActivityBump(to: batch, roomID: roomID)
+        try await batch.commit()
+    }
+
+    /// Touches the room's poll marker in the same batch as a state change so
+    /// polling (Windows) clients re-list the participant and turn collections.
+    /// This is the one room update the security rules allow participants to
+    /// make; heartbeats intentionally skip it.
+    private func addRoomActivityBump(to batch: WriteBatch, roomID: String) {
+        batch.updateData(
+            ["activityAt": FieldValue.serverTimestamp()],
+            forDocument: roomReference(roomID)
+        )
     }
 
     private func updateRoom(_ roomID: String, data: [String: Any]) async {

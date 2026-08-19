@@ -20,6 +20,20 @@ service cloud.firestore {
       );
     }
 
+    // Post-batch membership: lets the join batch create the participant
+    // document and touch the room's activity marker atomically.
+    function isParticipantAfter(roomID) {
+      return signedIn() && existsAfter(
+        /databases/$(database)/documents/orchestrationRooms/$(roomID)/participants/$(request.auth.uid)
+      );
+    }
+
+    // Participants may only refresh the room's change signal, nothing else.
+    function onlyBumpsActivity() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["activityAt"])
+        && request.resource.data.activityAt == request.time;
+    }
+
     function canAccess(roomID) {
       return isHost(roomID) || isParticipant(roomID);
     }
@@ -62,7 +76,9 @@ service cloud.firestore {
         && request.resource.data.hostUID == request.auth.uid
         && request.resource.data.status == "lobby";
       allow read: if canAccess(roomID);
-      allow update, delete: if isHost(roomID);
+      allow update: if isHost(roomID)
+        || (isParticipantAfter(roomID) && onlyBumpsActivity());
+      allow delete: if isHost(roomID);
 
       match /participants/{participantID} {
         allow read: if canAccess(roomID);
