@@ -83,15 +83,17 @@ private struct ScriptLibrarySidebar: View {
 
     var body: some View {
         List(selection: scriptSelection) {
-            Section("Role templates") {
-                ForEach(model.bundledScripts) { script in
-                    ScriptRow(script: script, icon: "person.text.rectangle")
-                        .tag(script.id)
-                        .contextMenu {
-                            Button("Replicate…") {
-                                onReplicate(script.id)
+            ForEach(model.bundledScriptGroups) { scenario in
+                Section(scenario.title) {
+                    ForEach(scenario.excerpts.map(\.speechScript)) { script in
+                        ScriptRow(script: script, icon: "person.text.rectangle")
+                            .tag(script.id)
+                            .contextMenu {
+                                Button("Replicate…") {
+                                    onReplicate(script.id)
+                                }
                             }
-                        }
+                    }
                 }
             }
 

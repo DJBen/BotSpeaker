@@ -33,6 +33,10 @@ final class AppModel: ObservableObject {
         ExampleExcerpt.all.map(\.speechScript)
     }
 
+    var bundledScriptGroups: [ExampleScenario] {
+        ExampleExcerpt.scenarios
+    }
+
     var availableScripts: [SpeechScript] {
         bundledScripts + customScripts.map {
             SpeechScript(
@@ -310,7 +314,7 @@ final class AppModel: ObservableObject {
     /// sidebar field and receives its own cache namespace.
     func createNamedScriptFromSelectedTemplate() throws {
         guard case .example = selectedScript.kind else {
-            throw AppError("Choose an incident-review role template first.")
+            throw AppError("Choose a role template first.")
         }
         let name = templateSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw AppError("Enter the speaker’s name.") }

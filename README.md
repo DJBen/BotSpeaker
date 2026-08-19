@@ -12,7 +12,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.1.3-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.1.3), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
+- **macOS 14 or later:** [`BotSpeaker-0.1.4-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.1.4), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
 - **Windows 10/11 x64:** `BotSpeaker-Windows-x64-0.1.2.zip`, a self-contained portable exe—unzip and run, with no .NET installation required. It is currently unsigned, so Windows SmartScreen may warn on first launch.
 
 The repository and its release downloads are public.
@@ -30,7 +30,7 @@ The repository and its release downloads are public.
 - ElevenLabs voice selection
 - Sequential, sentence-aware speech generation for long scripts
 - Persistent audio-chunk caching per script, voice, model, and surrounding context
-- Three coordinated incident-review role templates with one-time speaker-name substitution
+- Two coordinated meeting scenarios with seven role templates and one-time speaker-name substitution
 - Side-by-side script library and playback workspace, plus named custom scripts
 - Play, pause, stop, seek, and progress-aware text highlighting
 - Persistent output-volume control applied before audio reaches the virtual device

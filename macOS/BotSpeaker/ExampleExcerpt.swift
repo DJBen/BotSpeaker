@@ -1,6 +1,12 @@
 import Foundation
 
-/// A role-specific script from one shared incident-review scenario. Built-in
+struct ExampleScenario: Identifiable {
+    let id: String
+    let title: String
+    let excerpts: [ExampleExcerpt]
+}
+
+/// A role-specific script from a coordinated meeting scenario. Built-in
 /// scripts are templates: `{{name}}` is resolved once when a user creates a
 /// named copy, so playback and caching never depend on mutable profile data.
 struct ExampleExcerpt: Identifiable {
@@ -15,7 +21,20 @@ struct ExampleExcerpt: Identifiable {
     var menuTitle: String { "\(role) — \(meeting)" }
     var wordCount: Int { text.split(whereSeparator: \.isWhitespace).count }
 
-    static let all: [ExampleExcerpt] = [incidentManager, incidentTechnicalLead, incidentSupportLead]
+    static let scenarios: [ExampleScenario] = [
+        ExampleScenario(
+            id: "authentication-incident-review",
+            title: "Authentication incident review",
+            excerpts: [incidentManager, incidentTechnicalLead, incidentSupportLead]
+        ),
+        ExampleScenario(
+            id: "meeting-assistant-launch-readiness",
+            title: "AI meeting assistant launch readiness",
+            excerpts: [launchProductManager, launchEngineeringLead, launchPrivacyLead, launchCustomerSuccessLead]
+        )
+    ]
+
+    static var all: [ExampleExcerpt] { scenarios.flatMap(\.excerpts) }
 
     static let incidentManager = ExampleExcerpt(
         id: "incident-review-manager",
