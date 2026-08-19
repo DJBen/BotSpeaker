@@ -652,7 +652,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             bool syncCollections = true;
             if (room is not null)
             {
-                var marker = $"{room.Timestamp("activityAt")?.Ticks}|{room.Timestamp("updatedAt")?.Ticks}";
+                var marker = room.Timestamp("activityAt")?.Ticks.ToString();
                 syncCollections = marker != _lastRoomActivityMarker
                     || DateTime.UtcNow - _lastCollectionSyncUtc >= CollectionResyncInterval;
                 _lastRoomActivityMarker = marker;
