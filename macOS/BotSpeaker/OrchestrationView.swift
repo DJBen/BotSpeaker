@@ -89,6 +89,7 @@ struct OrchestrationView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.title2.monospaced())
                         .textCase(.uppercase)
+                        .onSubmit(performSetupAction)
                     Text("Enter the six-character code shown on the host Mac.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -108,15 +109,7 @@ struct OrchestrationView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    Task {
-                        if controller.setupMode == .host {
-                            await controller.startHosting()
-                        } else {
-                            await controller.joinMeeting()
-                        }
-                    }
-                } label: {
+                Button(action: performSetupAction) {
                     if controller.isBusy {
                         ProgressView().controlSize(.small)
                     } else {
@@ -127,11 +120,24 @@ struct OrchestrationView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(
-                    controller.isBusy
-                        || controller.speakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || !model.selectedScript.isCustom
-                )
+                .disabled(isSetupActionDisabled)
+            }
+        }
+    }
+
+    private var isSetupActionDisabled: Bool {
+        controller.isBusy
+            || controller.speakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !model.selectedScript.isCustom
+    }
+
+    private func performSetupAction() {
+        guard !isSetupActionDisabled else { return }
+        Task {
+            if controller.setupMode == .host {
+                await controller.startHosting()
+            } else {
+                await controller.joinMeeting()
             }
         }
     }
