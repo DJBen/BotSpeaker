@@ -422,7 +422,6 @@ struct OrchestrationView: View {
     }
 
     private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {
-        if !participant.supportsPrefetch { return "Prefetch unavailable on this client version" }
         if let error = participant.preparationError { return "Preparation failed: \(error)" }
         if participant.isFirstTurnPrepared {
             return "\(participant.preparedSegmentCount) of \(participant.segmentCount) prepared"

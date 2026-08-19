@@ -111,7 +111,7 @@ create_participant() {
     --arg room "$ROOM_ID" \
     --arg code "$PAIRING_CODE" \
     --arg name "$name" \
-    '{writes:[{update:{name:$document,fields:{uid:{stringValue:$uid},roomID:{stringValue:$room},pairingCode:{stringValue:$code},displayName:{stringValue:$name},scriptTitle:{stringValue:"Integration script"},voiceName:{stringValue:"Integration voice"},segmentCount:{integerValue:"1"},preparedSegmentCount:{integerValue:"0"},preparationError:{stringValue:""},supportsPrefetch:{booleanValue:true},status:{stringValue:"preparing"},isConnected:{booleanValue:true}}},updateTransforms:[{fieldPath:"joinedAt",setToServerValue:"REQUEST_TIME"},{fieldPath:"lastSeenAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
+    '{writes:[{update:{name:$document,fields:{uid:{stringValue:$uid},roomID:{stringValue:$room},pairingCode:{stringValue:$code},displayName:{stringValue:$name},scriptTitle:{stringValue:"Integration script"},voiceName:{stringValue:"Integration voice"},segmentCount:{integerValue:"1"},preparedSegmentCount:{integerValue:"0"},preparationError:{stringValue:""},status:{stringValue:"preparing"},isConnected:{booleanValue:true}}},updateTransforms:[{fieldPath:"joinedAt",setToServerValue:"REQUEST_TIME"},{fieldPath:"lastSeenAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
   firestore_request "$token" POST "$COMMIT_URL" "$body" >/dev/null
 }
 

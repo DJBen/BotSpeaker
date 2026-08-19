@@ -53,7 +53,6 @@ struct OrchestrationParticipant: Identifiable, Hashable {
     let segmentCount: Int
     let preparedSegmentCount: Int
     let preparationError: String?
-    let supportsPrefetch: Bool
     let status: String
     let isConnected: Bool
     let lastSeenAt: Date?

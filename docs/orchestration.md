@@ -23,10 +23,10 @@ Windows).
    **Start Meeting**.
 
 As soon as a machine pairs, it generates and caches its first paragraph without
-loading the audio player. Prefetch-capable clients report this readiness to the
-host, and the Start button unlocks after their first turns are ready. Older
-clients can still join, but the host labels them as not supporting prefetch and
-does not wait on a readiness field they cannot provide.
+loading the audio player, reports that readiness to the host, and the Start
+button unlocks after every connected speaker's first turn is ready. The
+security rules require the readiness fields, so clients predating prefetch
+cannot join.
 
 BotSpeaker splits each script at paragraph boundaries. Turns are scheduled in a
 round-robin sequence: each connected speaker delivers its next paragraph, then

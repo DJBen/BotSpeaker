@@ -39,22 +39,10 @@ service cloud.firestore {
     }
 
     function validPreparation(data) {
-      return (
-          !data.keys().hasAll(["preparedSegmentCount"])
-          || (
-            data.preparedSegmentCount is int
-            && data.preparedSegmentCount >= 0
-            && data.preparedSegmentCount <= data.segmentCount
-          )
-        )
-        && (
-          !data.keys().hasAll(["supportsPrefetch"])
-          || data.supportsPrefetch is bool
-        )
-        && (
-          !data.keys().hasAll(["preparationError"])
-          || data.preparationError is string
-        );
+      return data.preparedSegmentCount is int
+        && data.preparedSegmentCount >= 0
+        && data.preparedSegmentCount <= data.segmentCount
+        && data.preparationError is string;
     }
 
     match /orchestrationPairings/{code} {
@@ -112,7 +100,6 @@ service cloud.firestore {
             "segmentCount",
             "preparedSegmentCount",
             "preparationError",
-            "supportsPrefetch",
             "status",
             "isConnected",
             "lastSeenAt"

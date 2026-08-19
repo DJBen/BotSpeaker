@@ -192,13 +192,11 @@ public partial class OrchestrationWindow : Window
                 Foreground = Brushes.Gray,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
-            string preparationText = !participant.SupportsPrefetch
-                ? "Prefetch unavailable on this client version"
-                : !string.IsNullOrEmpty(participant.PreparationError)
-                    ? $"Preparation failed: {participant.PreparationError}"
-                    : participant.IsFirstTurnPrepared
-                        ? $"{participant.PreparedSegmentCount} of {participant.SegmentCount} prepared"
-                        : "Preparing first turn…";
+            string preparationText = !string.IsNullOrEmpty(participant.PreparationError)
+                ? $"Preparation failed: {participant.PreparationError}"
+                : participant.IsFirstTurnPrepared
+                    ? $"{participant.PreparedSegmentCount} of {participant.SegmentCount} prepared"
+                    : "Preparing first turn…";
             textPanel.Children.Add(new TextBlock
             {
                 Text = preparationText,

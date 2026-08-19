@@ -107,7 +107,6 @@ public sealed record OrchestrationParticipant(
     int SegmentCount,
     int PreparedSegmentCount,
     string? PreparationError,
-    bool SupportsPrefetch,
     string Status,
     bool IsConnected,
     DateTime? LastSeenAt,

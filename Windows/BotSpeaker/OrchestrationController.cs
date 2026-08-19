@@ -140,7 +140,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             return IsHost
                 && SessionStatus == OrchestrationSessionStatus.Lobby
                 && connected.Count > 0
-                && connected.All(p => !p.SupportsPrefetch || p.IsFirstTurnPrepared)
+                && connected.All(p => p.IsFirstTurnPrepared)
                 && !IsBusy;
         }
     }
@@ -557,7 +557,6 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             ["segmentCount"] = local.Segments.Count,
             ["preparedSegmentCount"] = 0,
             ["preparationError"] = "",
-            ["supportsPrefetch"] = true,
             ["status"] = "preparing",
             ["isConnected"] = true,
         };
@@ -592,11 +591,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                         ["segmentCount"] = local.Segments.Count,
                         ["preparedSegmentCount"] = 0,
                         ["preparationError"] = "",
-                        ["supportsPrefetch"] = true,
                         ["status"] = "preparing",
                         ["isConnected"] = true,
                     },
-                    UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "supportsPrefetch", "status", "isConnected"],
+                    UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "status", "isConnected"],
                     ServerTimestampFields = ["lastSeenAt"],
                     MustExist = true,
                 },
@@ -751,7 +749,6 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 d.Int("segmentCount"),
                 d.Int("preparedSegmentCount"),
                 d.String("preparationError"),
-                d.Bool("supportsPrefetch"),
                 d.String("status") ?? "unknown",
                 d.Bool("isConnected"),
                 d.Timestamp("lastSeenAt"),
@@ -1311,10 +1308,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
                     ["preparedSegmentCount"] = PreparedLocalSegmentCount,
                     ["preparationError"] = PreparationError ?? "",
-                    ["supportsPrefetch"] = true,
                     ["isConnected"] = true,
                 },
-                UpdateMask = ["status", "preparedSegmentCount", "preparationError", "supportsPrefetch", "isConnected"],
+                UpdateMask = ["status", "preparedSegmentCount", "preparationError", "isConnected"],
                 ServerTimestampFields = ["lastSeenAt"],
                 MustExist = true,
             });

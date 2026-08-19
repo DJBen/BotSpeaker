@@ -88,7 +88,7 @@ final class OrchestrationController: ObservableObject {
         return isHost
             && sessionStatus == .lobby
             && !connected.isEmpty
-            && connected.allSatisfy { !$0.supportsPrefetch || $0.isFirstTurnPrepared }
+            && connected.allSatisfy(\.isFirstTurnPrepared)
             && !isBusy
     }
 
@@ -422,7 +422,6 @@ final class OrchestrationController: ObservableObject {
             "segmentCount": local.segments.count,
             "preparedSegmentCount": 0,
             "preparationError": "",
-            "supportsPrefetch": true,
             "status": "preparing",
             "isConnected": true,
             "joinedAt": FieldValue.serverTimestamp(),
@@ -550,7 +549,6 @@ final class OrchestrationController: ObservableObject {
                 segmentCount: data["segmentCount"] as? Int ?? 0,
                 preparedSegmentCount: data["preparedSegmentCount"] as? Int ?? 0,
                 preparationError: (data["preparationError"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                supportsPrefetch: data["supportsPrefetch"] as? Bool ?? false,
                 status: data["status"] as? String ?? "unknown",
                 isConnected: data["isConnected"] as? Bool ?? false,
                 lastSeenAt: Self.date(from: data["lastSeenAt"])
@@ -980,7 +978,6 @@ final class OrchestrationController: ObservableObject {
                         "status": self.preparedLocalSegmentCount > 0 ? "ready" : "preparing",
                         "preparedSegmentCount": self.preparedLocalSegmentCount,
                         "preparationError": self.preparationError ?? "",
-                        "supportsPrefetch": true,
                         "isConnected": true,
                         "lastSeenAt": FieldValue.serverTimestamp()
                     ])
