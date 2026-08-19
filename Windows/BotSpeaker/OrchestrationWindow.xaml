@@ -199,7 +199,7 @@
                                 <TextBlock x:Name="RemoteVoiceText" FontSize="12" TextTrimming="CharacterEllipsis"/>
                             </DockPanel>
                             <DockPanel>
-                                <TextBlock Text="Prepared turns" Width="110" FontSize="12" Foreground="Gray"/>
+                                <TextBlock Text="Prepared paragraphs" Width="130" FontSize="12" Foreground="Gray"/>
                                 <TextBlock x:Name="RemoteTurnsText" FontSize="12"/>
                             </DockPanel>
                         </StackPanel>

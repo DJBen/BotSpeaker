@@ -51,6 +51,9 @@ struct OrchestrationParticipant: Identifiable, Hashable {
     let scriptTitle: String
     let voiceName: String
     let segmentCount: Int
+    let preparedSegmentCount: Int
+    let preparationError: String?
+    let supportsPrefetch: Bool
     let status: String
     let isConnected: Bool
     let lastSeenAt: Date?
@@ -58,6 +61,10 @@ struct OrchestrationParticipant: Identifiable, Hashable {
     var isRecentlyConnected: Bool {
         guard isConnected, let lastSeenAt else { return false }
         return Date().timeIntervalSince(lastSeenAt) < 90
+    }
+
+    var isFirstTurnPrepared: Bool {
+        segmentCount > 0 && preparedSegmentCount > 0
     }
 }
 
@@ -123,7 +130,7 @@ enum OrchestrationScriptSegmenter {
             .filter { !$0.isEmpty }
 
         if paragraphs.count > 1 {
-            return paragraphs.flatMap(splitOversizedParagraph)
+            return paragraphs.flatMap { splitOversizedParagraph($0) }
         }
         return splitOversizedParagraph(normalized.trimmingCharacters(in: .whitespacesAndNewlines))
     }

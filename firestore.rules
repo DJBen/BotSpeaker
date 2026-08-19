@@ -24,6 +24,25 @@ service cloud.firestore {
       return isHost(roomID) || isParticipant(roomID);
     }
 
+    function validPreparation(data) {
+      return (
+          !data.keys().hasAll(["preparedSegmentCount"])
+          || (
+            data.preparedSegmentCount is int
+            && data.preparedSegmentCount >= 0
+            && data.preparedSegmentCount <= data.segmentCount
+          )
+        )
+        && (
+          !data.keys().hasAll(["supportsPrefetch"])
+          || data.supportsPrefetch is bool
+        )
+        && (
+          !data.keys().hasAll(["preparationError"])
+          || data.preparationError is string
+        );
+    }
+
     match /orchestrationPairings/{code} {
       allow get: if signedIn()
         && resource.data.isOpen == true
@@ -53,6 +72,7 @@ service cloud.firestore {
           && request.resource.data.roomID == roomID
           && request.resource.data.joinedAt == request.time
           && request.resource.data.lastSeenAt == request.time
+          && validPreparation(request.resource.data)
           && get(
             /databases/$(database)/documents/orchestrationPairings/$(request.resource.data.pairingCode)
           ).data.roomID == roomID
@@ -74,10 +94,14 @@ service cloud.firestore {
             "scriptTitle",
             "voiceName",
             "segmentCount",
+            "preparedSegmentCount",
+            "preparationError",
+            "supportsPrefetch",
             "status",
             "isConnected",
             "lastSeenAt"
           ])
+          && validPreparation(request.resource.data)
           && request.resource.data.lastSeenAt == request.time
         );
         allow delete: if isHost(roomID) || (

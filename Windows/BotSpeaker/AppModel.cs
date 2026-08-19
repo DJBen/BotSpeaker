@@ -410,6 +410,32 @@ public sealed class AppModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Warms the persistent orchestration cache without loading or starting the
+    /// audio player. The assigned turn can then begin from local files.
+    /// </summary>
+    public async Task PrepareOrchestratedTurnAsync(
+        string turnText, string cacheNamespace, CancellationToken cancellation)
+    {
+        var plans = SpeechTextChunker.Chunks(turnText);
+        if (plans.Count == 0) throw new AppException("The turn to prepare is empty.");
+        var apiKey = _credentials.Read();
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            HasApiKey = false;
+            throw new AppException("Add your ElevenLabs API key before preparing the meeting.");
+        }
+
+        foreach (var plan in plans)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            _ = await _client.SynthesizeAsync(
+                plan.Text, VoiceId, ModelId, apiKey,
+                plan.PreviousText, plan.NextText,
+                cacheNamespace, bypassCache: false, cancellation);
+        }
+    }
+
+    /// <summary>
     /// Generates and plays one orchestrated meeting turn, returning after the
     /// audio has been fully generated and queued. Playback completion is
     /// reported through <see cref="AudioPlaybackController.PlaybackFinished"/>.

@@ -192,6 +192,22 @@ public partial class OrchestrationWindow : Window
                 Foreground = Brushes.Gray,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
+            string preparationText = !participant.SupportsPrefetch
+                ? "Prefetch unavailable on this client version"
+                : !string.IsNullOrEmpty(participant.PreparationError)
+                    ? $"Preparation failed: {participant.PreparationError}"
+                    : participant.IsFirstTurnPrepared
+                        ? $"{participant.PreparedSegmentCount} of {participant.SegmentCount} prepared"
+                        : "Preparing first turn…";
+            textPanel.Children.Add(new TextBlock
+            {
+                Text = preparationText,
+                FontSize = 10,
+                Foreground = !string.IsNullOrEmpty(participant.PreparationError)
+                    ? Brushes.Red
+                    : participant.IsFirstTurnPrepared ? Brushes.Green : Brushes.Gray,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
             row.Children.Add(textPanel);
 
             SpeakersList.Children.Add(new Border
@@ -281,7 +297,8 @@ public partial class OrchestrationWindow : Window
         RemoteSpeakerText.Text = _controller.SpeakerName;
         RemoteScriptText.Text = _model.SelectedScript.Title;
         RemoteVoiceText.Text = _model.SelectedVoiceName;
-        RemoteTurnsText.Text = OrchestrationScriptSegmenter.Segments(_model.SelectedScript.Text).Count.ToString();
+        int totalSegments = OrchestrationScriptSegmenter.Segments(_model.SelectedScript.Text).Count;
+        RemoteTurnsText.Text = $"{_controller.PreparedLocalSegmentCount} of {totalSegments}";
 
         if (_controller.ActiveTurn is OrchestrationTurn turn)
         {
@@ -294,8 +311,9 @@ public partial class OrchestrationWindow : Window
             RemoteCurrentTurnText.Visibility = Visibility.Collapsed;
         }
 
-        RemoteErrorText.Text = _controller.ErrorMessage ?? "";
-        RemoteErrorText.Visibility = _controller.ErrorMessage is null ? Visibility.Collapsed : Visibility.Visible;
+        var remoteError = _controller.ErrorMessage ?? _controller.PreparationError;
+        RemoteErrorText.Text = remoteError ?? "";
+        RemoteErrorText.Visibility = remoteError is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static string TurnIcon(OrchestrationTurnStatus status) => status switch

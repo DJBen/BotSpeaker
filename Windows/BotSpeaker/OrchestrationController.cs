@@ -65,6 +65,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private DateTime? _endedAt;
     public DateTime? EndedAt { get => _endedAt; private set => Set(ref _endedAt, value); }
 
+    private int _preparedLocalSegmentCount;
+    public int PreparedLocalSegmentCount { get => _preparedLocalSegmentCount; private set => Set(ref _preparedLocalSegmentCount, value); }
+
+    private string _preparationStatus = "Not prepared";
+    public string PreparationStatus { get => _preparationStatus; private set => Set(ref _preparationStatus, value); }
+
+    private string? _preparationError;
+    public string? PreparationError { get => _preparationError; private set => Set(ref _preparationError, value); }
+
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; private set => Set(ref _isBusy, value); }
 
@@ -86,6 +95,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _heartbeatTimer;
     private CancellationTokenSource? _turnExecutionCancellation;
+    private readonly HashSet<int> _preparedLocalSegments = [];
+    private CancellationTokenSource? _prefetchCancellation;
+    private Task? _prefetchTask;
+    private int? _prefetchSegmentIndex;
 
     public OrchestrationController(AppModel model)
     {
@@ -116,11 +129,18 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     public OrchestrationTurn? ActiveTurn =>
         ActiveTurnIndex >= 0 && ActiveTurnIndex < Turns.Count ? Turns[ActiveTurnIndex] : null;
 
-    public bool CanStartMeeting =>
-        IsHost
-        && SessionStatus == OrchestrationSessionStatus.Lobby
-        && Participants.Any(p => p.IsRecentlyConnected)
-        && !IsBusy;
+    public bool CanStartMeeting
+    {
+        get
+        {
+            var connected = Participants.Where(p => p.IsRecentlyConnected).ToList();
+            return IsHost
+                && SessionStatus == OrchestrationSessionStatus.Lobby
+                && connected.Count > 0
+                && connected.All(p => !p.SupportsPrefetch || p.IsFirstTurnPrepared)
+                && !IsBusy;
+        }
+    }
 
     public bool CanExportTranscript =>
         IsHost
@@ -524,7 +544,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             ["scriptTitle"] = local.ScriptTitle,
             ["voiceName"] = local.VoiceName,
             ["segmentCount"] = local.Segments.Count,
-            ["status"] = "ready",
+            ["preparedSegmentCount"] = 0,
+            ["preparationError"] = "",
+            ["supportsPrefetch"] = true,
+            ["status"] = "preparing",
             ["isConnected"] = true,
         };
         try
@@ -550,10 +573,13 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["scriptTitle"] = local.ScriptTitle,
                     ["voiceName"] = local.VoiceName,
                     ["segmentCount"] = local.Segments.Count,
-                    ["status"] = "ready",
+                    ["preparedSegmentCount"] = 0,
+                    ["preparationError"] = "",
+                    ["supportsPrefetch"] = true,
+                    ["status"] = "preparing",
                     ["isConnected"] = true,
                 },
-                UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "status", "isConnected"],
+                UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "supportsPrefetch", "status", "isConnected"],
                 ServerTimestampFields = ["lastSeenAt"],
                 MustExist = true,
             });
@@ -570,6 +596,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _localSegments = local.Segments;
         _localScriptTitle = local.ScriptTitle;
         _localVoiceName = local.VoiceName;
+        _preparedLocalSegments.Clear();
+        PreparedLocalSegmentCount = 0;
+        PreparationStatus = "Preparing first turn…";
+        PreparationError = null;
         ParticipantOrder = [];
         SessionStatus = OrchestrationSessionStatus.Lobby;
         _previousSessionStatus = OrchestrationSessionStatus.Lobby;
@@ -579,6 +609,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _pollTimer.Start();
         _heartbeatTimer.Start();
         _ = PollAsync();
+        ScheduleNextPrefetch();
     }
 
     // Polling — the Windows analog of the macOS snapshot listeners.
@@ -641,9 +672,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 }
                 break;
             case OrchestrationSessionStatus.Completed:
+                CancelPrefetch();
                 _model.UpdateRemoteControlStatus("Meeting completed");
                 break;
             case OrchestrationSessionStatus.Stopped:
+                CancelPrefetch();
                 _model.UpdateRemoteControlStatus("Meeting stopped by the host");
                 _turnExecutionCancellation?.Cancel();
                 _turnExecutionCancellation = null;
@@ -665,6 +698,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 d.String("scriptTitle")!,
                 d.String("voiceName") ?? "Unknown voice",
                 d.Int("segmentCount"),
+                d.Int("preparedSegmentCount"),
+                d.String("preparationError"),
+                d.Bool("supportsPrefetch"),
                 d.String("status") ?? "unknown",
                 d.Bool("isConnected"),
                 d.Timestamp("lastSeenAt"),
@@ -725,6 +761,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 : "Turn ended; waiting for the host");
         }
         MaybeExecuteActiveTurn();
+        ScheduleNextPrefetch();
         if (IsHost && ActiveTurn is OrchestrationTurn active && active.Status.IsTerminal())
         {
             _ = AdvanceAfterTerminalTurnAsync(active);
@@ -778,9 +815,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             }, cancellation.Token);
             await WriteEventAsync(sessionId, turn.Id, "preparing", cancellation: cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
+            await EnsureLocalSegmentPreparedAsync(turn.SegmentIndex, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             await _model.PlayOrchestratedTurnAsync(
                 text,
-                $"orchestration:{_localScriptTitle}:{turn.SegmentIndex}",
+                CacheNamespace(turn.SegmentIndex),
                 cancellation.Token);
         }
         catch (OperationCanceledException)
@@ -794,6 +833,187 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         {
             if (_turnExecutionCancellation == cancellation) _turnExecutionCancellation = null;
         }
+    }
+
+    /// <summary>
+    /// Makes paragraph zero ready in the lobby and immediately begins the next,
+    /// then keeps one local paragraph ahead of this speaker's most recently
+    /// finished turn. Cache preparation never
+    /// loads the player, so it cannot speak before the host assigns the turn.
+    /// </summary>
+    private void ScheduleNextPrefetch()
+    {
+        if (!IsActive || _localSegments.Count == 0 || _prefetchTask is { IsCompleted: false }) return;
+
+        int lookaheadLimit;
+        if (SessionStatus == OrchestrationSessionStatus.Lobby || Turns.Count == 0)
+        {
+            lookaheadLimit = Math.Min(1, _localSegments.Count - 1);
+        }
+        else
+        {
+            int mostRecentTerminal = Turns
+                .Where(t => t.ParticipantUid == _userId && t.Status.IsTerminal())
+                .Select(t => t.SegmentIndex)
+                .DefaultIfEmpty(-1)
+                .Max();
+            lookaheadLimit = Math.Min(mostRecentTerminal + 2, _localSegments.Count - 1);
+        }
+
+        int? candidate = Enumerable.Range(0, lookaheadLimit + 1)
+            .Select(value => (int?)value)
+            .FirstOrDefault(index => index is int value && !_preparedLocalSegments.Contains(value));
+        if (candidate is not int segmentIndex) return;
+
+        PreparationError = null;
+        PreparationStatus = segmentIndex == 0
+            ? "Preparing first turn…"
+            : $"Preloading paragraph {segmentIndex + 1}…";
+        if (SessionStatus == OrchestrationSessionStatus.Lobby)
+        {
+            _model.UpdateRemoteControlStatus(PreparationStatus);
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _prefetchCancellation = cancellation;
+        _prefetchSegmentIndex = segmentIndex;
+        _prefetchTask = RunBackgroundPrefetchAsync(segmentIndex, cancellation);
+    }
+
+    private async Task RunBackgroundPrefetchAsync(int segmentIndex, CancellationTokenSource cancellation)
+    {
+        // Let ScheduleNextPrefetch store the task before a cache hit can finish.
+        await Task.Yield();
+        bool shouldRetry = false;
+        try
+        {
+            await PrepareSegmentCoreAsync(segmentIndex, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            shouldRetry = true;
+            PreparationError = error.Message;
+            PreparationStatus = "Preparation failed; retrying…";
+            try { await PublishPreparationStateAsync(error.Message, CancellationToken.None); }
+            catch (Exception publishError) { ErrorMessage = publishError.Message; }
+        }
+
+        if (shouldRetry)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(12), cancellation.Token); }
+            catch (OperationCanceledException) { }
+        }
+
+        if (_prefetchCancellation == cancellation)
+        {
+            _prefetchCancellation = null;
+            _prefetchTask = null;
+            _prefetchSegmentIndex = null;
+            if (!cancellation.IsCancellationRequested && IsActive) ScheduleNextPrefetch();
+        }
+        cancellation.Dispose();
+    }
+
+    private async Task EnsureLocalSegmentPreparedAsync(int segmentIndex, CancellationToken cancellation)
+    {
+        if (segmentIndex < 0 || segmentIndex >= _localSegments.Count)
+        {
+            throw new AppException("The assigned paragraph is unavailable on this PC.");
+        }
+        if (_preparedLocalSegments.Contains(segmentIndex)) return;
+
+        if (_prefetchSegmentIndex == segmentIndex && _prefetchTask is Task existing)
+        {
+            await existing.WaitAsync(cancellation);
+            if (_preparedLocalSegments.Contains(segmentIndex)) return;
+        }
+
+        CancelPrefetch();
+        PreparationStatus = $"Preparing paragraph {segmentIndex + 1}…";
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        _prefetchCancellation = linked;
+        _prefetchSegmentIndex = segmentIndex;
+        var task = PrepareSegmentCoreAsync(segmentIndex, linked.Token);
+        _prefetchTask = task;
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            if (_prefetchCancellation == linked)
+            {
+                _prefetchCancellation = null;
+                _prefetchTask = null;
+                _prefetchSegmentIndex = null;
+            }
+        }
+        ScheduleNextPrefetch();
+    }
+
+    private async Task PrepareSegmentCoreAsync(int segmentIndex, CancellationToken cancellation)
+    {
+        await _model.PrepareOrchestratedTurnAsync(
+            _localSegments[segmentIndex], CacheNamespace(segmentIndex), cancellation);
+        cancellation.ThrowIfCancellationRequested();
+        _preparedLocalSegments.Add(segmentIndex);
+
+        int contiguousCount = 0;
+        while (_preparedLocalSegments.Contains(contiguousCount)) contiguousCount++;
+        PreparedLocalSegmentCount = contiguousCount;
+        PreparationError = null;
+        PreparationStatus = contiguousCount == _localSegments.Count
+            ? "All paragraphs prepared"
+            : $"{contiguousCount} paragraph{(contiguousCount == 1 ? "" : "s")} prepared";
+        if (SessionStatus == OrchestrationSessionStatus.Lobby)
+        {
+            _model.UpdateRemoteControlStatus(contiguousCount > 0
+                ? "First turn ready; waiting for the host"
+                : PreparationStatus);
+        }
+        try
+        {
+            await PublishPreparationStateAsync(null, cancellation);
+        }
+        catch (Exception error) when (error is AppException or System.Net.Http.HttpRequestException)
+        {
+            // Audio is ready locally. The heartbeat republishes readiness if
+            // this transient metadata write failed.
+            ErrorMessage = error.Message;
+        }
+    }
+
+    private async Task PublishPreparationStateAsync(string? error, CancellationToken cancellation)
+    {
+        if (SessionId is not string sessionId || _userId is not string uid) return;
+        await _database.CommitAsync(new FirestoreWrite
+        {
+            DocumentPath = ParticipantPath(sessionId, uid),
+            Fields = new()
+            {
+                ["preparedSegmentCount"] = PreparedLocalSegmentCount,
+                ["preparationError"] = error ?? "",
+                ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+            },
+            UpdateMask = ["preparedSegmentCount", "preparationError", "status"],
+            ServerTimestampFields = ["lastSeenAt"],
+            MustExist = true,
+        }, cancellation);
+    }
+
+    private string CacheNamespace(int segmentIndex) =>
+        $"orchestration:{_localScriptTitle}:{segmentIndex}";
+
+    private void CancelPrefetch()
+    {
+        var cancellation = _prefetchCancellation;
+        _prefetchCancellation = null;
+        _prefetchTask = null;
+        _prefetchSegmentIndex = null;
+        cancellation?.Cancel();
     }
 
     private void PlaybackDidStart()
@@ -1020,10 +1240,13 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 DocumentPath = ParticipantPath(sessionId, uid),
                 Fields = new()
                 {
-                    ["status"] = "ready",
+                    ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                    ["preparedSegmentCount"] = PreparedLocalSegmentCount,
+                    ["preparationError"] = PreparationError ?? "",
+                    ["supportsPrefetch"] = true,
                     ["isConnected"] = true,
                 },
-                UpdateMask = ["status", "isConnected"],
+                UpdateMask = ["status", "preparedSegmentCount", "preparationError", "supportsPrefetch", "isConnected"],
                 ServerTimestampFields = ["lastSeenAt"],
                 MustExist = true,
             });
@@ -1071,6 +1294,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         StartedAt = null;
         EndedAt = null;
         _localSegments = [];
+        CancelPrefetch();
+        _preparedLocalSegments.Clear();
+        PreparedLocalSegmentCount = 0;
+        PreparationStatus = "Not prepared";
+        PreparationError = null;
         _turnExecutionCancellation?.Cancel();
         _turnExecutionCancellation = null;
         _activeExecutionTurnId = null;

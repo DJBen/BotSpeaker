@@ -401,6 +401,32 @@ final class AppModel: ObservableObject {
         errorMessage = nil
     }
 
+    /// Warms the same persistent audio cache used by orchestrated playback
+    /// without touching the player or starting audio. When the turn is later
+    /// assigned, `playOrchestratedTurn` reads these clips from disk.
+    func prepareOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
+        let plans = SpeechTextChunker.chunks(for: turnText)
+        guard !plans.isEmpty else { throw AppError("The turn to prepare is empty.") }
+        guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
+            hasAPIKey = false
+            throw AppError("Add your ElevenLabs API key before preparing the meeting.")
+        }
+
+        for plan in plans {
+            try Task.checkCancellation()
+            _ = try await client.synthesize(
+                text: plan.text,
+                voiceID: voiceID,
+                modelID: modelID,
+                apiKey: apiKey,
+                previousText: plan.previousText,
+                nextText: plan.nextText,
+                cacheNamespace: cacheNamespace,
+                bypassCache: false
+            )
+        }
+    }
+
     func playOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
         let plans = SpeechTextChunker.chunks(for: turnText)
         guard !plans.isEmpty else { throw AppError("The assigned turn is empty.") }

@@ -22,11 +22,26 @@ Windows).
 5. On the host, arrange the speakers in the desired order and choose
    **Start Meeting**.
 
+As soon as a machine pairs, it generates and caches its first paragraph without
+loading the audio player. Prefetch-capable clients report this readiness to the
+host, and the Start button unlocks after their first turns are ready. Older
+clients can still join, but the host labels them as not supporting prefetch and
+does not wait on a readiness field they cannot provide.
+
 BotSpeaker splits each script at paragraph boundaries. Turns are scheduled in a
 round-robin sequence: each connected speaker delivers its next paragraph, then
 control passes to the next speaker. A very long paragraph is split at sentence
 boundaries. Local play, script-selection, and Space-key controls are locked
 while a machine is paired.
+
+During the meeting, every client keeps one local paragraph ahead of its most
+recently finished turn. The lookahead uses the exact same cache key, chunking,
+voice, model, and context as playback. When that paragraph is assigned, playback
+loads the prepared MP3 and timing data from disk rather than waiting on an
+ElevenLabs request. Prefetching never calls the audio player, so prepared speech
+cannot start before the host assigns its turn. Preparation failures appear in
+the speaker list and retry after a short delay; assigned playback still performs
+a final cache check before reporting failure.
 
 The host can pause or resume all clients, skip the current turn, stop the
 session, and close pairing after the expected speakers have joined. A client
@@ -91,7 +106,7 @@ it exits.
 
 `GoogleService-Info.plist` (macOS) and the `FirebaseConfig` constants in
 `Windows/BotSpeaker/FirestoreClient.cs` contain Firebase's public app
-configuration. It does not grant database access; anonymous authentication plus
+configuration. They do not grant database access; anonymous authentication plus
 `firestore.rules` enforce access.
 
 ## Operational notes

@@ -216,6 +216,23 @@ struct OrchestrationView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
+                                Label(
+                                    participantPreparationText(participant),
+                                    systemImage: participant.isFirstTurnPrepared
+                                        ? "checkmark.circle.fill"
+                                        : participant.preparationError == nil
+                                            ? "arrow.down.circle"
+                                            : "exclamationmark.triangle.fill"
+                                )
+                                .font(.caption2)
+                                .foregroundStyle(
+                                    participant.preparationError != nil
+                                        ? Color.red
+                                        : participant.isFirstTurnPrepared
+                                            ? Color.green
+                                            : Color.secondary
+                                )
+                                .lineLimit(1)
                             }
                             Spacer()
                             if controller.sessionStatus == .lobby {
@@ -356,7 +373,11 @@ struct OrchestrationView: View {
                     LabeledContent("Speaker", value: controller.speakerName)
                     LabeledContent("Script", value: model.selectedScript.title)
                     LabeledContent("Voice", value: model.selectedVoiceName)
-                    LabeledContent("Prepared turns", value: "\(OrchestrationScriptSegmenter.segments(for: model.selectedScript.text).count)")
+                    LabeledContent(
+                        "Prepared paragraphs",
+                        value: "\(controller.preparedLocalSegmentCount) of \(OrchestrationScriptSegmenter.segments(for: model.selectedScript.text).count)"
+                    )
+                    LabeledContent("Preparation", value: controller.preparationStatus)
                 }
                 .padding(8)
             }
@@ -368,6 +389,11 @@ struct OrchestrationView: View {
             }
 
             if let error = controller.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = controller.preparationError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -387,6 +413,15 @@ struct OrchestrationView: View {
     private var orderedParticipants: [OrchestrationParticipant] {
         let byID = Dictionary(uniqueKeysWithValues: controller.participants.map { ($0.id, $0) })
         return controller.participantOrder.compactMap { byID[$0] }
+    }
+
+    private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {
+        if !participant.supportsPrefetch { return "Prefetch unavailable on this client version" }
+        if let error = participant.preparationError { return "Preparation failed: \(error)" }
+        if participant.isFirstTurnPrepared {
+            return "\(participant.preparedSegmentCount) of \(participant.segmentCount) prepared"
+        }
+        return "Preparing first turn…"
     }
 
     private var statusPill: some View {

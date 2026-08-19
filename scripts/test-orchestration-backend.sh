@@ -111,12 +111,18 @@ create_participant() {
     --arg room "$ROOM_ID" \
     --arg code "$PAIRING_CODE" \
     --arg name "$name" \
-    '{writes:[{update:{name:$document,fields:{uid:{stringValue:$uid},roomID:{stringValue:$room},pairingCode:{stringValue:$code},displayName:{stringValue:$name},scriptTitle:{stringValue:"Integration script"},voiceName:{stringValue:"Integration voice"},segmentCount:{integerValue:"1"},status:{stringValue:"ready"},isConnected:{booleanValue:true}}},updateTransforms:[{fieldPath:"joinedAt",setToServerValue:"REQUEST_TIME"},{fieldPath:"lastSeenAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
+    '{writes:[{update:{name:$document,fields:{uid:{stringValue:$uid},roomID:{stringValue:$room},pairingCode:{stringValue:$code},displayName:{stringValue:$name},scriptTitle:{stringValue:"Integration script"},voiceName:{stringValue:"Integration voice"},segmentCount:{integerValue:"1"},preparedSegmentCount:{integerValue:"0"},preparationError:{stringValue:""},supportsPrefetch:{booleanValue:true},status:{stringValue:"preparing"},isConnected:{booleanValue:true}}},updateTransforms:[{fieldPath:"joinedAt",setToServerValue:"REQUEST_TIME"},{fieldPath:"lastSeenAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
   firestore_request "$token" POST "$COMMIT_URL" "$body" >/dev/null
 }
 
 create_participant "$HOST_TOKEN" "$HOST_UID" "Host"
 create_participant "$CLIENT_TOKEN" "$CLIENT_UID" "Remote speaker"
+
+CLIENT_PARTICIPANT="projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/orchestrationRooms/${ROOM_ID}/participants/${CLIENT_UID}"
+PREPARED_BODY="$(jq -n \
+  --arg document "$CLIENT_PARTICIPANT" \
+  '{writes:[{update:{name:$document,fields:{preparedSegmentCount:{integerValue:"1"},preparationError:{stringValue:""},status:{stringValue:"ready"}}},updateMask:{fieldPaths:["preparedSegmentCount","preparationError","status"]},updateTransforms:[{fieldPath:"lastSeenAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+firestore_request "$CLIENT_TOKEN" POST "$COMMIT_URL" "$PREPARED_BODY" >/dev/null
 
 firestore_request "$CLIENT_TOKEN" GET "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}" >/dev/null
 
@@ -164,4 +170,4 @@ TURN_RESULT="$(firestore_request "$HOST_TOKEN" GET "${FIRESTORE_ROOT}/orchestrat
 jq -e '.fields.status.stringValue == "speaking" and (.fields.startedAtServer.timestampValue | length > 0)' <<<"$TURN_RESULT" >/dev/null
 
 echo "Orchestration backend integration test passed."
-echo "Verified host authority, pairing, participant access, turn reporting, server timestamps, and unpaired-client denial."
+echo "Verified host authority, pairing, preparation readiness, participant access, turn reporting, server timestamps, and unpaired-client denial."

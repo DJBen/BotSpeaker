@@ -37,6 +37,8 @@ The repository and its release downloads are public.
 - Multi-machine meeting orchestration across macOS and Windows with host/client
   pairing, automatic round-robin speaker handoff, and host pause, resume, skip,
   and stop controls
+- Orchestration prefetching that prepares every client's first paragraph in the
+  lobby and keeps the following paragraph cached for smooth speaker transitions
 - Timestamped JSON transcript export with both playback-device and
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default

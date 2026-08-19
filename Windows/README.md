@@ -13,6 +13,8 @@ Feature parity with the macOS app:
 - Three read-only example meeting scripts plus named custom scripts with a separate editor window
 - Play, pause, stop, seek, and progress-aware text highlighting driven by ElevenLabs character timestamps
 - Persistent output-volume control applied before audio reaches the virtual cable
+- Cross-platform meeting orchestration with first-paragraph warm-up and
+  one-paragraph-ahead prefetching for smooth handoffs
 - Optional looping, disabled by default
 - Adaptive interruption detection (learns ambient level, pauses after 0.4 s of elevated input, resumes after 0.75 s near ambient)
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray

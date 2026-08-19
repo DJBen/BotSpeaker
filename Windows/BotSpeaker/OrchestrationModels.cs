@@ -105,6 +105,9 @@ public sealed record OrchestrationParticipant(
     string ScriptTitle,
     string VoiceName,
     int SegmentCount,
+    int PreparedSegmentCount,
+    string? PreparationError,
+    bool SupportsPrefetch,
     string Status,
     bool IsConnected,
     DateTime? LastSeenAt,
@@ -114,6 +117,8 @@ public sealed record OrchestrationParticipant(
         IsConnected
         && LastSeenAt is DateTime seen
         && DateTime.UtcNow - seen < TimeSpan.FromSeconds(90);
+
+    public bool IsFirstTurnPrepared => SegmentCount > 0 && PreparedSegmentCount > 0;
 }
 
 public sealed record OrchestrationTurn(

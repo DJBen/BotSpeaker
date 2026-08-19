@@ -22,6 +22,9 @@ final class OrchestrationController: ObservableObject {
     @Published private(set) var activeTurnIndex = -1
     @Published private(set) var startedAt: Date?
     @Published private(set) var endedAt: Date?
+    @Published private(set) var preparedLocalSegmentCount = 0
+    @Published private(set) var preparationStatus = "Not prepared"
+    @Published private(set) var preparationError: String?
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
 
@@ -42,6 +45,10 @@ final class OrchestrationController: ObservableObject {
     private var heartbeatTimer: AnyCancellable?
     private var playbackObservation: AnyCancellable?
     private var turnExecutionTask: Task<Void, Never>?
+    private var preparedLocalSegments: Set<Int> = []
+    private var prefetchSegmentIndex: Int?
+    private var prefetchTask: Task<Void, Error>?
+    private var prefetchObserverTask: Task<Void, Never>?
 
     init(model: AppModel) {
         self.model = model
@@ -75,9 +82,11 @@ final class OrchestrationController: ObservableObject {
     }
 
     var canStartMeeting: Bool {
-        isHost
+        let connected = participants.filter(\.isRecentlyConnected)
+        return isHost
             && sessionStatus == .lobby
-            && !participants.filter(\.isRecentlyConnected).isEmpty
+            && !connected.isEmpty
+            && connected.allSatisfy { !$0.supportsPrefetch || $0.isFirstTurnPrepared }
             && !isBusy
     }
 
@@ -396,7 +405,10 @@ final class OrchestrationController: ObservableObject {
             "scriptTitle": local.scriptTitle,
             "voiceName": local.voiceName,
             "segmentCount": local.segments.count,
-            "status": "ready",
+            "preparedSegmentCount": 0,
+            "preparationError": "",
+            "supportsPrefetch": true,
+            "status": "preparing",
             "isConnected": true,
             "joinedAt": FieldValue.serverTimestamp(),
             "lastSeenAt": FieldValue.serverTimestamp()
@@ -418,6 +430,10 @@ final class OrchestrationController: ObservableObject {
         localSegments = local.segments
         localScriptTitle = local.scriptTitle
         localVoiceName = local.voiceName
+        preparedLocalSegments = []
+        preparedLocalSegmentCount = 0
+        preparationStatus = "Preparing first turn…"
+        preparationError = nil
         participantOrder = []
         sessionStatus = .lobby
         previousSessionStatus = .lobby
@@ -426,6 +442,7 @@ final class OrchestrationController: ObservableObject {
         model?.activateRemoteControl(status: "Paired and waiting for the host")
         attachListeners(roomID: roomID)
         startHeartbeat(roomID: roomID)
+        scheduleNextPrefetch()
     }
 
     private func attachListeners(roomID: String) {
@@ -483,8 +500,10 @@ final class OrchestrationController: ObservableObject {
                 model?.pauseOrchestratedTurn()
             }
         case .completed:
+            cancelPrefetch()
             model?.updateRemoteControlStatus("Meeting completed")
         case .stopped:
+            cancelPrefetch()
             model?.updateRemoteControlStatus("Meeting stopped by the host")
             turnExecutionTask?.cancel()
             turnExecutionTask = nil
@@ -506,6 +525,9 @@ final class OrchestrationController: ObservableObject {
                 scriptTitle: scriptTitle,
                 voiceName: data["voiceName"] as? String ?? "Unknown voice",
                 segmentCount: data["segmentCount"] as? Int ?? 0,
+                preparedSegmentCount: data["preparedSegmentCount"] as? Int ?? 0,
+                preparationError: (data["preparationError"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                supportsPrefetch: data["supportsPrefetch"] as? Bool ?? false,
                 status: data["status"] as? String ?? "unknown",
                 isConnected: data["isConnected"] as? Bool ?? false,
                 lastSeenAt: Self.date(from: data["lastSeenAt"])
@@ -555,6 +577,7 @@ final class OrchestrationController: ObservableObject {
             )
         }
         maybeExecuteActiveTurn()
+        scheduleNextPrefetch()
         if isHost, let active = activeTurn, active.status.isTerminal {
             Task { await advanceAfterTerminalTurn(active) }
         }
@@ -594,9 +617,11 @@ final class OrchestrationController: ObservableObject {
                     ]
                 )
                 try await self.writeEvent(roomID: sessionID, turnID: turn.id, type: "preparing")
+                try await self.ensureLocalSegmentPrepared(turn.segmentIndex)
+                try Task.checkCancellation()
                 try await self.model?.playOrchestratedTurn(
                     text: text,
-                    cacheNamespace: "orchestration:\(self.localScriptTitle):\(turn.segmentIndex)"
+                    cacheNamespace: self.cacheNamespace(for: turn.segmentIndex)
                 )
             } catch is CancellationError {
                 return
@@ -604,6 +629,157 @@ final class OrchestrationController: ObservableObject {
                 await reportTurnFailure(turnID: turn.id, message: error.localizedDescription)
             }
         }
+    }
+
+    /// Makes paragraph zero ready in the lobby and immediately begins the next,
+    /// then maintains one full local paragraph beyond this speaker's most
+    /// recently finished turn. Prefetching
+    /// only writes ElevenLabs results to the persistent cache; it never touches
+    /// the audio player.
+    private func scheduleNextPrefetch() {
+        guard isActive, !localSegments.isEmpty, prefetchTask == nil else { return }
+
+        let lookaheadLimit: Int
+        if sessionStatus == .lobby || turns.isEmpty {
+            lookaheadLimit = min(1, localSegments.count - 1)
+        } else {
+            let mostRecentTerminalSegment = turns
+                .filter { $0.participantUID == userID && $0.status.isTerminal }
+                .map(\.segmentIndex)
+                .max() ?? -1
+            lookaheadLimit = min(mostRecentTerminalSegment + 2, localSegments.count - 1)
+        }
+
+        guard lookaheadLimit >= 0,
+              let segmentIndex = (0...lookaheadLimit).first(where: {
+                  !preparedLocalSegments.contains($0)
+              }) else { return }
+
+        startBackgroundPrefetch(segmentIndex)
+    }
+
+    private func startBackgroundPrefetch(_ segmentIndex: Int) {
+        guard localSegments.indices.contains(segmentIndex), prefetchTask == nil else { return }
+        preparationError = nil
+        preparationStatus = segmentIndex == 0
+            ? "Preparing first turn…"
+            : "Preloading paragraph \(segmentIndex + 1)…"
+        if sessionStatus == .lobby {
+            model?.updateRemoteControlStatus(preparationStatus)
+        }
+
+        let task = makePrefetchTask(segmentIndex: segmentIndex)
+        prefetchSegmentIndex = segmentIndex
+        prefetchTask = task
+        prefetchObserverTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await task.value
+                guard self.prefetchSegmentIndex == segmentIndex else { return }
+                self.clearPrefetchTask()
+                self.scheduleNextPrefetch()
+            } catch is CancellationError {
+                if self.prefetchSegmentIndex == segmentIndex {
+                    self.clearPrefetchTask()
+                }
+            } catch {
+                guard self.prefetchSegmentIndex == segmentIndex else { return }
+                self.clearPrefetchTask()
+                self.preparationError = error.localizedDescription
+                self.preparationStatus = "Preparation failed; retrying…"
+                await self.publishPreparationState(error: error.localizedDescription)
+                try? await Task.sleep(for: .seconds(12))
+                guard !Task.isCancelled, self.isActive else { return }
+                self.scheduleNextPrefetch()
+            }
+        }
+    }
+
+    private func ensureLocalSegmentPrepared(_ segmentIndex: Int) async throws {
+        guard localSegments.indices.contains(segmentIndex) else {
+            throw AppError("The assigned paragraph is unavailable on this Mac.")
+        }
+        if preparedLocalSegments.contains(segmentIndex) { return }
+
+        if prefetchSegmentIndex == segmentIndex, let prefetchTask {
+            try await prefetchTask.value
+            return
+        }
+
+        cancelPrefetch()
+        preparationStatus = "Preparing paragraph \(segmentIndex + 1)…"
+        let task = makePrefetchTask(segmentIndex: segmentIndex)
+        prefetchSegmentIndex = segmentIndex
+        prefetchTask = task
+        do {
+            try await task.value
+            clearPrefetchTask()
+            scheduleNextPrefetch()
+        } catch {
+            clearPrefetchTask()
+            throw error
+        }
+    }
+
+    private func makePrefetchTask(segmentIndex: Int) -> Task<Void, Error> {
+        let text = localSegments[segmentIndex]
+        let namespace = cacheNamespace(for: segmentIndex)
+        return Task { [weak self] in
+            guard let self, let model = self.model else { throw CancellationError() }
+            try await model.prepareOrchestratedTurn(text: text, cacheNamespace: namespace)
+            try Task.checkCancellation()
+            self.markLocalSegmentPrepared(segmentIndex)
+        }
+    }
+
+    private func markLocalSegmentPrepared(_ segmentIndex: Int) {
+        preparedLocalSegments.insert(segmentIndex)
+        var contiguousCount = 0
+        while preparedLocalSegments.contains(contiguousCount) {
+            contiguousCount += 1
+        }
+        preparedLocalSegmentCount = contiguousCount
+        preparationError = nil
+        preparationStatus = contiguousCount == localSegments.count
+            ? "All paragraphs prepared"
+            : "\(contiguousCount) paragraph\(contiguousCount == 1 ? "" : "s") prepared"
+        if sessionStatus == .lobby {
+            model?.updateRemoteControlStatus(
+                contiguousCount > 0 ? "First turn ready; waiting for the host" : preparationStatus
+            )
+        }
+        Task { await publishPreparationState(error: nil) }
+    }
+
+    private func publishPreparationState(error: String?) async {
+        guard let sessionID, let uid = userID else { return }
+        var data: [String: Any] = [
+            "preparedSegmentCount": preparedLocalSegmentCount,
+            "status": preparedLocalSegmentCount > 0 ? "ready" : "preparing",
+            "lastSeenAt": FieldValue.serverTimestamp()
+        ]
+        data["preparationError"] = error ?? ""
+        do {
+            try await participantReference(roomID: sessionID, uid: uid).updateData(data)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func cacheNamespace(for segmentIndex: Int) -> String {
+        "orchestration:\(localScriptTitle):\(segmentIndex)"
+    }
+
+    private func clearPrefetchTask() {
+        prefetchTask = nil
+        prefetchSegmentIndex = nil
+        prefetchObserverTask = nil
+    }
+
+    private func cancelPrefetch() {
+        prefetchObserverTask?.cancel()
+        prefetchTask?.cancel()
+        clearPrefetchTask()
     }
 
     private func playbackDidStart() {
@@ -758,7 +934,10 @@ final class OrchestrationController: ObservableObject {
                 guard let self, let uid = self.userID else { return }
                 Task {
                     try? await self.participantReference(roomID: roomID, uid: uid).updateData([
-                        "status": "ready",
+                        "status": self.preparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                        "preparedSegmentCount": self.preparedLocalSegmentCount,
+                        "preparationError": self.preparationError ?? "",
+                        "supportsPrefetch": true,
                         "isConnected": true,
                         "lastSeenAt": FieldValue.serverTimestamp()
                     ])
@@ -796,6 +975,11 @@ final class OrchestrationController: ObservableObject {
         startedAt = nil
         endedAt = nil
         localSegments = []
+        cancelPrefetch()
+        preparedLocalSegments = []
+        preparedLocalSegmentCount = 0
+        preparationStatus = "Not prepared"
+        preparationError = nil
         turnExecutionTask?.cancel()
         turnExecutionTask = nil
         activeExecutionTurnID = nil
