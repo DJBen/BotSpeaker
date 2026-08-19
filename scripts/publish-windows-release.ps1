@@ -26,13 +26,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Arguments are taken as one explicit array rather than remaining arguments:
+# under Windows PowerShell 5.1 the implied CmdletBinding makes pass-through
+# flags like -o ambiguous against common parameters (-OutVariable, -OutBuffer).
 function Invoke-CheckedCommand {
     param(
-        [Parameter(Mandatory = $true)]
         [string] $Command,
-
-        [Parameter(ValueFromRemainingArguments = $true)]
-        [string[]] $Arguments
+        [string[]] $Arguments = @()
     )
 
     & $Command @Arguments
@@ -61,7 +61,7 @@ if (-not $CertificateThumbprint -and -not $AllowUnsigned) {
     throw 'No -CertificateThumbprint given. Pass -AllowUnsigned to explicitly publish an unsigned build.'
 }
 
-Invoke-CheckedCommand gh auth status
+Invoke-CheckedCommand gh @('auth', 'status')
 
 $RepoRoot = (& git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $RepoRoot) {
@@ -90,10 +90,12 @@ try {
         Remove-Item -Recurse -Force $PublishDirectory
     }
 
-    Invoke-CheckedCommand $Dotnet publish (Join-Path $RepoRoot 'Windows\BotSpeaker') `
-        -c Release -r win-x64 --self-contained true `
-        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-        -o $PublishDirectory -nologo
+    Invoke-CheckedCommand $Dotnet @(
+        'publish', (Join-Path $RepoRoot 'Windows\BotSpeaker'),
+        '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
+        '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+        '-o', $PublishDirectory, '-nologo'
+    )
 
     $ExePath = Join-Path $PublishDirectory 'BotSpeaker.exe'
     if (-not (Test-Path -LiteralPath $ExePath)) {
@@ -104,8 +106,10 @@ try {
         if (-not (Get-Command signtool -ErrorAction SilentlyContinue)) {
             throw 'signtool is required for signing. Install the Windows SDK or add signtool to PATH.'
         }
-        Invoke-CheckedCommand signtool sign /sha1 $CertificateThumbprint /fd SHA256 `
-            /tr http://timestamp.digicert.com /td SHA256 $ExePath
+        Invoke-CheckedCommand signtool @(
+            'sign', '/sha1', $CertificateThumbprint, '/fd', 'SHA256',
+            '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $ExePath
+        )
         $Signature = Get-AuthenticodeSignature -LiteralPath $ExePath
         if ($Signature.Status -ne 'Valid') {
             throw "Signing failed; Authenticode status is $($Signature.Status)."
@@ -135,15 +139,17 @@ try {
         if ($LASTEXITCODE -ne 0) {
             & git show-ref --verify --quiet "refs/tags/$Tag"
             if ($LASTEXITCODE -ne 0) {
-                Invoke-CheckedCommand git tag -a $Tag -m "BotSpeaker $Version"
+                Invoke-CheckedCommand git @('tag', '-a', $Tag, '-m', "BotSpeaker $Version")
             }
-            Invoke-CheckedCommand git push origin $Tag
+            Invoke-CheckedCommand git @('push', 'origin', $Tag)
         }
 
-        Invoke-CheckedCommand gh release create $Tag `
-            --verify-tag `
-            --title "BotSpeaker $Version" `
-            --notes 'Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.'
+        Invoke-CheckedCommand gh @(
+            'release', 'create', $Tag,
+            '--verify-tag',
+            '--title', "BotSpeaker $Version",
+            '--notes', 'Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.'
+        )
     }
 
     & git fetch --quiet origin "refs/tags/$Tag`:refs/tags/$Tag" 2> $null
@@ -167,7 +173,7 @@ try {
         }
     }
 
-    Invoke-CheckedCommand gh release upload $Tag $ZipPath $ChecksumPath
+    Invoke-CheckedCommand gh @('release', 'upload', $Tag, $ZipPath, $ChecksumPath)
     Write-Host "Published $ZipName and its checksum to GitHub release $Tag."
 }
 finally {
