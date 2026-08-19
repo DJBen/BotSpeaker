@@ -7,6 +7,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 
 namespace BotSpeaker;
 
@@ -24,6 +25,8 @@ public partial class MainWindow : Window
     private string _renderedText = "";
     private int _renderedPlayed = -1;
     private TextSpan? _renderedActive;
+    private Run? _renderedActiveRun;
+    private ScrollViewer? _scriptScroller;
 
     public MainWindow(AppModel model)
     {
@@ -219,6 +222,7 @@ public partial class MainWindow : Window
         int played = Math.Min(_model.Player.PlayedTextLength, text.Length);
         TextSpan? active = _model.Player.ActiveTextRange;
         if (text == _renderedText && played == _renderedPlayed && active == _renderedActive) return;
+        bool textChanged = text != _renderedText;
         _renderedText = text;
         _renderedPlayed = played;
         _renderedActive = active;
@@ -273,8 +277,47 @@ public partial class MainWindow : Window
             FontSize = 13,
             PagePadding = new Thickness(0),
         };
+
+        // Replacing the document resets the scroll position, so decide first
+        // whether the reader was following the highlight. Follow it only while
+        // it is already on screen; a manual scroll elsewhere sticks until the
+        // highlight is scrolled back into view. A new script starts at the top.
+        var scroller = ScriptScroller;
+        bool follow = scroller is null || IsRunVisible(_renderedActiveRun, scroller);
+        double offset = scroller?.VerticalOffset ?? 0;
         ScriptViewer.Document = document;
-        activeRun?.BringIntoView();
+        _renderedActiveRun = activeRun;
+        if (textChanged) return;
+        if (follow && activeRun is not null)
+        {
+            activeRun.BringIntoView();
+        }
+        else if (scroller is not null)
+        {
+            scroller.Dispatcher.BeginInvoke(
+                DispatcherPriority.Loaded,
+                new Action(() => scroller.ScrollToVerticalOffset(offset)));
+        }
+    }
+
+    private ScrollViewer? ScriptScroller
+    {
+        get
+        {
+            if (_scriptScroller is null)
+            {
+                ScriptViewer.ApplyTemplate();
+                _scriptScroller = ScriptViewer.Template?.FindName("PART_ContentHost", ScriptViewer) as ScrollViewer;
+            }
+            return _scriptScroller;
+        }
+    }
+
+    private static bool IsRunVisible(Run? run, ScrollViewer scroller)
+    {
+        if (run is null) return true;
+        var rect = run.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+        return !rect.IsEmpty && rect.Bottom > 0 && rect.Top < scroller.ViewportHeight;
     }
 
     private static string FormatTime(double seconds)
