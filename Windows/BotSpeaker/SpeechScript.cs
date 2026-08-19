@@ -18,8 +18,10 @@ public sealed class CustomSpeechScript
     public string? Detail { get; set; }
 }
 
+public sealed record ExampleScenario(string Id, string Title, IReadOnlyList<ExampleExcerpt> Excerpts);
+
 /// <summary>
-/// A role-specific script from one shared incident-review scenario. Built-in
+/// A role-specific script from a coordinated meeting scenario. Built-in
 /// scripts are templates: {{name}} is resolved once when a user creates a
 /// named copy, so playback and caching never depend on mutable profile data.
 /// </summary>
@@ -36,8 +38,25 @@ public sealed record ExampleExcerpt(string Id, string Role, string Meeting, stri
     public static readonly ExampleExcerpt IncidentSupportLead = Load(
         "incident-review-support-lead", "Customer Support Lead", "Authentication incident review");
 
+    public static readonly ExampleExcerpt LaunchProductManager = Load(
+        "meeting-assistant-launch-product-manager", "Product Manager", "AI meeting assistant launch readiness");
+    public static readonly ExampleExcerpt LaunchEngineeringLead = Load(
+        "meeting-assistant-launch-engineering-lead", "Engineering Lead", "AI meeting assistant launch readiness");
+    public static readonly ExampleExcerpt LaunchPrivacyLead = Load(
+        "meeting-assistant-launch-privacy-lead", "Privacy & Security Lead", "AI meeting assistant launch readiness");
+    public static readonly ExampleExcerpt LaunchCustomerSuccessLead = Load(
+        "meeting-assistant-launch-customer-success-lead", "Customer Success Lead", "AI meeting assistant launch readiness");
+
+    public static readonly IReadOnlyList<ExampleScenario> Scenarios =
+    [
+        new("authentication-incident-review", "Authentication incident review",
+            [IncidentManager, IncidentTechnicalLead, IncidentSupportLead]),
+        new("meeting-assistant-launch-readiness", "AI meeting assistant launch readiness",
+            [LaunchProductManager, LaunchEngineeringLead, LaunchPrivacyLead, LaunchCustomerSuccessLead]),
+    ];
+
     public static readonly IReadOnlyList<ExampleExcerpt> All =
-        [IncidentManager, IncidentTechnicalLead, IncidentSupportLead];
+        Scenarios.SelectMany(s => s.Excerpts).ToList();
 
     private static ExampleExcerpt Load(string id, string role, string meeting)
     {

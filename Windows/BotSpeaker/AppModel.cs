@@ -47,6 +47,8 @@ public sealed class AppModel : INotifyPropertyChanged
     public List<SpeechScript> BundledScripts { get; } =
         ExampleExcerpt.All.Select(e => e.SpeechScript).ToList();
 
+    public IReadOnlyList<ExampleScenario> BundledScriptGroups => ExampleExcerpt.Scenarios;
+
     public List<SpeechScript> AvailableScripts =>
         BundledScripts.Concat(CustomScripts.Select(c =>
             new SpeechScript($"custom:{c.Id}", c.Title, c.Detail ?? "Custom script", c.Text, c.Id))).ToList();
@@ -302,7 +304,7 @@ public sealed class AppModel : INotifyPropertyChanged
         var template = SelectedScript;
         if (template.IsCustom)
         {
-            throw new AppException("Choose an incident-review role template first.");
+            throw new AppException("Choose a role template first.");
         }
         var name = speakerName.Trim();
         if (name.Length == 0) throw new AppException("Enter the speaker's name.");

@@ -22,8 +22,7 @@
                 <Border Background="#0D808080" CornerRadius="8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="6">
-                            <TextBlock Text="ROLE TEMPLATES" FontSize="10" FontWeight="Bold" Foreground="Gray"
-                                       Margin="6,6,0,4"/>
+                            <!-- Scenario section headers are generated alongside the template rows. -->
                             <ListBox x:Name="TemplateList" BorderThickness="0" Background="Transparent"
                                      SelectionChanged="OnTemplateListSelected"/>
                             <TextBlock Text="MY SCRIPTS" FontSize="10" FontWeight="Bold" Foreground="Gray"

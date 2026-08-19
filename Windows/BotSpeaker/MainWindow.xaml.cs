@@ -285,14 +285,40 @@ public partial class MainWindow : Window
 
     private void UpdateSidebar()
     {
-        var bundled = _model.BundledScripts;
-        TemplateList.ItemsSource = bundled.Select(s => BuildSidebarItem(s, isTemplate: true)).ToList();
-        TemplateList.SelectedIndex = bundled.FindIndex(s => s.Id == _model.SelectedScriptId);
+        var templateItems = new List<ListBoxItem>();
+        var isFirstScenario = true;
+        foreach (var scenario in _model.BundledScriptGroups)
+        {
+            templateItems.Add(BuildSidebarHeader(scenario.Title, isFirstScenario));
+            templateItems.AddRange(scenario.Excerpts.Select(e => BuildSidebarItem(e.SpeechScript, isTemplate: true)));
+            isFirstScenario = false;
+        }
+        TemplateList.ItemsSource = templateItems;
+        TemplateList.SelectedItem = templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
 
         var custom = _model.PlayableScripts;
         CustomList.ItemsSource = custom.Select(s => BuildSidebarItem(s, isTemplate: false)).ToList();
         CustomList.SelectedIndex = custom.FindIndex(s => s.Id == _model.SelectedScriptId);
         CustomEmptyHint.Visibility = custom.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static ListBoxItem BuildSidebarHeader(string title, bool isFirstScenario)
+    {
+        return new ListBoxItem
+        {
+            IsEnabled = false,
+            Focusable = false,
+            Padding = new Thickness(0),
+            Margin = new Thickness(4, isFirstScenario ? 4 : 12, 0, 2),
+            Content = new TextBlock
+            {
+                Text = title.ToUpperInvariant(),
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Gray,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            },
+        };
     }
 
     private ListBoxItem BuildSidebarItem(SpeechScript script, bool isTemplate)
