@@ -20,6 +20,9 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>Raised when playback reaches the end of a fully generated, non-looping sequence.</summary>
+    public event Action? PlaybackFinished;
+
     private bool _isPlaying;
     public bool IsPlaying { get => _isPlaying; private set => Set(ref _isPlaying, value); }
 
@@ -410,6 +413,7 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         _playRequested = false;
         _timer.Stop();
         UpdateTextProgress();
+        if (!IsLooping) PlaybackFinished?.Invoke();
     }
 
     private void DisposeOutput()

@@ -32,6 +32,12 @@ public sealed class AppModel : INotifyPropertyChanged
     private string? _voiceLoadError;
     public string? VoiceLoadError { get => _voiceLoadError; private set => Set(ref _voiceLoadError, value); }
 
+    private bool _isRemoteControlled;
+    public bool IsRemoteControlled { get => _isRemoteControlled; private set => Set(ref _isRemoteControlled, value); }
+
+    private string _remoteControlStatus = "";
+    public string RemoteControlStatus { get => _remoteControlStatus; private set => Set(ref _remoteControlStatus, value); }
+
     public AudioPlaybackController Player { get; } = new();
     public AudioDeviceManager Devices { get; } = new();
     public InterruptionMonitor InterruptionMonitor { get; } = new();
@@ -244,6 +250,7 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public void SelectScript(string id)
     {
+        if (IsRemoteControlled) return;
         if (id == SelectedScriptId) return;
         var script = AvailableScripts.FirstOrDefault(s => s.Id == id);
         if (script is null) return;
@@ -366,7 +373,130 @@ public sealed class AppModel : INotifyPropertyChanged
         return SelectedScript;
     }
 
-    public async Task PrimaryActionAsync() => await GenerateOrToggleAsync(forceRegenerate: false);
+    public async Task PrimaryActionAsync()
+    {
+        if (IsRemoteControlled)
+        {
+            ErrorMessage = "Playback is controlled by the meeting host.";
+            return;
+        }
+        await GenerateOrToggleAsync(forceRegenerate: false);
+    }
+
+    public void ActivateRemoteControl(string status)
+    {
+        IsRemoteControlled = true;
+        RemoteControlStatus = status;
+        Settings.LoopEnabled = false;
+        Settings.Save();
+        Player.IsLooping = false;
+        Notify(nameof(LoopEnabled));
+        ErrorMessage = null;
+    }
+
+    public void UpdateRemoteControlStatus(string status)
+    {
+        if (!IsRemoteControlled) return;
+        RemoteControlStatus = status;
+    }
+
+    public void DeactivateRemoteControl()
+    {
+        StopOrchestratedTurn();
+        IsRemoteControlled = false;
+        RemoteControlStatus = "";
+        Text = SelectedScript.Text;
+        ErrorMessage = null;
+    }
+
+    /// <summary>
+    /// Generates and plays one orchestrated meeting turn, returning after the
+    /// audio has been fully generated and queued. Playback completion is
+    /// reported through <see cref="AudioPlaybackController.PlaybackFinished"/>.
+    /// </summary>
+    public async Task PlayOrchestratedTurnAsync(string turnText, string cacheNamespace, CancellationToken cancellation)
+    {
+        var plans = SpeechTextChunker.Chunks(turnText);
+        if (plans.Count == 0) throw new AppException("The assigned turn is empty.");
+        var apiKey = _credentials.Read();
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            HasApiKey = false;
+            throw new AppException("Add your ElevenLabs API key in Settings.");
+        }
+        if (string.IsNullOrEmpty(SelectedDeviceId))
+        {
+            throw new AppException("Choose an audio output in Settings.");
+        }
+
+        CancelGeneration(resetPlayer: true);
+        Player.SelectOutputDevice(SelectedDeviceId);
+        Text = turnText;
+        Player.IsLooping = false;
+        Player.BeginSequence(plans.Count);
+        _currentSpeechSignature = $"orchestration|{cacheNamespace}|{VoiceId}|{ModelId}|{turnText}";
+        IsGenerating = true;
+        var taskId = Guid.NewGuid();
+        _generationId = taskId;
+
+        try
+        {
+            foreach (var plan in plans)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                var clip = await _client.SynthesizeAsync(
+                    plan.Text, VoiceId, ModelId, apiKey,
+                    plan.PreviousText, plan.NextText,
+                    cacheNamespace, bypassCache: false, cancellation);
+                cancellation.ThrowIfCancellationRequested();
+                if (_generationId != taskId) throw new OperationCanceledException();
+                Player.Append(clip.AudioPath, clip.Timing, plan.SourceRange);
+            }
+            if (_generationId != taskId) throw new OperationCanceledException();
+            Player.FinishSequence();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            if (_generationId == taskId)
+            {
+                Player.FinishSequence();
+                Player.Stop();
+                ErrorMessage = error.Message;
+            }
+            throw;
+        }
+        finally
+        {
+            if (_generationId == taskId)
+            {
+                IsGenerating = false;
+            }
+        }
+    }
+
+    public void PauseOrchestratedTurn()
+    {
+        if (!IsRemoteControlled) return;
+        Player.Pause();
+    }
+
+    public void ResumeOrchestratedTurn()
+    {
+        if (!IsRemoteControlled) return;
+        Player.Play();
+    }
+
+    public void StopOrchestratedTurn()
+    {
+        CancelGeneration(resetPlayer: false);
+        Player.FinishSequence();
+        Player.Stop();
+        _currentSpeechSignature = null;
+    }
 
     public async Task RegenerateAsync() => await GenerateOrToggleAsync(forceRegenerate: true);
 

@@ -42,8 +42,16 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                     <Button x:Name="SettingsButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                    <Button x:Name="OrchestratorButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                            Content="👥" FontSize="16" ToolTip="Meeting Orchestrator" Margin="0,0,6,0"
+                            Click="OnOrchestratorClick"/>
                     <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
                 </DockPanel>
+
+                <!-- Remote-control banner -->
+                <TextBlock x:Name="RemoteControlBanner" DockPanel.Dock="Top" FontSize="11"
+                           Foreground="#FF2E6BD6" Visibility="Collapsed" Margin="0,0,0,8"
+                           TextTrimming="CharacterEllipsis"/>
 
                 <!-- Script card -->
                 <Border DockPanel.Dock="Top" Background="#14808080" CornerRadius="9" Padding="10" Margin="0,0,0,10">

@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         // Space toggles play/pause while the window is foregrounded, unless the user
         // is typing in an editable field or operating a control that consumes space.
         if (e.Key != Key.Space || !_model.HasApiKey) return;
+        if (_model.IsRemoteControlled) return;
         if (!_model.SelectedScript.IsCustom) return;
         var focused = Keyboard.FocusedElement;
         if (focused is PasswordBox) return;
@@ -136,6 +137,17 @@ public partial class MainWindow : Window
             DeviceDot.Fill = _model.SelectedDeviceAvailable ? Brushes.LimeGreen : Brushes.Orange;
             DeviceName.Text = _model.SelectedDeviceName;
 
+            // Local controls lock while this PC is paired to a meeting orchestrator.
+            bool remote = _model.IsRemoteControlled;
+            RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
+            RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
+            TemplateList.IsEnabled = !remote;
+            CustomList.IsEnabled = !remote;
+            AddScriptButton.IsEnabled = !remote;
+            VoiceCombo.IsEnabled = VoiceCombo.IsEnabled && !remote;
+            RefreshVoicesButton.IsEnabled = !remote && !_model.IsLoadingVoices;
+            PlaybackOptionsButton.IsEnabled = !remote;
+
             UpdatePlayback();
         }
         finally
@@ -150,18 +162,19 @@ public partial class MainWindow : Window
         _suppressUiEvents = true;
         try
         {
-            StopButton.IsEnabled = player.HasAudio || _model.IsGenerating;
+            bool remote = _model.IsRemoteControlled;
+            StopButton.IsEnabled = !remote && (player.HasAudio || _model.IsGenerating);
             bool textEmpty = _model.Text.Trim().Length == 0;
             // Stay clickable while generating: hitting it during "Preparing…" or
             // "Buffering…" toggles the pending autoplay off (and back on).
-            PlayButton.IsEnabled = !textEmpty;
+            PlayButton.IsEnabled = !remote && !textEmpty;
             PlayButton.Content = player.IsBuffering
                 ? (player.HasAudio ? "Buffering…" : "Preparing…")
                 : player.IsPlaying ? "⏸ Pause"
                 : "▶ Play";
-            RegenerateButton.IsEnabled = !textEmpty;
+            RegenerateButton.IsEnabled = !remote && !textEmpty;
 
-            ProgressSlider.IsEnabled = player.HasAudio;
+            ProgressSlider.IsEnabled = !remote && player.HasAudio;
             ProgressSlider.Maximum = Math.Max(player.Duration, 0.01);
             if (!_isScrubbing)
             {
@@ -272,6 +285,9 @@ public partial class MainWindow : Window
     }
 
     // Event handlers
+
+    private void OnOrchestratorClick(object sender, RoutedEventArgs e) =>
+        ((App)Application.Current).ShowOrchestrationWindow();
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
