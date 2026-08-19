@@ -43,6 +43,8 @@ final class OrchestrationController: ObservableObject {
     private var participantsListener: ListenerRegistration?
     private var turnsListener: ListenerRegistration?
     private var heartbeatTimer: AnyCancellable?
+    private var executionWatchdogTimer: AnyCancellable?
+    private var orchestrationActivity: NSObjectProtocol?
     private var playbackObservation: AnyCancellable?
     private var turnExecutionTask: Task<Void, Never>?
     private var preparedLocalSegments: Set<Int> = []
@@ -440,8 +442,10 @@ final class OrchestrationController: ObservableObject {
         pairingOpen = true
         errorMessage = nil
         model?.activateRemoteControl(status: "Paired and waiting for the host")
+        beginOrchestrationActivity()
         attachListeners(roomID: roomID)
         startHeartbeat(roomID: roomID)
+        startExecutionWatchdog()
         scheduleNextPrefetch()
     }
 
@@ -501,9 +505,13 @@ final class OrchestrationController: ObservableObject {
             }
         case .completed:
             cancelPrefetch()
+            stopExecutionWatchdog()
+            endOrchestrationActivity()
             model?.updateRemoteControlStatus("Meeting completed")
         case .stopped:
             cancelPrefetch()
+            stopExecutionWatchdog()
+            endOrchestrationActivity()
             model?.updateRemoteControlStatus("Meeting stopped by the host")
             turnExecutionTask?.cancel()
             turnExecutionTask = nil
@@ -945,6 +953,42 @@ final class OrchestrationController: ObservableObject {
             }
     }
 
+    /// A paired follower must continue reacting to Firestore assignments while
+    /// all of its windows are inactive. This scoped activity prevents App Nap
+    /// from suspending the listener and speech-preparation tasks mid-meeting.
+    private func beginOrchestrationActivity() {
+        endOrchestrationActivity()
+        orchestrationActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+            reason: "Keep a paired BotSpeaker client responsive to meeting turns"
+        )
+    }
+
+    private func endOrchestrationActivity() {
+        guard let orchestrationActivity else { return }
+        ProcessInfo.processInfo.endActivity(orchestrationActivity)
+        self.orchestrationActivity = nil
+    }
+
+    /// Snapshot listeners normally trigger execution immediately. The common-
+    /// mode timer also reconciles the local assignment state if a notification
+    /// arrives during an AppKit mode transition or while the app is inactive.
+    private func startExecutionWatchdog() {
+        executionWatchdogTimer?.cancel()
+        executionWatchdogTimer = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.maybeExecuteActiveTurn()
+                self.scheduleNextPrefetch()
+            }
+    }
+
+    private func stopExecutionWatchdog() {
+        executionWatchdogTimer?.cancel()
+        executionWatchdogTimer = nil
+    }
+
     private func performBusyOperation(_ operation: @escaping () async throws -> Void) async {
         guard !isBusy else { return }
         isBusy = true
@@ -961,6 +1005,8 @@ final class OrchestrationController: ObservableObject {
         removeListeners()
         heartbeatTimer?.cancel()
         heartbeatTimer = nil
+        stopExecutionWatchdog()
+        endOrchestrationActivity()
         model?.deactivateRemoteControl()
         activeMode = nil
         sessionID = nil
