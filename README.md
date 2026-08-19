@@ -34,6 +34,10 @@ The repository and its release downloads are public.
 - Side-by-side script library and playback workspace, plus named custom scripts
 - Play, pause, stop, seek, and progress-aware text highlighting
 - Persistent output-volume control applied before audio reaches the virtual device
+- Multi-Mac meeting orchestration with host/client pairing, automatic round-robin
+  speaker handoff, and host pause, resume, skip, and stop controls
+- Timestamped JSON transcript export with both playback-device and
+  server-received start/end times for every speaker turn
 - Optional looping, disabled by default
 - Adaptive interruption detection that:
   - learns the selected input's ambient level;
@@ -100,6 +104,20 @@ BlackHole is silent through local speakers by default. To monitor BotSpeaker loc
 4. Select a script and ElevenLabs voice, then press **Play**.
 
 See [Windows/README.md](Windows/README.md) for monitoring and storage details.
+
+## Orchestrate multiple Macs
+
+Open **Meeting Orchestrator** from the people icon in the BotSpeaker header. One
+Mac hosts a room and displays a six-character pairing code; the other Macs join
+as remote speakers. The host orders the participants and starts the session,
+after which BotSpeaker hands paragraph-level turns between laptops
+automatically. When the session completes, the host can export a JSON transcript
+with exact per-speaker playback and server-received timestamps.
+
+Each participating Mac needs its own playable script, voice, ElevenLabs API key,
+and virtual-audio output configuration. See the
+[meeting orchestration guide](docs/orchestration.md) for setup, privacy, protocol,
+and transcript details.
 
 ## Interruption handling
 

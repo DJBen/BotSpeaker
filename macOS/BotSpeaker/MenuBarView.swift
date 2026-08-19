@@ -61,6 +61,7 @@ struct MainWindowView: View {
         }
         .onKeyPress(.space) {
             guard model.hasAPIKey,
+                  !model.isRemoteControlled,
                   model.selectedScript.isCustom,
                   !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !(model.isGenerating && !model.player.hasAudio) else {
@@ -121,6 +122,7 @@ private struct ScriptLibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .disabled(model.isRemoteControlled)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onAdd) {
@@ -206,6 +208,11 @@ struct ComposerView: View {
                 Label("Bot Speaker", systemImage: "waveform")
                     .font(.headline)
                 Spacer()
+                Button { openWindow(id: "orchestrator") } label: {
+                    Image(systemName: "person.3.sequence")
+                }
+                .buttonStyle(.plain)
+                .help("Meeting Orchestrator")
                 SettingsLink { Image(systemName: "gearshape") }
                     .buttonStyle(.plain)
                     .help("Settings")
@@ -225,6 +232,13 @@ struct ComposerView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            }
+
+            if model.isRemoteControlled {
+                Label(model.remoteControlStatus, systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             VoicePicker(model: model)
@@ -380,6 +394,7 @@ struct ComposerView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .help("Choose a saved script")
+                .disabled(model.isRemoteControlled)
             }
         }
         .padding(10)
@@ -399,7 +414,7 @@ struct ComposerView: View {
                     if !editing { try? player.seek(to: sliderValue) }
                 }
             )
-            .disabled(!player.hasAudio)
+            .disabled(model.isRemoteControlled || !player.hasAudio)
 
             HStack {
                 Text(TimeDisplay.format(isScrubbing ? sliderValue : player.currentTime))
@@ -414,7 +429,7 @@ struct ComposerView: View {
     private var playbackControls: some View {
         HStack(spacing: 12) {
             Button { model.stop() } label: { Image(systemName: "stop.fill") }
-                .disabled(!player.hasAudio && !model.isGenerating)
+                .disabled(model.isRemoteControlled || (!player.hasAudio && !model.isGenerating))
 
             Button {
                 Task { await model.primaryAction() }
@@ -472,11 +487,13 @@ struct ComposerView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("Playback options")
+            .disabled(model.isRemoteControlled)
         }
     }
 
     private var playbackDisabled: Bool {
         !model.selectedScript.isCustom ||
+        model.isRemoteControlled ||
         (model.isGenerating && !player.hasAudio) ||
         model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -598,6 +615,7 @@ struct VoicePicker: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(model.isRemoteControlled)
             }
 
             Button { Task { await model.refreshVoices() } } label: {
@@ -605,7 +623,7 @@ struct VoicePicker: View {
             }
             .buttonStyle(.plain)
             .help("Refresh ElevenLabs voices")
-            .disabled(model.isLoadingVoices)
+            .disabled(model.isRemoteControlled || model.isLoadingVoices)
         }
 
         if let error = model.voiceLoadError {

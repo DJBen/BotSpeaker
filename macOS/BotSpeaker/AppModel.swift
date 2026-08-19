@@ -16,6 +16,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var voices: [ElevenLabsVoice] = []
     @Published private(set) var isLoadingVoices = false
     @Published private(set) var voiceLoadError: String?
+    @Published private(set) var isRemoteControlled = false
+    @Published private(set) var remoteControlStatus = ""
     /// Result of the most recent manual device refresh, shown next to the refresh button.
     @Published private(set) var deviceRefreshFeedback: String?
 
@@ -227,7 +229,8 @@ final class AppModel: ObservableObject {
     }
 
     func selectScript(id: String) {
-        guard id != selectedScriptID,
+        guard !isRemoteControlled,
+              id != selectedScriptID,
               let script = availableScripts.first(where: { $0.id == id }) else { return }
         cancelGeneration(resetPlayer: true)
         currentSpeechSignature = nil
@@ -370,7 +373,105 @@ final class AppModel: ObservableObject {
     }
 
     func primaryAction() async {
+        guard !isRemoteControlled else {
+            errorMessage = "Playback is controlled by the meeting host."
+            return
+        }
         await generateOrToggle(forceRegenerate: false)
+    }
+
+    func activateRemoteControl(status: String) {
+        isRemoteControlled = true
+        remoteControlStatus = status
+        loopEnabled = false
+        player.isLooping = false
+        errorMessage = nil
+    }
+
+    func updateRemoteControlStatus(_ status: String) {
+        guard isRemoteControlled else { return }
+        remoteControlStatus = status
+    }
+
+    func deactivateRemoteControl() {
+        stopOrchestratedTurn()
+        isRemoteControlled = false
+        remoteControlStatus = ""
+        text = selectedScript.text
+        errorMessage = nil
+    }
+
+    func playOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
+        let plans = SpeechTextChunker.chunks(for: turnText)
+        guard !plans.isEmpty else { throw AppError("The assigned turn is empty.") }
+        guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
+            hasAPIKey = false
+            throw AppError("Add your ElevenLabs API key in Settings.")
+        }
+        guard !selectedDeviceUID.isEmpty else {
+            throw AppError("Choose an audio output in Settings.")
+        }
+
+        cancelGeneration(resetPlayer: true)
+        try player.selectOutputDevice(uid: selectedDeviceUID)
+        text = turnText
+        player.isLooping = false
+        player.beginSequence(totalChunks: plans.count)
+        currentSpeechSignature = "orchestration|\(cacheNamespace)|\(voiceID)|\(modelID)|\(turnText)"
+        isGenerating = true
+        let taskID = UUID()
+        generationID = taskID
+
+        defer {
+            if generationID == taskID {
+                isGenerating = false
+                generationTask = nil
+            }
+        }
+
+        do {
+            for plan in plans {
+                try Task.checkCancellation()
+                let clip = try await client.synthesize(
+                    text: plan.text,
+                    voiceID: voiceID,
+                    modelID: modelID,
+                    apiKey: apiKey,
+                    previousText: plan.previousText,
+                    nextText: plan.nextText,
+                    cacheNamespace: cacheNamespace,
+                    bypassCache: false
+                )
+                try Task.checkCancellation()
+                guard generationID == taskID else { throw CancellationError() }
+                try player.append(url: clip.audioURL, timing: clip.timing, sourceRange: plan.sourceRange)
+            }
+            guard generationID == taskID else { throw CancellationError() }
+            player.finishSequence()
+        } catch {
+            guard generationID == taskID else { throw error }
+            player.finishSequence()
+            player.stop()
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+
+    func pauseOrchestratedTurn() {
+        guard isRemoteControlled else { return }
+        player.pause()
+    }
+
+    func resumeOrchestratedTurn() {
+        guard isRemoteControlled else { return }
+        player.play()
+    }
+
+    func stopOrchestratedTurn() {
+        cancelGeneration(resetPlayer: false)
+        player.finishSequence()
+        player.stop()
+        currentSpeechSignature = nil
     }
 
     private func generateOrToggle(forceRegenerate: Bool) async {

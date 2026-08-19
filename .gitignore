@@ -2,6 +2,7 @@
 .DS_Store
 .env
 dist/
+firebase-debug.log
 
 # Xcode build output
 DerivedData/

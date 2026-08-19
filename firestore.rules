@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomData(roomID) {
+      return get(/databases/$(database)/documents/orchestrationRooms/$(roomID)).data;
+    }
+
+    function isHost(roomID) {
+      return signedIn() && roomData(roomID).hostUID == request.auth.uid;
+    }
+
+    function isParticipant(roomID) {
+      return signedIn() && exists(
+        /databases/$(database)/documents/orchestrationRooms/$(roomID)/participants/$(request.auth.uid)
+      );
+    }
+
+    function canAccess(roomID) {
+      return isHost(roomID) || isParticipant(roomID);
+    }
+
+    match /orchestrationPairings/{code} {
+      allow get: if signedIn()
+        && resource.data.isOpen == true
+        && resource.data.expiresAt > request.time;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.hostUID == request.auth.uid
+        && request.resource.data.code == code
+        && request.resource.data.isOpen == true
+        && request.resource.data.expiresAt > request.time
+        && isHost(request.resource.data.roomID);
+      allow update, delete: if signedIn() && resource.data.hostUID == request.auth.uid;
+    }
+
+    match /orchestrationRooms/{roomID} {
+      allow create: if signedIn()
+        && request.resource.data.hostUID == request.auth.uid
+        && request.resource.data.status == "lobby";
+      allow read: if canAccess(roomID);
+      allow update, delete: if isHost(roomID);
+
+      match /participants/{participantID} {
+        allow read: if canAccess(roomID);
+        allow create: if signedIn()
+          && participantID == request.auth.uid
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.roomID == roomID
+          && request.resource.data.joinedAt == request.time
+          && request.resource.data.lastSeenAt == request.time
+          && get(
+            /databases/$(database)/documents/orchestrationPairings/$(request.resource.data.pairingCode)
+          ).data.roomID == roomID
+          && get(
+            /databases/$(database)/documents/orchestrationPairings/$(request.resource.data.pairingCode)
+          ).data.isOpen == true
+          && get(
+            /databases/$(database)/documents/orchestrationPairings/$(request.resource.data.pairingCode)
+          ).data.expiresAt > request.time;
+        allow update: if isHost(roomID) || (
+          signedIn()
+          && participantID == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.roomID == resource.data.roomID
+          && request.resource.data.pairingCode == resource.data.pairingCode
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "displayName",
+            "scriptTitle",
+            "voiceName",
+            "segmentCount",
+            "status",
+            "isConnected",
+            "lastSeenAt"
+          ])
+          && request.resource.data.lastSeenAt == request.time
+        );
+        allow delete: if isHost(roomID) || (
+          signedIn() && participantID == request.auth.uid
+        );
+      }
+
+      match /turns/{turnID} {
+        allow read: if canAccess(roomID);
+        allow create, delete: if isHost(roomID);
+        allow update: if isHost(roomID) || (
+          isParticipant(roomID)
+          && resource.data.participantUID == request.auth.uid
+          && request.resource.data.participantUID == resource.data.participantUID
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.segmentIndex == resource.data.segmentIndex
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "text",
+            "startedAtClient",
+            "startedAtServer",
+            "endedAtClient",
+            "endedAtServer",
+            "error",
+            "updatedAt"
+          ])
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(["startedAtServer"])
+            || request.resource.data.startedAtServer == request.time
+          )
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(["endedAtServer"])
+            || request.resource.data.endedAtServer == request.time
+          )
+          && request.resource.data.updatedAt == request.time
+        );
+
+        match /events/{eventID} {
+          allow read: if canAccess(roomID);
+          allow create: if isHost(roomID) || (
+            isParticipant(roomID)
+            && get(
+              /databases/$(database)/documents/orchestrationRooms/$(roomID)/turns/$(turnID)
+            ).data.participantUID == request.auth.uid
+            && request.resource.data.participantUID == request.auth.uid
+            && request.resource.data.timestamp == request.time
+          );
+          allow update, delete: if false;
+        }
+      }
+    }
+  }
+}

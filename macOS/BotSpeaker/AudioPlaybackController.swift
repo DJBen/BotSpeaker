@@ -17,6 +17,8 @@ final class AudioPlaybackController: ObservableObject {
     @Published private(set) var activeTextRange: NSRange?
     @Published var isLooping = false
 
+    var onPlaybackFinished: (() -> Void)?
+
     var volume: Float = 1 {
         didSet {
             node.volume = min(max(volume, 0), 1)
@@ -372,6 +374,8 @@ final class AudioPlaybackController: ObservableObject {
                 } catch {
                     finishPlayback()
                 }
+            } else {
+                onPlaybackFinished?()
             }
         } else {
             node.stop()
