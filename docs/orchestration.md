@@ -107,13 +107,50 @@ Relevant deployment files are:
 
 - `firebase.json` — Firebase/Firestore project configuration;
 - `.firebaserc` — default project alias; and
-- `firestore.rules` — access-control rules.
+- `firestore.rules` — access-control rules;
+- `firestore.indexes.json` — composite indexes the cleanup job queries; and
+- `functions/` — the scheduled data-retention job.
 
 To deploy a changed ruleset from an authenticated development machine:
 
 ```sh
 firebase deploy --only firestore:rules --project bot-speaker-1
 ```
+
+## Data retention
+
+Neither client deletes an orchestration room when a meeting ends, so rooms —
+including the host's resolved script text — and their `participants`, `turns`,
+and per-turn `events` subcollections would otherwise live forever. The
+`orchestrationCleanup` Cloud Function in `functions/index.js` runs daily at
+04:00 America/Los_Angeles and removes:
+
+- rooms whose status is `completed` or `stopped` and whose `activityAt` is more
+  than 24 hours old;
+- rooms of any status untouched for more than 72 hours, which covers abandoned
+  lobbies and sessions whose host crashed mid-meeting and left a non-terminal
+  status behind; and
+- pairing codes more than an hour past their four-hour expiry, plus any pairing
+  still pointing at a room the same run deletes.
+
+Rooms are removed with the Admin SDK's `recursiveDelete`, so subcollections go
+with them rather than being orphaned. Both room queries key off `activityAt`,
+the marker every state-changing commit already touches, so an in-progress
+meeting is never collected mid-session — but export a transcript the same day,
+because a finished meeting only survives 24 hours. Each run handles at most 200
+rooms and 500 pairings and logs the counts; a larger backlog drains over
+consecutive days.
+
+The retention windows and per-run limits read from environment variables
+(`FINISHED_ROOM_RETENTION_HOURS`, `IDLE_ROOM_RETENTION_HOURS`,
+`PAIRING_GRACE_HOURS`, `ROOM_LIMIT_PER_RUN`, `PAIRING_LIMIT_PER_RUN`) and fall
+back to the values above. Deploy the job and the index it needs with:
+
+```sh
+firebase deploy --only functions,firestore:indexes --project bot-speaker-1
+```
+
+The job runs with Admin SDK credentials and so bypasses `firestore.rules`.
 
 Run the live two-client security and timestamp smoke test with:
 

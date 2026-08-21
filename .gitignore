@@ -34,3 +34,6 @@ Carthage/Build/
 # .NET build output (Windows app)
 Windows/**/bin/
 Windows/**/obj/
+
+# Cloud Functions
+functions/node_modules/

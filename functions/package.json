@@ -1,0 +1,19 @@
+{
+  "name": "botspeaker-functions",
+  "description": "Scheduled maintenance for BotSpeaker's meeting orchestration data",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check index.js",
+    "test": "node --test",
+    "deploy": "firebase deploy --only functions --project bot-speaker-1",
+    "logs": "firebase functions:log --project bot-speaker-1"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.1.0"
+  }
+}
