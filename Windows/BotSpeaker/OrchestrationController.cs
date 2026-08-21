@@ -421,6 +421,19 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         if (destination < 0 || destination >= order.Count) return;
         (order[source], order[destination]) = (order[destination], order[source]);
         ParticipantOrder = order;
+        if (source < SpeakerConfigurations.Count && destination < SpeakerConfigurations.Count)
+        {
+            var sourceConfiguration = SpeakerConfigurations[source];
+            var destinationConfiguration = SpeakerConfigurations[destination];
+            (sourceConfiguration.Name, destinationConfiguration.Name) =
+                (destinationConfiguration.Name, sourceConfiguration.Name);
+            (sourceConfiguration.VoiceId, destinationConfiguration.VoiceId) =
+                (destinationConfiguration.VoiceId, sourceConfiguration.VoiceId);
+            (sourceConfiguration.VoiceName, destinationConfiguration.VoiceName) =
+                (destinationConfiguration.VoiceName, sourceConfiguration.VoiceName);
+            PersistSpeakerConfigurations();
+            NotifySpeakerConfigurationChanged();
+        }
     }
 
     public async Task PrepareMeetingAsync()
