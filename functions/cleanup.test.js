@@ -30,7 +30,11 @@ function fakeFirestore(rooms, pairings) {
       docs: docs
         .filter((doc) => filters.every((filter) => matches(doc.data, filter)))
         .slice(0, limit)
-        .map((doc) => ({ id: doc.id, ref: { path: `${name}/${doc.id}` } })),
+        .map((doc) => ({
+          id: doc.id,
+          ref: { path: `${name}/${doc.id}` },
+          get: (field) => doc.data[field],
+        })),
     }),
   });
 
@@ -54,11 +58,15 @@ function fakeFirestore(rooms, pairings) {
 }
 
 const ROOMS = [
-  { id: "finishedOld", data: { status: "completed", activityAt: hoursAgo(30) } },
-  { id: "finishedRecent", data: { status: "stopped", activityAt: hoursAgo(2) } },
-  { id: "runningNow", data: { status: "running", activityAt: hoursAgo(1) } },
-  { id: "runningLong", data: { status: "running", activityAt: hoursAgo(20) } },
-  { id: "abandonedLobby", data: { status: "lobby", activityAt: hoursAgo(100) } },
+  { id: "finishedOld", data: { status: "completed", activityAt: hoursAgo(30), createdAt: hoursAgo(31) } },
+  { id: "finishedRecent", data: { status: "stopped", activityAt: hoursAgo(2), createdAt: hoursAgo(3) } },
+  { id: "runningNow", data: { status: "running", activityAt: hoursAgo(1), createdAt: hoursAgo(2) } },
+  { id: "runningLong", data: { status: "running", activityAt: hoursAgo(20), createdAt: hoursAgo(21) } },
+  { id: "abandonedLobby", data: { status: "lobby", activityAt: hoursAgo(100), createdAt: hoursAgo(101) } },
+  // Written by a client build that predates `activityAt`.
+  { id: "legacyNoActivity", data: { status: "running", createdAt: hoursAgo(90) } },
+  // Old room, still in active use — the createdAt sweep must not take it.
+  { id: "longLivedButActive", data: { status: "running", activityAt: hoursAgo(1), createdAt: hoursAgo(500) } },
 ];
 
 const PAIRINGS = [
@@ -75,8 +83,9 @@ test("collects finished and abandoned rooms, keeps live ones", async () => {
   assert.deepStrictEqual(firestore.recursivelyDeleted.sort(), [
     "orchestrationRooms/abandonedLobby",
     "orchestrationRooms/finishedOld",
+    "orchestrationRooms/legacyNoActivity",
   ]);
-  assert.strictEqual(result.roomsDeleted, 2);
+  assert.strictEqual(result.roomsDeleted, 3);
 });
 
 test("deletes expired pairings and pairings orphaned by this run", async () => {
@@ -106,7 +115,26 @@ test("dry run reports counts without deleting", async () => {
   const firestore = fakeFirestore(ROOMS, PAIRINGS);
   const result = await cleanUpOrchestrationData(firestore, NOW, { dryRun: true });
 
-  assert.deepStrictEqual(result, { roomsDeleted: 2, pairingsDeleted: 3, dryRun: true });
+  assert.deepStrictEqual(result, { roomsDeleted: 3, pairingsDeleted: 3, dryRun: true });
   assert.deepStrictEqual(firestore.recursivelyDeleted, []);
   assert.deepStrictEqual(firestore.deleted, []);
+});
+
+test("collects rooms that predate the activityAt marker", async () => {
+  const firestore = fakeFirestore(
+    [{ id: "legacy", data: { status: "running", createdAt: hoursAgo(90) } }],
+    []
+  );
+  await cleanUpOrchestrationData(firestore, NOW);
+  assert.deepStrictEqual(firestore.recursivelyDeleted, ["orchestrationRooms/legacy"]);
+});
+
+test("an old room with a fresh activityAt survives the createdAt sweep", async () => {
+  const firestore = fakeFirestore(
+    [{ id: "veteran", data: { status: "running", activityAt: hoursAgo(1), createdAt: hoursAgo(5000) } }],
+    []
+  );
+  const result = await cleanUpOrchestrationData(firestore, NOW);
+  assert.strictEqual(result.roomsDeleted, 0);
+  assert.deepStrictEqual(firestore.recursivelyDeleted, []);
 });

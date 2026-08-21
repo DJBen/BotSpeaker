@@ -135,9 +135,12 @@ of each month) and removes:
   still pointing at a room the same run deletes.
 
 Rooms are removed with the Admin SDK's `recursiveDelete`, so subcollections go
-with them rather than being orphaned. Both room queries key off `activityAt`,
-the marker every state-changing commit already touches, so an in-progress
-meeting is never collected mid-session.
+with them rather than being orphaned. The status and idle queries key off
+`activityAt`, the marker every state-changing commit already touches, so an
+in-progress meeting is never collected mid-session. Because Firestore cannot
+match a missing field, a third pass sweeps by `createdAt` to reach rooms written
+before `activityAt` existed and keeps only those that still lack a fresh marker
+— an old room that is genuinely still in use survives it.
 
 Deletion happens on the first run after a record crosses its window, not the
 moment it crosses. On a three-day cadence a finished room lives up to four days

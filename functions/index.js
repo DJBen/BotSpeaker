@@ -89,26 +89,43 @@ async function cleanUpOrchestrationData(firestore, now, options = {}) {
  *
  * Both queries key off `activityAt`, the server-timestamp marker every
  * state-changing commit on either platform touches, so a long meeting that is
- * still under way is never collected mid-session. A room written before
- * `activityAt` existed, or by a client that failed to set it, is not matched by
- * either query and has to be removed by hand.
+ * still under way is never collected mid-session.
+ *
+ * Rooms written before `activityAt` existed, or by a client that failed to set
+ * it, are invisible to those queries — Firestore cannot match a missing field —
+ * and would leak forever. A third pass sweeps by `createdAt` and keeps only the
+ * documents that genuinely lack a usable `activityAt`, so an old room that is
+ * still active is left alone.
  */
 async function staleRoomIDs(firestore, now) {
   const rooms = firestore.collection("orchestrationRooms");
-  const [finished, idle] = await Promise.all([
+  const idleCutoff = hoursBefore(now, IDLE_ROOM_RETENTION_HOURS);
+  const [finished, idle, aged] = await Promise.all([
     rooms
       .where("status", "in", FINISHED_STATUSES)
       .where("activityAt", "<", hoursBefore(now, FINISHED_ROOM_RETENTION_HOURS))
       .limit(ROOM_LIMIT_PER_RUN)
       .get(),
     rooms
-      .where("activityAt", "<", hoursBefore(now, IDLE_ROOM_RETENTION_HOURS))
+      .where("activityAt", "<", idleCutoff)
+      .limit(ROOM_LIMIT_PER_RUN)
+      .get(),
+    rooms
+      .where("createdAt", "<", idleCutoff)
       .limit(ROOM_LIMIT_PER_RUN)
       .get(),
   ]);
 
+  // The `createdAt` pass exists only to reach rooms the `activityAt` queries
+  // cannot see. A room that carries a fresh `activityAt` is still in use and is
+  // dropped here however old its creation timestamp is.
+  const staleByAge = aged.docs.filter((doc) => {
+    const activityAt = doc.get("activityAt");
+    return !activityAt || activityAt.toMillis() < idleCutoff.toMillis();
+  });
+
   const ids = new Set();
-  for (const doc of [...finished.docs, ...idle.docs]) {
+  for (const doc of [...finished.docs, ...idle.docs, ...staleByAge]) {
     if (ids.size >= ROOM_LIMIT_PER_RUN) break;
     ids.add(doc.id);
   }
