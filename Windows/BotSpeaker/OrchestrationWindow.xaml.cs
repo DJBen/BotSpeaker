@@ -30,11 +30,14 @@ public partial class OrchestrationWindow : Window
         Closing += OnWindowClosing;
     }
 
-    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        // Keep the session alive in the background; Leave/Disconnect ends it.
         e.Cancel = true;
         Hide();
+        if (_controller.IsActive)
+        {
+            await _controller.LeaveSessionAsync();
+        }
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e) =>
@@ -104,17 +107,16 @@ public partial class OrchestrationWindow : Window
     private void UpdateHostSession()
     {
         SpeakerMappingText.Text =
-            $"Reorder paired clients to map {{{{speaker_1}}}} through {{{{speaker_{_controller.SelectedTemplate.SpeakerCount}}}}}.";
+            $"Reorder paired clients to assign {string.Join(", ", _controller.SpeakerConfigurations.Select(
+                configuration => string.IsNullOrWhiteSpace(configuration.Name)
+                    ? $"Speaker {configuration.Slot}"
+                    : configuration.Name.Trim()))}.";
         PairingCodeText.Text = _controller.PairingCode;
-        AllowPairingCheck.IsChecked = _controller.PairingOpen;
-        AllowPairingCheck.Visibility = _controller.SessionStatus == OrchestrationSessionStatus.Lobby
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        if (MeetingScriptBox.Text != _controller.MeetingScriptText)
+        if (MeetingScriptBox.Text != _controller.ConfiguredScriptPreview)
         {
-            MeetingScriptBox.Text = _controller.MeetingScriptText;
+            MeetingScriptBox.Text = _controller.ConfiguredScriptPreview;
         }
-        MeetingScriptBox.IsReadOnly = _controller.Turns.Count > 0;
+        MeetingScriptBox.IsReadOnly = true;
         PlanStateText.Text = _controller.Turns.Count == 0 ? "Draft" : "Prepared";
 
         RebuildSpeakersList();
@@ -205,7 +207,7 @@ public partial class OrchestrationWindow : Window
             textPanel.Children.Add(new TextBlock
             {
                 Text = index < _controller.SelectedTemplate.SpeakerRoles.Count
-                    ? $"{{{{speaker_{index + 1}}}}} · {_controller.SelectedTemplate.SpeakerRoles[index]} · {participant.SegmentCount} turns"
+                    ? $"{ConfiguredSpeakerName(index)} · {_controller.SelectedTemplate.SpeakerRoles[index]} · {participant.SegmentCount} turns"
                     : $"Unassigned client · {participant.VoiceName}",
                 FontSize = 11,
                 Foreground = Brushes.Gray,
@@ -237,6 +239,13 @@ public partial class OrchestrationWindow : Window
                     : Brushes.Transparent,
             });
         }
+    }
+
+    private string ConfiguredSpeakerName(int index)
+    {
+        if (index < 0 || index >= _controller.SpeakerConfigurations.Count) return $"Speaker {index + 1}";
+        var name = _controller.SpeakerConfigurations[index].Name.Trim();
+        return name.Length == 0 ? $"Speaker {index + 1}" : name;
     }
 
     private void RebuildTimeline()
@@ -378,12 +387,6 @@ public partial class OrchestrationWindow : Window
         _controller.PairingCodeInput = PairingCodeBox.Text;
     }
 
-    private void OnMeetingScriptChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressUiEvents || _controller.Turns.Count > 0) return;
-        _controller.MeetingScriptText = MeetingScriptBox.Text;
-    }
-
     private async void OnConnectClick(object sender, RoutedEventArgs e) =>
         await PerformSetupActionAsync();
 
@@ -418,12 +421,6 @@ public partial class OrchestrationWindow : Window
         {
             // Another process briefly held the clipboard; the user can retry.
         }
-    }
-
-    private async void OnAllowPairingChanged(object sender, RoutedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        await _controller.SetPairingOpenAsync(AllowPairingCheck.IsChecked == true);
     }
 
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _controller.StartMeetingAsync();

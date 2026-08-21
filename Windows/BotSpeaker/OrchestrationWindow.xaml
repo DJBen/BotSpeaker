@@ -89,8 +89,6 @@
                 <Border DockPanel.Dock="Top" Background="#14808080" CornerRadius="9" Padding="14"
                         Margin="0,0,0,12">
                     <DockPanel>
-                        <CheckBox x:Name="AllowPairingCheck" DockPanel.Dock="Right" Content="Allow pairing"
-                                  VerticalAlignment="Center" Click="OnAllowPairingChanged"/>
                         <StackPanel Orientation="Horizontal">
                             <StackPanel>
                                 <TextBlock Text="Pairing code" FontSize="11" Foreground="Gray"/>
@@ -116,7 +114,7 @@
                                    FontSize="11" Foreground="Gray" Margin="0,0,0,6"/>
                         <TextBox x:Name="MeetingScriptBox" AcceptsReturn="True" TextWrapping="Wrap"
                                  VerticalScrollBarVisibility="Auto" Height="110" Padding="6"
-                                 TextChanged="OnMeetingScriptChanged"/>
+                                 IsReadOnly="True"/>
                     </StackPanel>
                 </Border>
 

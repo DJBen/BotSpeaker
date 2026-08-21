@@ -21,6 +21,10 @@ struct OrchestrationView: View {
         }
         .frame(minWidth: 720, minHeight: 620)
         .task { await model.loadVoicesIfNeeded() }
+        .onDisappear {
+            guard controller.isActive else { return }
+            Task { await controller.leaveSession() }
+        }
     }
 
     private var header: some View {
@@ -174,7 +178,7 @@ struct OrchestrationView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(controller.selectedTemplate.title).fontWeight(.semibold)
-                        Text("Reorder paired clients to map {{speaker_1}} through {{speaker_\(controller.selectedTemplate.speakerCount)}}.")
+                        Text("Reorder paired clients to assign \(configuredSpeakerNames).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -185,14 +189,16 @@ struct OrchestrationView: View {
                         .padding(.vertical, 3)
                         .background(.quaternary, in: Capsule())
                 }
-                TextEditor(text: $controller.meetingScriptText)
-                    .font(.body)
-                    .frame(minHeight: 110, maxHeight: 150)
-                    .disabled(!controller.turns.isEmpty)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(.separator, lineWidth: 1)
-                    )
+                ScrollView {
+                    Text(controller.configuredScriptPreview)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(7)
+                }
+                .frame(minHeight: 110, maxHeight: 150)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator, lineWidth: 1))
             }
             .padding(6)
         }
@@ -216,16 +222,6 @@ struct OrchestrationView: View {
             }
             .help("Copy pairing code")
             Spacer()
-            if controller.sessionStatus == .lobby {
-                Toggle(
-                    "Allow pairing",
-                    isOn: Binding(
-                        get: { controller.pairingOpen },
-                        set: { value in Task { await controller.setPairingOpen(value) } }
-                    )
-                )
-                .toggleStyle(.switch)
-            }
         }
         .padding(14)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
@@ -459,7 +455,18 @@ struct OrchestrationView: View {
     private func participantAssignmentText(index: Int, participant: OrchestrationParticipant) -> String {
         let template = controller.selectedTemplate
         guard index < template.speakerRoles.count else { return "Unassigned client · \(participant.voiceName)" }
-        return "{{speaker_\(index + 1)}} · \(template.speakerRoles[index]) · \(participant.segmentCount) turns"
+        let configuredName = controller.speakerConfigurations.indices.contains(index)
+            ? controller.speakerConfigurations[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        let displayName = configuredName.isEmpty ? "Speaker \(index + 1)" : configuredName
+        return "\(displayName) · \(template.speakerRoles[index]) · \(participant.segmentCount) turns"
+    }
+
+    private var configuredSpeakerNames: String {
+        controller.speakerConfigurations.map { configuration in
+            let name = configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? "Speaker \(configuration.slot)" : name
+        }.joined(separator: ", ")
     }
 
     private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {
