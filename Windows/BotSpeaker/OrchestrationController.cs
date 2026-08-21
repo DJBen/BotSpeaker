@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Threading;
@@ -625,6 +626,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _model.ActivateRemoteControl("Paired and waiting for the host");
         _lastRoomActivityMarker = null;
         _lastCollectionSyncUtc = DateTime.MinValue;
+        BeginOrchestrationActivity();
         _pollTimer.Start();
         _heartbeatTimer.Start();
         _ = PollAsync();
@@ -722,10 +724,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 break;
             case OrchestrationSessionStatus.Completed:
                 CancelPrefetch();
+                EndOrchestrationActivity();
                 _model.UpdateRemoteControlStatus("Meeting completed");
                 break;
             case OrchestrationSessionStatus.Stopped:
                 CancelPrefetch();
+                EndOrchestrationActivity();
                 _model.UpdateRemoteControlStatus("Meeting stopped by the host");
                 _turnExecutionCancellation?.Cancel();
                 _turnExecutionCancellation = null;
@@ -1321,6 +1325,61 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         }
     }
 
+    /// A paired follower must keep polling Firestore and preparing speech while
+    /// every window is hidden or minimised. Windows throttles the execution
+    /// speed of such processes (EcoQoS), which is the counterpart of macOS App
+    /// Nap, so opt this process out for the duration of the meeting.
+    private void BeginOrchestrationActivity() => SetHighQosOverride(enabled: true);
+
+    private void EndOrchestrationActivity() => SetHighQosOverride(enabled: false);
+
+    private static void SetHighQosOverride(bool enabled)
+    {
+        var state = new ProcessPowerThrottlingState
+        {
+            Version = ProcessPowerThrottlingCurrentVersion,
+            // Taking control with a zero StateMask disables execution-speed
+            // throttling (HighQoS). A zero ControlMask returns policy control
+            // to Windows when the paired session ends.
+            ControlMask = enabled ? ProcessPowerThrottlingExecutionSpeed : 0,
+            StateMask = 0,
+        };
+        try
+        {
+            SetProcessInformation(
+                GetCurrentProcess(),
+                ProcessPowerThrottlingInformation,
+                ref state,
+                Marshal.SizeOf<ProcessPowerThrottlingState>());
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Older Windows builds do not throttle background processes this way.
+        }
+    }
+
+    private const int ProcessPowerThrottlingInformation = 4;
+    private const uint ProcessPowerThrottlingCurrentVersion = 1;
+    private const uint ProcessPowerThrottlingExecutionSpeed = 0x1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessPowerThrottlingState
+    {
+        public uint Version;
+        public uint ControlMask;
+        public uint StateMask;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern nint GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetProcessInformation(
+        nint process,
+        int informationClass,
+        ref ProcessPowerThrottlingState information,
+        int informationSize);
+
     private async Task PerformBusyOperationAsync(Func<Task> operation)
     {
         if (IsBusy) return;
@@ -1344,6 +1403,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         _pollTimer.Stop();
         _heartbeatTimer.Stop();
+        EndOrchestrationActivity();
         _model.DeactivateRemoteControl();
         ActiveMode = null;
         SessionId = null;
