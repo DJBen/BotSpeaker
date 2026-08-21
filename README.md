@@ -113,10 +113,10 @@ three-person API latency incident review. The main window first shows the shared
 script preview plus a name and ElevenLabs voice picker for each speaker. Each
 template starts with distinct gender-matched voices when the ElevenLabs catalog
 provides them; the three-person incident review defaults to male, female, male.
-On macOS, **Prepare Meeting** creates the room and goes directly to the lobby,
+On macOS, **Orchestrate Meeting** creates the room and goes directly to the lobby,
 preparation, and live controls in the same main-window detail pane; the sidebar
 stays visible but is disabled for the duration of the flow. Remote participants
-use **Join Meeting** beside **Prepare Meeting** and enter only the host's pairing
+use **Join Meeting** beside **Orchestrate Meeting** and enter only the host's pairing
 code. One machine hosts a room and displays a six-character code, while the
 remaining machines join as remote clients. Macs
 and Windows PCs interoperate freely in the same session — either platform can

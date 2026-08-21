@@ -72,7 +72,7 @@ struct OrchestratedMeetingConfigurationView: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Label("Prepare Meeting", systemImage: "arrow.right.circle.fill")
+                        Label("Orchestrate Meeting", systemImage: "arrow.right.circle.fill")
                     }
                 }
                 .buttonStyle(.borderedProminent)
