@@ -128,9 +128,9 @@
                                 Margin="0,0,8,0" Visibility="Collapsed" Click="OnExportClick"/>
                         <Button x:Name="SkipButton" Content="Skip Turn" Padding="10,5" Margin="0,0,8,0"
                                 Visibility="Collapsed" Click="OnSkipClick"/>
-                        <Button x:Name="PauseButton" Content="Pause" Padding="10,5" Margin="0,0,8,0"
+                        <Button x:Name="PauseButton" Content="⏸ Pause" Padding="10,5" Margin="0,0,8,0"
                                 Visibility="Collapsed" Click="OnPauseClick"/>
-                        <Button x:Name="ResumeButton" Content="Resume" Padding="10,5" Margin="0,0,8,0"
+                        <Button x:Name="ResumeButton" Content="▶ Play" Padding="10,5" Margin="0,0,8,0"
                                 FontWeight="Bold" Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
                                 Visibility="Collapsed" Click="OnResumeClick"/>
                         <Button x:Name="StopButton" Content="Stop" Padding="10,5" Margin="0,0,8,0"

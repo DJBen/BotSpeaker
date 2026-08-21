@@ -115,7 +115,9 @@ final class OrchestrationController {
             && sessionStatus == .lobby
             && !turns.isEmpty
             && assignedIDs.allSatisfy { id in
-                connected.first(where: { $0.id == id })?.isFirstTurnPrepared == true
+                guard let participant = connected.first(where: { $0.id == id }) else { return false }
+                return participant.segmentCount > 0
+                    && participant.preparedSegmentCount == participant.segmentCount
             }
             && !isBusy
     }
@@ -357,6 +359,15 @@ final class OrchestrationController {
         participantOrder.swapAt(source, destination)
     }
 
+    func moveParticipant(id: String, before destinationID: String) {
+        guard turns.isEmpty,
+              let source = participantOrder.firstIndex(of: id),
+              let destination = participantOrder.firstIndex(of: destinationID),
+              source != destination else { return }
+        let participantID = participantOrder.remove(at: source)
+        participantOrder.insert(participantID, at: min(destination, participantOrder.endIndex))
+    }
+
     func prepareMeeting() async {
         guard isHost, let sessionID else { return }
         await performBusyOperation {
@@ -444,8 +455,10 @@ final class OrchestrationController {
             let connected = self.participants.filter(\.isRecentlyConnected)
             let assignedIDs = Set(self.turns.map(\.participantUID))
             guard assignedIDs.allSatisfy({ id in
-                connected.first(where: { $0.id == id })?.isFirstTurnPrepared == true
-            }) else { throw AppError("Wait until every assigned speaker has prepared a first turn.") }
+                guard let participant = connected.first(where: { $0.id == id }) else { return false }
+                return participant.segmentCount > 0
+                    && participant.preparedSegmentCount == participant.segmentCount
+            }) else { throw AppError("Wait until every assigned speaker has prepared all paragraphs.") }
             let batch = self.database.batch()
             batch.updateData([
                 "status": OrchestrationTurnStatus.assigned.rawValue,
@@ -485,6 +498,13 @@ final class OrchestrationController {
 
     func skipCurrentTurn() async {
         guard isHost, let sessionID, let turn = activeTurn, !turn.status.isTerminal else { return }
+        if turn.participantUID == userID {
+            turnExecutionTask?.cancel()
+            turnExecutionTask = nil
+            activeExecutionTurnID = nil
+            hasReportedPlaybackStart = false
+            model?.stopOrchestratedTurn()
+        }
         await performBusyOperation {
             let batch = self.database.batch()
             batch.updateData([
@@ -853,7 +873,7 @@ final class OrchestrationController {
         preparedLocalSegments = []
         preparedLocalSegmentCount = 0
         preparationError = nil
-        preparationStatus = "Preparing first assigned turn…"
+        preparationStatus = "Preparing all assigned paragraphs…"
         scheduleNextPrefetch()
     }
 
@@ -905,29 +925,15 @@ final class OrchestrationController {
         }
     }
 
-    /// Makes paragraph zero ready in the lobby and immediately begins the next,
-    /// then maintains one full local paragraph beyond this speaker's most
-    /// recently finished turn. Prefetching
-    /// only writes ElevenLabs results to the persistent cache; it never touches
-    /// the audio player.
+    /// Prepares every assigned paragraph serially before the meeting starts.
+    /// Preparation only writes ElevenLabs results to the persistent cache; it
+    /// never touches the audio player. Unchanged text and voice settings reuse
+    /// those cached clips across sessions.
     private func scheduleNextPrefetch() {
         guard isActive, !localSegments.isEmpty, prefetchTask == nil else { return }
-
-        let lookaheadLimit: Int
-        if sessionStatus == .lobby || turns.isEmpty {
-            lookaheadLimit = min(1, localSegments.count - 1)
-        } else {
-            let mostRecentTerminalSegment = turns
-                .filter { $0.participantUID == userID && $0.status.isTerminal }
-                .map(\.segmentIndex)
-                .max() ?? -1
-            lookaheadLimit = min(mostRecentTerminalSegment + 2, localSegments.count - 1)
-        }
-
-        guard lookaheadLimit >= 0,
-              let segmentIndex = (0...lookaheadLimit).first(where: {
-                  !preparedLocalSegments.contains($0)
-              }) else { return }
+        guard let segmentIndex = localSegments.indices.first(where: {
+            !preparedLocalSegments.contains($0)
+        }) else { return }
 
         startBackgroundPrefetch(segmentIndex)
     }
@@ -936,8 +942,8 @@ final class OrchestrationController {
         guard localSegments.indices.contains(segmentIndex), prefetchTask == nil else { return }
         preparationError = nil
         preparationStatus = segmentIndex == 0
-            ? "Preparing first turn…"
-            : "Preloading paragraph \(segmentIndex + 1)…"
+            ? "Preparing paragraph 1 of \(localSegments.count)…"
+            : "Preparing paragraph \(segmentIndex + 1) of \(localSegments.count)…"
         if sessionStatus == .lobby {
             model?.updateRemoteControlStatus(preparationStatus)
         }
@@ -1019,7 +1025,9 @@ final class OrchestrationController {
             : "\(contiguousCount) paragraph\(contiguousCount == 1 ? "" : "s") prepared"
         if sessionStatus == .lobby {
             model?.updateRemoteControlStatus(
-                contiguousCount > 0 ? "First turn ready; waiting for the host" : preparationStatus
+                contiguousCount == localSegments.count
+                    ? "All paragraphs ready; waiting for the host"
+                    : preparationStatus
             )
         }
         Task { await publishPreparationState(error: nil) }
@@ -1031,7 +1039,9 @@ final class OrchestrationController {
             "scriptTitle": localScriptTitle,
             "segmentCount": localSegments.count,
             "preparedSegmentCount": preparedLocalSegmentCount,
-            "status": preparedLocalSegmentCount > 0 ? "ready" : "preparing",
+            "status": preparedLocalSegmentCount == localSegments.count && !localSegments.isEmpty
+                ? "ready"
+                : "preparing",
             "lastSeenAt": FieldValue.serverTimestamp()
         ]
         data["preparationError"] = error ?? ""
@@ -1066,20 +1076,22 @@ final class OrchestrationController {
               !hasReportedPlaybackStart,
               let sessionID else { return }
         hasReportedPlaybackStart = true
-        model?.updateRemoteControlStatus("Speaking now")
         let clientTime = Date()
         Task {
             do {
-                try await updateTurn(
+                let claimed = try await claimTurnForPlayback(
                     roomID: sessionID,
                     turnID: turnID,
-                    data: [
-                        "status": OrchestrationTurnStatus.speaking.rawValue,
-                        "startedAtClient": Timestamp(date: clientTime),
-                        "startedAtServer": FieldValue.serverTimestamp(),
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ]
+                    clientTime: clientTime
                 )
+                guard claimed, activeExecutionTurnID == turnID else {
+                    activeExecutionTurnID = nil
+                    hasReportedPlaybackStart = false
+                    model?.stopOrchestratedTurn()
+                    model?.updateRemoteControlStatus("Turn skipped by the host")
+                    return
+                }
+                model?.updateRemoteControlStatus("Speaking now")
                 try await writeEvent(
                     roomID: sessionID,
                     turnID: turnID,
@@ -1090,6 +1102,31 @@ final class OrchestrationController {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func claimTurnForPlayback(roomID: String, turnID: String, clientTime: Date) async throws -> Bool {
+        let reference = turnReference(roomID: roomID, turnID: turnID)
+        let result = try await database.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let snapshot = try transaction.getDocument(reference)
+                let status = snapshot.data()?["status"] as? String
+                guard status == OrchestrationTurnStatus.assigned.rawValue
+                        || status == OrchestrationTurnStatus.preparing.rawValue else {
+                    return false
+                }
+                transaction.updateData([
+                    "status": OrchestrationTurnStatus.speaking.rawValue,
+                    "startedAtClient": Timestamp(date: clientTime),
+                    "startedAtServer": FieldValue.serverTimestamp(),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: reference)
+                return true
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+        }
+        return result as? Bool ?? false
     }
 
     private func playbackDidFinish() {
@@ -1232,7 +1269,7 @@ final class OrchestrationController {
                     try? await self.participantReference(roomID: roomID, uid: uid).updateData([
                         "status": self.localSegments.isEmpty
                             ? "waiting"
-                            : self.preparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                            : self.preparedLocalSegmentCount == self.localSegments.count ? "ready" : "preparing",
                         "preparedSegmentCount": self.preparedLocalSegmentCount,
                         "preparationError": self.preparationError ?? "",
                         "isConnected": true,

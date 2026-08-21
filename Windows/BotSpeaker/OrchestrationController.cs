@@ -160,7 +160,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             return IsHost
                 && SessionStatus == OrchestrationSessionStatus.Lobby
                 && Turns.Count > 0
-                && assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id)?.IsFirstTurnPrepared == true)
+                && assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id) is { SegmentCount: > 0 } participant
+                    && participant.PreparedSegmentCount == participant.SegmentCount)
                 && !IsBusy;
         }
     }
@@ -534,9 +535,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             if (Turns.Count == 0) throw new AppException("Prepare the orchestrated script first.");
             var connected = Participants.Where(p => p.IsRecentlyConnected).ToList();
             var assignedIds = Turns.Select(t => t.ParticipantUid).ToHashSet();
-            if (!assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id)?.IsFirstTurnPrepared == true))
+            if (!assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id) is { SegmentCount: > 0 } participant
+                && participant.PreparedSegmentCount == participant.SegmentCount))
             {
-                throw new AppException("Wait until every assigned speaker has prepared a first turn.");
+                throw new AppException("Wait until every assigned speaker has prepared all paragraphs.");
             }
 
             var writes = new List<FirestoreWrite>
@@ -592,6 +594,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         if (!IsHost || SessionId is not string sessionId) return;
         if (ActiveTurn is not OrchestrationTurn turn || turn.Status.IsTerminal()) return;
+        if (turn.ParticipantUid == _userId) CancelSkippedLocalPlayback(turn.Id);
         await PerformBusyOperationAsync(async () =>
         {
             await _database.CommitAsync(
@@ -1083,7 +1086,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _preparedLocalSegments.Clear();
         PreparedLocalSegmentCount = 0;
         PreparationError = null;
-        PreparationStatus = "Preparing first assigned turn…";
+        PreparationStatus = "Preparing all assigned paragraphs…";
         ScheduleNextPrefetch();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalAssignedSegmentCount)));
     }
@@ -1160,39 +1163,21 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Makes paragraph zero ready in the lobby and immediately begins the next,
-    /// then keeps one local paragraph ahead of this speaker's most recently
-    /// finished turn. Cache preparation never
-    /// loads the player, so it cannot speak before the host assigns the turn.
+    /// Prepares every assigned paragraph serially before the meeting starts.
+    /// Cache preparation never loads the player, and unchanged text and voice
+    /// settings reuse the persistent clips across sessions.
     /// </summary>
     private void ScheduleNextPrefetch()
     {
         if (!IsActive || _localSegments.Count == 0 || _prefetchTask is { IsCompleted: false }) return;
 
-        int lookaheadLimit;
-        if (SessionStatus == OrchestrationSessionStatus.Lobby || Turns.Count == 0)
-        {
-            lookaheadLimit = Math.Min(1, _localSegments.Count - 1);
-        }
-        else
-        {
-            int mostRecentTerminal = Turns
-                .Where(t => t.ParticipantUid == _userId && t.Status.IsTerminal())
-                .Select(t => t.SegmentIndex)
-                .DefaultIfEmpty(-1)
-                .Max();
-            lookaheadLimit = Math.Min(mostRecentTerminal + 2, _localSegments.Count - 1);
-        }
-
-        int? candidate = Enumerable.Range(0, lookaheadLimit + 1)
+        int? candidate = Enumerable.Range(0, _localSegments.Count)
             .Select(value => (int?)value)
             .FirstOrDefault(index => index is int value && !_preparedLocalSegments.Contains(value));
         if (candidate is not int segmentIndex) return;
 
         PreparationError = null;
-        PreparationStatus = segmentIndex == 0
-            ? "Preparing first turn…"
-            : $"Preloading paragraph {segmentIndex + 1}…";
+        PreparationStatus = $"Preparing paragraph {segmentIndex + 1} of {_localSegments.Count}…";
         if (SessionStatus == OrchestrationSessionStatus.Lobby)
         {
             _model.UpdateRemoteControlStatus(PreparationStatus);
@@ -1295,7 +1280,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         if (SessionStatus == OrchestrationSessionStatus.Lobby)
         {
             _model.UpdateRemoteControlStatus(contiguousCount > 0
-                ? "First turn ready; waiting for the host"
+                ? contiguousCount == _localSegments.Count
+                    ? "All paragraphs ready; waiting for the host"
+                    : PreparationStatus
                 : PreparationStatus);
         }
         try
@@ -1326,7 +1313,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["preparationError"] = error ?? "",
                     ["status"] = _localSegments.Count == 0
                         ? "waiting"
-                        : PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                        : PreparedLocalSegmentCount == _localSegments.Count ? "ready" : "preparing",
                 },
                 UpdateMask = ["scriptTitle", "segmentCount", "preparedSegmentCount", "preparationError", "status"],
                 ServerTimestampFields = ["lastSeenAt"],
@@ -1366,6 +1353,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         try
         {
+            var currentTurn = await _database.GetDocumentAsync(TurnPath(sessionId, turnId));
+            var currentStatus = currentTurn?.String("status") is string rawStatus
+                ? OrchestrationTurnStatusExtensions.TurnStatusFromRaw(rawStatus)
+                : null;
+            if (currentStatus is null || currentStatus.Value.IsTerminal())
+            {
+                CancelSkippedLocalPlayback(turnId);
+                return;
+            }
             await _database.CommitAsync(
             [
                 new FirestoreWrite
@@ -1386,8 +1382,30 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            ErrorMessage = error.Message;
+            var currentTurn = await _database.GetDocumentAsync(TurnPath(sessionId, turnId));
+            var currentStatus = currentTurn?.String("status") is string rawStatus
+                ? OrchestrationTurnStatusExtensions.TurnStatusFromRaw(rawStatus)
+                : null;
+            if (currentStatus?.IsTerminal() == true)
+            {
+                CancelSkippedLocalPlayback(turnId);
+            }
+            else
+            {
+                ErrorMessage = error.Message;
+            }
         }
+    }
+
+    private void CancelSkippedLocalPlayback(string turnId)
+    {
+        if (_activeExecutionTurnId != turnId) return;
+        _turnExecutionCancellation?.Cancel();
+        _turnExecutionCancellation = null;
+        _activeExecutionTurnId = null;
+        _hasReportedPlaybackStart = false;
+        _model.StopOrchestratedTurn();
+        _model.UpdateRemoteControlStatus("Turn skipped by the host");
     }
 
     private void PlaybackDidFinish()
@@ -1581,7 +1599,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 DocumentPath = ParticipantPath(sessionId, uid),
                 Fields = new()
                 {
-                    ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                    ["status"] = _localSegments.Count > 0 && PreparedLocalSegmentCount == _localSegments.Count
+                        ? "ready"
+                        : "preparing",
                     ["preparedSegmentCount"] = PreparedLocalSegmentCount,
                     ["preparationError"] = PreparationError ?? "",
                     ["isConnected"] = true,

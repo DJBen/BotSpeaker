@@ -39,8 +39,8 @@ The repository and its release downloads are public.
 - Multi-machine meeting orchestration across macOS and Windows: the host owns a
   shared `{{speaker_1}}`-style script, assigns roles by client order, and controls
   automatic handoff, pause, resume, skip, and stop
-- Orchestration prefetching that distributes the plan before playback, prepares
-  every client's first assigned paragraph, and keeps the following turn cached
+- Ahead-of-time orchestration preparation that caches every assigned paragraph
+  before playback and reuses unchanged text and voice results across meetings
 - Timestamped JSON transcript export with both playback-device and
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
@@ -118,8 +118,8 @@ one machine hosts a room and displays a six-character code and the remaining
 machines join as remote clients. Macs and Windows PCs interoperate freely in the
 same session — either platform can host. The host orders the paired devices and
 chooses **Prepare Speakers** to distribute the resolved script and voice
-assignments. Each client generates its assigned paragraphs asynchronously; once
-every first turn is ready, the host starts the session and BotSpeaker hands turns
+assignments. Each client generates and caches all assigned paragraphs asynchronously;
+once every client is fully ready, the host starts the session and BotSpeaker hands turns
 between laptops automatically. When the session completes, the host can export
 a JSON transcript with exact per-speaker playback and server-received timestamps.
 

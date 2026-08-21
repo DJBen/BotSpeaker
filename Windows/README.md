@@ -14,7 +14,8 @@ Feature parity with the macOS app:
 - Play, pause, stop, seek, and progress-aware text highlighting driven by ElevenLabs character timestamps
 - Persistent output-volume control applied before audio reaches the virtual cable
 - Cross-platform meeting orchestration where the host distributes one
-  placeholder-driven script and every client prefetches its assigned turns
+  placeholder-driven script and every client prepares and persistently caches
+  all assigned turns before playback
 - Optional looping, disabled by default
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
 

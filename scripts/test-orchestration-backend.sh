@@ -187,5 +187,19 @@ FORBIDDEN_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' 
 TURN_RESULT="$(firestore_request "$HOST_TOKEN" GET "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/turns/00000")"
 jq -e '.fields.status.stringValue == "speaking" and (.fields.startedAtServer.timestampValue | length > 0)' <<<"$TURN_RESULT" >/dev/null
 
+SKIP_BODY="$(jq -n '{fields:{status:{stringValue:"skipped"}}}')"
+firestore_request "$HOST_TOKEN" PATCH \
+  "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/turns/00000?updateMask.fieldPaths=status" \
+  "$SKIP_BODY" >/dev/null
+STALE_START_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${CLIENT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$START_BODY")"
+[[ "$STALE_START_STATUS" == "403" ]] || {
+  echo "Expected a skipped turn to reject a stale speaking update, received ${STALE_START_STATUS}." >&2
+  exit 1
+}
+
 echo "Orchestration backend integration test passed."
-echo "Verified host authority, pairing, preparation readiness, participant access, turn reporting, server timestamps, activity-marker bumps, and unpaired-client denial."
+echo "Verified host authority, pairing, preparation readiness, participant access, terminal turn protection, server timestamps, activity-marker bumps, and unpaired-client denial."

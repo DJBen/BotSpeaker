@@ -131,6 +131,7 @@ service cloud.firestore {
             "error",
             "updatedAt"
           ])
+          && !(resource.data.status in ["completed", "skipped", "failed", "stopped"])
           && (
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(["startedAtServer"])
             || request.resource.data.startedAtServer == request.time

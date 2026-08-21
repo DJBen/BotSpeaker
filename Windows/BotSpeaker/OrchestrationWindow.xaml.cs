@@ -28,6 +28,7 @@ public partial class OrchestrationWindow : Window
             if (_model.HasApiKey) await _model.LoadVoicesIfNeededAsync();
         };
         Closing += OnWindowClosing;
+        PreviewKeyDown += OnWindowPreviewKeyDown;
     }
 
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
@@ -42,6 +43,21 @@ public partial class OrchestrationWindow : Window
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e) =>
         Dispatcher.BeginInvoke(UpdateAll);
+
+    private async void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || !_controller.IsHost) return;
+        if (_controller.SessionStatus == OrchestrationSessionStatus.Running)
+        {
+            e.Handled = true;
+            await _controller.PauseMeetingAsync();
+        }
+        else if (_controller.SessionStatus == OrchestrationSessionStatus.Paused)
+        {
+            e.Handled = true;
+            await _controller.ResumeMeetingAsync();
+        }
+    }
 
     private void UpdateAll()
     {
@@ -215,16 +231,18 @@ public partial class OrchestrationWindow : Window
             });
             string preparationText = !string.IsNullOrEmpty(participant.PreparationError)
                 ? $"Preparation failed: {participant.PreparationError}"
-                : participant.IsFirstTurnPrepared
+                : participant.SegmentCount > 0
                     ? $"{participant.PreparedSegmentCount} of {participant.SegmentCount} prepared"
-                    : "Preparing first turn…";
+                    : "Waiting for script assignment";
             textPanel.Children.Add(new TextBlock
             {
                 Text = preparationText,
                 FontSize = 10,
                 Foreground = !string.IsNullOrEmpty(participant.PreparationError)
                     ? Brushes.Red
-                    : participant.IsFirstTurnPrepared ? Brushes.Green : Brushes.Gray,
+                    : participant.SegmentCount > 0 && participant.PreparedSegmentCount == participant.SegmentCount
+                        ? Brushes.Green
+                        : Brushes.Gray,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
             row.Children.Add(textPanel);

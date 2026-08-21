@@ -25,6 +25,19 @@ struct OrchestrationView: View {
             guard controller.isActive else { return }
             Task { await controller.leaveSession() }
         }
+        .onKeyPress(.space) {
+            guard controller.isHost else { return .ignored }
+            switch controller.sessionStatus {
+            case .running:
+                Task { await controller.pauseMeeting() }
+                return .handled
+            case .paused:
+                Task { await controller.resumeMeeting() }
+                return .handled
+            default:
+                return .ignored
+            }
+        }
     }
 
     private var header: some View {
@@ -231,9 +244,9 @@ struct OrchestrationView: View {
     private var participantsPanel: some View {
         GroupBox("Speakers") {
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 3) {
                     ForEach(Array(orderedParticipants.enumerated()), id: \.element.id) { index, participant in
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             Circle()
                                 .fill(participant.isRecentlyConnected ? .green : .orange)
                                 .frame(width: 8, height: 8)
@@ -244,46 +257,34 @@ struct OrchestrationView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
-                                Label(
-                                    participantPreparationText(participant),
-                                    systemImage: participant.isFirstTurnPrepared
-                                        ? "checkmark.circle.fill"
-                                        : participant.preparationError == nil
-                                            ? "arrow.down.circle"
-                                            : "exclamationmark.triangle.fill"
-                                )
-                                .font(.caption2)
-                                .foregroundStyle(
-                                    participant.preparationError != nil
-                                        ? Color.red
-                                        : participant.isFirstTurnPrepared
-                                            ? Color.green
-                                            : Color.secondary
-                                )
-                                .lineLimit(1)
                             }
                             Spacer()
+                            Image(systemName: participantPreparationIcon(participant))
+                                .foregroundStyle(participantPreparationColor(participant))
+                                .help(participantPreparationText(participant))
                             if controller.sessionStatus == .lobby && controller.turns.isEmpty {
-                                VStack(spacing: 2) {
-                                    Button { controller.moveParticipant(id: participant.id, by: -1) } label: {
-                                        Image(systemName: "chevron.up")
-                                    }
-                                    .disabled(index == 0)
-                                    Button { controller.moveParticipant(id: participant.id, by: 1) } label: {
-                                        Image(systemName: "chevron.down")
-                                    }
-                                    .disabled(index == orderedParticipants.count - 1)
-                                }
-                                .buttonStyle(.plain)
+                                Image(systemName: "line.3.horizontal")
+                                    .foregroundStyle(.tertiary)
+                                    .help("Drag to change this client’s speaker assignment")
                             }
                         }
-                        .padding(9)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
                         .background(
                             controller.activeTurn?.participantUID == participant.id
                                 ? Color.accentColor.opacity(0.14)
                                 : Color.clear,
                             in: RoundedRectangle(cornerRadius: 8)
                         )
+                        .draggable(participant.id) {
+                            Label(participant.displayName, systemImage: "person.fill")
+                                .padding(8)
+                        }
+                        .dropDestination(for: String.self) { participantIDs, _ in
+                            guard let participantID = participantIDs.first else { return false }
+                            controller.moveParticipant(id: participantID, before: participant.id)
+                            return true
+                        }
                     }
                 }
                 .padding(6)
@@ -377,11 +378,20 @@ struct OrchestrationView: View {
                 }
             case .running:
                 Button("Skip Turn") { Task { await controller.skipCurrentTurn() } }
-                Button("Pause") { Task { await controller.pauseMeeting() } }
+                Button {
+                    Task { await controller.pauseMeeting() }
+                } label: {
+                    Label("Pause", systemImage: "pause.fill")
+                }
+                .buttonStyle(.borderedProminent)
                 Button("Stop", role: .destructive) { Task { await controller.stopMeeting() } }
             case .paused:
                 Button("Skip Turn") { Task { await controller.skipCurrentTurn() } }
-                Button("Resume") { Task { await controller.resumeMeeting() } }
+                Button {
+                    Task { await controller.resumeMeeting() }
+                } label: {
+                    Label("Play", systemImage: "play.fill")
+                }
                     .buttonStyle(.borderedProminent)
                 Button("Stop", role: .destructive) { Task { await controller.stopMeeting() } }
             case .completed, .stopped:
@@ -472,10 +482,22 @@ struct OrchestrationView: View {
 
     private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {
         if let error = participant.preparationError { return "Preparation failed: \(error)" }
-        if participant.isFirstTurnPrepared {
-            return "\(participant.preparedSegmentCount) of \(participant.segmentCount) prepared"
-        }
-        return "Preparing first turn…"
+        guard participant.segmentCount > 0 else { return "Waiting for script assignment" }
+        return "\(participant.preparedSegmentCount) of \(participant.segmentCount) prepared"
+    }
+
+    private func participantPreparationIcon(_ participant: OrchestrationParticipant) -> String {
+        if participant.preparationError != nil { return "exclamationmark.triangle.fill" }
+        return participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount
+            ? "checkmark.circle.fill"
+            : "arrow.down.circle"
+    }
+
+    private func participantPreparationColor(_ participant: OrchestrationParticipant) -> Color {
+        if participant.preparationError != nil { return .red }
+        return participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount
+            ? .green
+            : .secondary
     }
 
     private var statusPill: some View {

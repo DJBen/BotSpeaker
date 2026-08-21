@@ -27,14 +27,14 @@ selects the shared meeting script and the ElevenLabs voice for every speaker.
    `{{speaker_2}}`, and so on.
 6. Choose **Prepare Speakers** to distribute the resolved script and the host's
    per-speaker voice assignments.
-7. Wait for every assigned client to report its first turn ready, then choose
+7. Wait for every assigned client to report all paragraphs ready, then choose
    **Start Meeting**.
 
 Preparing the meeting writes the ordered, resolved turn plan to the room. Each
 client downloads the turns assigned to its anonymous participant ID, generates
-and caches its first paragraph without loading the audio player, and reports
-readiness to the host. The Start button unlocks after every assigned speaker's
-first turn is ready.
+and caches every paragraph without loading the audio player, and reports
+readiness to the host. The Start button unlocks only after every assigned
+speaker is fully prepared.
 
 The host script is an explicit timeline: every non-empty paragraph must start
 with `{{speaker_N}}:`. The prefix selects the client in that numbered host
@@ -43,17 +43,15 @@ speaker names before distribution. This allows natural short replies,
 agreement, and longer statements without forcing a round-robin order. Local
 play, script-selection, and Space-key controls are locked while paired.
 
-During the meeting, every client keeps one local paragraph ahead of its most
-recently finished turn. The lookahead uses the exact same cache key, chunking,
-voice, model, and context as playback. When that paragraph is assigned, playback
-loads the prepared MP3 and timing data from disk rather than waiting on an
-ElevenLabs request. Prefetching never calls the audio player, so prepared speech
-cannot start before the host assigns its turn. Preparation failures appear in
-the speaker list and retry after a short delay; assigned playback still performs
-a final cache check before reporting failure.
+Before the meeting starts, every client prepares all of its assigned paragraphs.
+Preparation uses the exact same cache key, chunking, voice, model, and context as
+playback, so an unchanged assignment is reused across meetings without another
+ElevenLabs request. Preparation never calls the audio player, so cached speech
+cannot start before the host assigns its turn. Failures appear in the speaker
+list and retry after a short delay.
 
-The host can pause or resume all clients, skip the current turn, stop the
-session, and close pairing after the expected speakers have joined. A client
+The host can pause or resume all clients with the Play/Pause control or Space,
+skip the current turn, and stop the session. A client
 reports completion only after its local audio player reaches the end of the
 assigned audio, so slow ElevenLabs generation does not advance the next speaker
 early.
