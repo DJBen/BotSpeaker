@@ -107,13 +107,58 @@ Relevant deployment files are:
 
 - `firebase.json` — Firebase/Firestore project configuration;
 - `.firebaserc` — default project alias; and
-- `firestore.rules` — access-control rules.
+- `firestore.rules` — access-control rules;
+- `firestore.indexes.json` — composite indexes the cleanup job queries; and
+- `functions/` — the scheduled data-retention job.
 
 To deploy a changed ruleset from an authenticated development machine:
 
 ```sh
 firebase deploy --only firestore:rules --project bot-speaker-1
 ```
+
+## Data retention
+
+Neither client deletes an orchestration room when a meeting ends, so rooms —
+including the host's resolved script text — and their `participants`, `turns`,
+and per-turn `events` subcollections would otherwise live forever. The
+`orchestrationCleanup` Cloud Function in `functions/index.js` runs every third
+day at 04:00 America/Los_Angeles (`0 4 */3 * *`, so the 1st, 4th, 7th and so on
+of each month) and removes:
+
+- rooms whose status is `completed` or `stopped` and whose `activityAt` is more
+  than 24 hours old;
+- rooms of any status untouched for more than 72 hours, which covers abandoned
+  lobbies and sessions whose host crashed mid-meeting and left a non-terminal
+  status behind; and
+- pairing codes more than an hour past their four-hour expiry, plus any pairing
+  still pointing at a room the same run deletes.
+
+Rooms are removed with the Admin SDK's `recursiveDelete`, so subcollections go
+with them rather than being orphaned. The status and idle queries key off
+`activityAt`, the marker every state-changing commit already touches, so an
+in-progress meeting is never collected mid-session. Because Firestore cannot
+match a missing field, a third pass sweeps by `createdAt` to reach rooms written
+before `activityAt` existed and keeps only those that still lack a fresh marker
+— an old room that is genuinely still in use survives it.
+
+Deletion happens on the first run after a record crosses its window, not the
+moment it crosses. On a three-day cadence a finished room lives up to four days
+and an idle room up to six, so export a transcript within a day or two of the
+meeting rather than relying on the room still being there. Each run handles at
+most 200 rooms and 500 pairings and logs the counts; a larger backlog drains
+over successive runs, which at this cadence is 200 rooms every three days.
+
+The retention windows and per-run limits read from environment variables
+(`FINISHED_ROOM_RETENTION_HOURS`, `IDLE_ROOM_RETENTION_HOURS`,
+`PAIRING_GRACE_HOURS`, `ROOM_LIMIT_PER_RUN`, `PAIRING_LIMIT_PER_RUN`) and fall
+back to the values above. Deploy the job and the index it needs with:
+
+```sh
+firebase deploy --only functions,firestore:indexes --project bot-speaker-1
+```
+
+The job runs with Admin SDK credentials and so bypasses `firestore.rules`.
 
 Run the live two-client security and timestamp smoke test with:
 
