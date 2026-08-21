@@ -13,6 +13,7 @@ public sealed class AppSettings
     public double OutputVolume { get; set; } = 1;
     public string SelectedScriptId { get; set; } = "";
     public string OrchestrationSpeakerName { get; set; } = "";
+    public Dictionary<string, List<OrchestratedSpeakerPreference>> OrchestratedMeetingSpeakers { get; set; } = [];
     public string LastPlayableScriptId { get; set; } = "";
     public List<CustomSpeechScript> CustomScripts { get; set; } = [];
 
@@ -42,4 +43,12 @@ public sealed class AppSettings
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, JsonOptions));
     }
+}
+
+public sealed class OrchestratedSpeakerPreference
+{
+    public int Slot { get; set; }
+    public string Name { get; set; } = "";
+    public string VoiceId { get; set; } = "";
+    public string VoiceName { get; set; } = "";
 }

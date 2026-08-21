@@ -4,6 +4,8 @@ struct OrchestratedMeetingConfigurationView: View {
     let model: AppModel
     let controller: OrchestrationController
     @Environment(\.openWindow) private var openWindow
+    @State private var editingSpeakerSlot: Int?
+    @State private var draftSpeakerName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -69,23 +71,37 @@ struct OrchestratedMeetingConfigurationView: View {
             await model.loadVoicesIfNeeded()
             controller.applyDefaultTemplateVoices()
         }
+        .alert("Edit Speaker Name", isPresented: isEditingSpeakerName) {
+            TextField("Speaker name", text: $draftSpeakerName)
+            Button("Cancel", role: .cancel) {
+                editingSpeakerSlot = nil
+            }
+            Button("Save", action: saveSpeakerName)
+                .disabled(draftSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("Replaces the placeholder throughout the script.")
+        }
     }
 
     private func speakerRow(configuration: OrchestratedSpeakerConfiguration) -> some View {
         let availableVoices: [ElevenLabsVoice] = model.voices
         return HStack(spacing: 12) {
+            Button {
+                draftSpeakerName = configuration.name
+                editingSpeakerSlot = configuration.slot
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .help("Edit speaker name")
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.placeholder).font(.caption.monospaced())
-                Text(configuration.role).font(.caption).foregroundStyle(.secondary)
+                Text(configuration.name.isEmpty ? configuration.role : configuration.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(width: 120, alignment: .leading)
-
-            OrchestratedSpeakerNameEditor(
-                name: configuration.name,
-                onCommit: { controller.updateConfiguredSpeakerName(slot: configuration.slot, name: $0) }
-            )
-            .id("\(controller.selectedTemplate.id):\(configuration.slot)")
-            .frame(minWidth: 100, idealWidth: 170, maxWidth: .infinity)
+            .frame(minWidth: 130, idealWidth: 170, alignment: .leading)
 
             Picker(
                 "Voice",
@@ -109,56 +125,21 @@ struct OrchestratedMeetingConfigurationView: View {
             .frame(minWidth: 170, idealWidth: 260, maxWidth: .infinity)
         }
     }
-}
 
-private struct OrchestratedSpeakerNameEditor: View {
-    let name: String
-    let onCommit: (String) -> Void
-    @State private var draftName: String
-    @FocusState private var isFocused: Bool
-
-    init(name: String, onCommit: @escaping (String) -> Void) {
-        self.name = name
-        self.onCommit = onCommit
-        _draftName = State(initialValue: name)
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            TextField("Speaker name", text: $draftName)
-                .textFieldStyle(.roundedBorder)
-                .frame(height: 28)
-                .focused($isFocused)
-                .onSubmit(commit)
-
-            Button(action: commit) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 28, height: 28)
-                    .foregroundStyle(.white)
-                    .background(hasPendingChange ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
-                    .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+    private var isEditingSpeakerName: Binding<Bool> {
+        Binding(
+            get: { editingSpeakerSlot != nil },
+            set: { isPresented in
+                if !isPresented { editingSpeakerSlot = nil }
             }
-            .buttonStyle(.plain)
-            .contentShape(Circle())
-            .help("Apply speaker name")
-            .disabled(!hasPendingChange)
-            .opacity(isFocused ? 1 : 0)
-            .allowsHitTesting(isFocused)
-            .accessibilityHidden(!isFocused)
-        }
-        .onChange(of: name) { _, newName in
-            if !isFocused { draftName = newName }
-        }
+        )
     }
 
-    private var hasPendingChange: Bool {
-        draftName != name
-    }
-
-    private func commit() {
-        guard hasPendingChange else { return }
-        onCommit(draftName)
-        isFocused = false
+    private func saveSpeakerName() {
+        guard let slot = editingSpeakerSlot else { return }
+        let name = draftSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        controller.updateConfiguredSpeakerName(slot: slot, name: name)
+        editingSpeakerSlot = nil
     }
 }

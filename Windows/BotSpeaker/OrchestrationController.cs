@@ -122,15 +122,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _speakerName = string.IsNullOrWhiteSpace(model.Settings.OrchestrationSpeakerName)
             ? Environment.MachineName
             : model.Settings.OrchestrationSpeakerName;
-        SpeakerConfigurations = OrchestratedMeetingTemplate.LaunchReadiness.SpeakerRoles
-            .Select((role, index) => new OrchestratedSpeakerConfiguration
-            {
-                Slot = index + 1,
-                Role = role,
-                VoiceId = model.VoiceId,
-                VoiceName = model.SelectedVoiceName,
-            })
-            .ToList();
+        SpeakerConfigurations = LoadSpeakerConfigurations(OrchestratedMeetingTemplate.LaunchReadiness);
+        if (model.Settings.OrchestratedMeetingSpeakers.ContainsKey(OrchestratedMeetingTemplate.LaunchReadiness.Id))
+        {
+            _defaultVoicesAppliedForTemplateId = OrchestratedMeetingTemplate.LaunchReadiness.Id;
+        }
 
         _pollTimer = new DispatcherTimer { Interval = PollInterval };
         _pollTimer.Tick += async (_, _) => await PollAsync();
@@ -202,15 +198,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         MeetingScriptText = template.Text;
         MeetingScriptTitle = template.Title;
         SpeakerConfigurations.Clear();
-        SpeakerConfigurations.AddRange(template.SpeakerRoles.Select((role, index) =>
-            new OrchestratedSpeakerConfiguration
-            {
-                Slot = index + 1,
-                Role = role,
-                VoiceId = _model.VoiceId,
-                VoiceName = _model.SelectedVoiceName,
-            }));
-        _defaultVoicesAppliedForTemplateId = null;
+        SpeakerConfigurations.AddRange(LoadSpeakerConfigurations(template));
+        _defaultVoicesAppliedForTemplateId = _model.Settings.OrchestratedMeetingSpeakers.ContainsKey(template.Id)
+            ? template.Id
+            : null;
         ApplyDefaultTemplateVoices();
         NotifySpeakerConfigurationChanged();
     }
@@ -238,13 +229,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             usedVoiceIds.Add(selectedVoice.Id);
         }
         _defaultVoicesAppliedForTemplateId = SelectedTemplate.Id;
+        PersistSpeakerConfigurations();
         NotifySpeakerConfigurationChanged();
     }
 
     public void UpdateSpeakerName(int slot, string name)
     {
         var configuration = SpeakerConfigurations.First(item => item.Slot == slot);
-        configuration.Name = name;
+        configuration.Name = name.Trim();
+        PersistSpeakerConfigurations();
         NotifySpeakerConfigurationChanged();
     }
 
@@ -254,7 +247,40 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         configuration.VoiceId = voiceId;
         configuration.VoiceName = _model.Voices.FirstOrDefault(voice => voice.Id == voiceId)?.Name
             ?? $"Voice ID {voiceId[..Math.Min(8, voiceId.Length)]}…";
+        PersistSpeakerConfigurations();
         NotifySpeakerConfigurationChanged();
+    }
+
+    private List<OrchestratedSpeakerConfiguration> LoadSpeakerConfigurations(OrchestratedMeetingTemplate template)
+    {
+        _model.Settings.OrchestratedMeetingSpeakers.TryGetValue(template.Id, out var saved);
+        var savedBySlot = (saved ?? []).ToDictionary(item => item.Slot);
+        return template.SpeakerRoles.Select((role, index) =>
+        {
+            int slot = index + 1;
+            savedBySlot.TryGetValue(slot, out var preference);
+            return new OrchestratedSpeakerConfiguration
+            {
+                Slot = slot,
+                Role = role,
+                Name = preference?.Name ?? "",
+                VoiceId = preference?.VoiceId ?? _model.VoiceId,
+                VoiceName = preference?.VoiceName ?? _model.SelectedVoiceName,
+            };
+        }).ToList();
+    }
+
+    private void PersistSpeakerConfigurations()
+    {
+        _model.Settings.OrchestratedMeetingSpeakers[SelectedTemplate.Id] = SpeakerConfigurations.Select(configuration =>
+            new OrchestratedSpeakerPreference
+            {
+                Slot = configuration.Slot,
+                Name = configuration.Name,
+                VoiceId = configuration.VoiceId,
+                VoiceName = configuration.VoiceName,
+            }).ToList();
+        _model.Settings.Save();
     }
 
     private void NotifySpeakerConfigurationChanged()

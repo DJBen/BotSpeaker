@@ -7,9 +7,17 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+private struct PersistedOrchestratedSpeakerConfiguration: Codable {
+    let slot: Int
+    let name: String
+    let voiceID: String
+    let voiceName: String
+}
+
 @MainActor
 @Observable
 final class OrchestrationController {
+    private static let speakerConfigurationDefaultsKey = "orchestratedMeetingSpeakerConfigurations"
     var setupMode: OrchestrationMode = .host
     var speakerName: String
     var pairingCodeInput = ""
@@ -60,17 +68,14 @@ final class OrchestrationController {
 
     init(model: AppModel) {
         self.model = model
-        speakerConfigurations = OrchestratedMeetingTemplate.launchReadiness.speakerRoles
-            .enumerated()
-            .map { index, role in
-                OrchestratedSpeakerConfiguration(
-                    slot: index + 1,
-                    role: role,
-                    name: "",
-                    voiceID: model.voiceID,
-                    voiceName: model.selectedVoiceName
-                )
-            }
+        let restoredConfiguration = Self.loadSpeakerConfigurations(
+            for: OrchestratedMeetingTemplate.launchReadiness,
+            model: model
+        )
+        speakerConfigurations = restoredConfiguration.configurations
+        defaultVoicesAppliedForTemplateID = restoredConfiguration.wasRestored
+            ? OrchestratedMeetingTemplate.launchReadiness.id
+            : nil
         speakerName = UserDefaults.standard.string(forKey: "orchestrationSpeakerName")
             ?? Host.current().localizedName
             ?? "Speaker"
@@ -146,16 +151,9 @@ final class OrchestrationController {
         selectedTemplate = template
         meetingScriptText = template.text
         meetingScriptTitle = template.title
-        speakerConfigurations = template.speakerRoles.enumerated().map { index, role in
-            OrchestratedSpeakerConfiguration(
-                slot: index + 1,
-                role: role,
-                name: "",
-                voiceID: model?.voiceID ?? "",
-                voiceName: model?.selectedVoiceName ?? "Choose a voice"
-            )
-        }
-        defaultVoicesAppliedForTemplateID = nil
+        let restoredConfiguration = Self.loadSpeakerConfigurations(for: template, model: model)
+        speakerConfigurations = restoredConfiguration.configurations
+        defaultVoicesAppliedForTemplateID = restoredConfiguration.wasRestored ? template.id : nil
         applyDefaultTemplateVoices()
     }
 
@@ -183,6 +181,7 @@ final class OrchestrationController {
             usedVoiceIDs.insert(voice.id)
         }
         defaultVoicesAppliedForTemplateID = selectedTemplate.id
+        persistSpeakerConfigurations()
     }
 
     func updateConfiguredVoice(slot: Int, voiceID: String) {
@@ -190,11 +189,57 @@ final class OrchestrationController {
         speakerConfigurations[index].voiceID = voiceID
         speakerConfigurations[index].voiceName = model?.voices.first(where: { $0.id == voiceID })?.name
             ?? "Voice ID \(voiceID.prefix(8))…"
+        persistSpeakerConfigurations()
     }
 
     func updateConfiguredSpeakerName(slot: Int, name: String) {
         guard let index = speakerConfigurations.firstIndex(where: { $0.slot == slot }) else { return }
         speakerConfigurations[index].name = name
+        persistSpeakerConfigurations()
+    }
+
+    private func persistSpeakerConfigurations() {
+        var saved = Self.savedSpeakerConfigurations()
+        saved[selectedTemplate.id] = speakerConfigurations.map {
+            PersistedOrchestratedSpeakerConfiguration(
+                slot: $0.slot,
+                name: $0.name,
+                voiceID: $0.voiceID,
+                voiceName: $0.voiceName
+            )
+        }
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        UserDefaults.standard.set(data, forKey: Self.speakerConfigurationDefaultsKey)
+    }
+
+    private static func loadSpeakerConfigurations(
+        for template: OrchestratedMeetingTemplate,
+        model: AppModel?
+    ) -> (configurations: [OrchestratedSpeakerConfiguration], wasRestored: Bool) {
+        let savedBySlot = Dictionary(
+            uniqueKeysWithValues: (savedSpeakerConfigurations()[template.id] ?? []).map { ($0.slot, $0) }
+        )
+        let configurations = template.speakerRoles.enumerated().map { index, role in
+            let slot = index + 1
+            let saved = savedBySlot[slot]
+            return OrchestratedSpeakerConfiguration(
+                slot: slot,
+                role: role,
+                name: saved?.name ?? "",
+                voiceID: saved?.voiceID ?? model?.voiceID ?? "",
+                voiceName: saved?.voiceName ?? model?.selectedVoiceName ?? "Choose a voice"
+            )
+        }
+        return (configurations, !savedBySlot.isEmpty)
+    }
+
+    private static func savedSpeakerConfigurations() -> [String: [PersistedOrchestratedSpeakerConfiguration]] {
+        guard let data = UserDefaults.standard.data(forKey: speakerConfigurationDefaultsKey),
+              let saved = try? JSONDecoder().decode(
+                  [String: [PersistedOrchestratedSpeakerConfiguration]].self,
+                  from: data
+              ) else { return [:] }
+        return saved
     }
 
     var canExportTranscript: Bool {

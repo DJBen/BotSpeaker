@@ -480,10 +480,36 @@ public partial class MainWindow : Window
         foreach (var configuration in _orchestration.SpeakerConfigurations)
         {
             var row = new Grid { Margin = new Thickness(2, 5, 2, 5) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(155) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(185) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            int slot = configuration.Slot;
+            var editNameButton = new Button
+            {
+                Content = new TextBlock
+                {
+                    Text = "\uE70F",
+                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 12,
+                },
+                Width = 24,
+                Height = 24,
+                Padding = new Thickness(0),
+                ToolTip = "Edit speaker name",
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+            };
+            editNameButton.Click += (_, _) =>
+            {
+                var editedName = ShowSpeakerNameDialog(configuration.Name);
+                if (editedName is null) return;
+                _orchestration.UpdateSpeakerName(slot, editedName);
+                UpdateOrchestrationConfiguration();
+            };
+            Grid.SetColumn(editNameButton, 0);
+            row.Children.Add(editNameButton);
 
             var identity = new StackPanel();
             identity.Children.Add(new TextBlock
@@ -494,81 +520,12 @@ public partial class MainWindow : Window
             });
             identity.Children.Add(new TextBlock
             {
-                Text = configuration.Role,
+                Text = string.IsNullOrWhiteSpace(configuration.Name) ? configuration.Role : configuration.Name,
                 FontSize = 10,
                 Foreground = Brushes.Gray,
             });
-            Grid.SetColumn(identity, 0);
+            Grid.SetColumn(identity, 1);
             row.Children.Add(identity);
-
-            int slot = configuration.Slot;
-            var nameEditor = new Grid();
-            nameEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            nameEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var nameBox = new TextBox
-            {
-                Text = configuration.Name,
-                Padding = new Thickness(4),
-                Height = 28,
-                VerticalContentAlignment = VerticalAlignment.Center,
-            };
-            var confirmNameButton = new Button
-            {
-                Content = "✓",
-                Width = 28,
-                Height = 28,
-                Padding = new Thickness(0),
-                ToolTip = "Apply speaker name",
-                IsEnabled = false,
-                Background = Brushes.Transparent,
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-            };
-            var confirmNameBorder = new Border
-            {
-                Width = 28,
-                Height = 28,
-                Margin = new Thickness(5, 0, 0, 0),
-                CornerRadius = new CornerRadius(14),
-                Background = new SolidColorBrush(Color.FromRgb(0x86, 0x86, 0x86)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1F, 0x4F, 0xA8)),
-                BorderThickness = new Thickness(1),
-                Visibility = Visibility.Hidden,
-                Child = confirmNameButton,
-            };
-            void CommitSpeakerName()
-            {
-                if (nameBox.Text == configuration.Name) return;
-                _orchestration.UpdateSpeakerName(slot, nameBox.Text);
-                RefreshOrchestrationPreview();
-                confirmNameButton.IsEnabled = false;
-                confirmNameBorder.Background = new SolidColorBrush(Color.FromRgb(0x86, 0x86, 0x86));
-            }
-            nameBox.TextChanged += (_, _) =>
-            {
-                bool hasPendingChange = nameBox.Text != configuration.Name;
-                confirmNameButton.IsEnabled = hasPendingChange;
-                confirmNameBorder.Background = new SolidColorBrush(hasPendingChange
-                    ? Color.FromRgb(0x2E, 0x6B, 0xD6)
-                    : Color.FromRgb(0x86, 0x86, 0x86));
-            };
-            nameEditor.IsKeyboardFocusWithinChanged += (_, _) =>
-                confirmNameBorder.Visibility = nameEditor.IsKeyboardFocusWithin
-                    ? Visibility.Visible
-                    : Visibility.Hidden;
-            nameBox.KeyDown += (_, eventArgs) =>
-            {
-                if (eventArgs.Key != Key.Enter) return;
-                CommitSpeakerName();
-                eventArgs.Handled = true;
-            };
-            confirmNameButton.Click += (_, _) => CommitSpeakerName();
-            Grid.SetColumn(nameBox, 0);
-            Grid.SetColumn(confirmNameBorder, 1);
-            nameEditor.Children.Add(nameBox);
-            nameEditor.Children.Add(confirmNameBorder);
-            Grid.SetColumn(nameEditor, 1);
-            row.Children.Add(nameEditor);
 
             var voiceCombo = new ComboBox
             {
@@ -596,6 +553,67 @@ public partial class MainWindow : Window
         OrchestrationTemplateTitle.Text = _orchestration.SelectedTemplate.Title;
         OrchestrationScriptPreview.Text = _orchestration.ConfiguredScriptPreview;
         PrepareMeetingButton.IsEnabled = true;
+    }
+
+    private string? ShowSpeakerNameDialog(string currentName)
+    {
+        string? result = null;
+        var dialog = new Window
+        {
+            Title = "Edit Speaker Name",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.Height,
+            Width = 390,
+            ShowInTaskbar = false,
+        };
+        var content = new StackPanel { Margin = new Thickness(22) };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Replaces the placeholder throughout the script.",
+            Foreground = Brushes.Gray,
+            Margin = new Thickness(0, 0, 0, 12),
+        });
+        var nameBox = new TextBox
+        {
+            Text = currentName,
+            Padding = new Thickness(5),
+            Margin = new Thickness(0, 0, 0, 16),
+        };
+        content.Children.Add(nameBox);
+
+        var buttons = new Grid();
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var cancelButton = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(10, 5, 10, 5) };
+        var saveButton = new Button
+        {
+            Content = "Save",
+            IsDefault = true,
+            IsEnabled = !string.IsNullOrWhiteSpace(currentName),
+            Padding = new Thickness(10, 5, 10, 5),
+        };
+        nameBox.TextChanged += (_, _) => saveButton.IsEnabled = !string.IsNullOrWhiteSpace(nameBox.Text);
+        saveButton.Click += (_, _) =>
+        {
+            result = nameBox.Text.Trim();
+            dialog.DialogResult = true;
+        };
+        Grid.SetColumn(cancelButton, 0);
+        Grid.SetColumn(saveButton, 2);
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(saveButton);
+        content.Children.Add(buttons);
+        dialog.Content = content;
+        dialog.Loaded += (_, _) =>
+        {
+            nameBox.Focus();
+            nameBox.SelectAll();
+        };
+        dialog.ShowDialog();
+        return result;
     }
 
     private void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
