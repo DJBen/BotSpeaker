@@ -10,7 +10,6 @@ public partial class OrchestrationWindow : Window
 {
     private readonly AppModel _model;
     private readonly OrchestrationController _controller;
-    private bool _suppressUiEvents;
 
     public OrchestrationWindow(AppModel model, OrchestrationController controller)
     {
@@ -61,63 +60,21 @@ public partial class OrchestrationWindow : Window
 
     private void UpdateAll()
     {
-        _suppressUiEvents = true;
-        try
+        bool active = _controller.IsActive;
+        HostPanel.Visibility = active && _controller.IsHost ? Visibility.Visible : Visibility.Collapsed;
+        RemotePanel.Visibility = active && !_controller.IsHost ? Visibility.Visible : Visibility.Collapsed;
+
+        StatusPill.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+        StatusPillText.Text = _controller.SessionStatus.DisplayName();
+
+        if (_controller.IsHost)
         {
-            bool active = _controller.IsActive;
-            SetupPanel.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
-            HostPanel.Visibility = active && _controller.IsHost ? Visibility.Visible : Visibility.Collapsed;
-            RemotePanel.Visibility = active && !_controller.IsHost ? Visibility.Visible : Visibility.Collapsed;
-
-            StatusPill.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
-            StatusPillText.Text = _controller.SessionStatus.DisplayName();
-
-            if (!active)
-            {
-                UpdateSetup();
-            }
-            else if (_controller.IsHost)
-            {
-                UpdateHostSession();
-            }
-            else
-            {
-                UpdateRemoteSession();
-            }
+            UpdateHostSession();
         }
-        finally
+        else if (active)
         {
-            _suppressUiEvents = false;
+            UpdateRemoteSession();
         }
-    }
-
-    private void UpdateSetup()
-    {
-        HostModeRadio.IsChecked = _controller.SetupMode == OrchestrationMode.Host;
-        RemoteModeRadio.IsChecked = _controller.SetupMode == OrchestrationMode.Remote;
-        if (SpeakerNameBox.Text != _controller.SpeakerName) SpeakerNameBox.Text = _controller.SpeakerName;
-        if (PairingCodeBox.Text != _controller.PairingCodeInput) PairingCodeBox.Text = _controller.PairingCodeInput;
-
-        SetupScriptText.Text = _controller.SetupMode == OrchestrationMode.Host
-            ? _controller.SelectedTemplate.Title
-            : "Assigned by host after pairing";
-        SetupTurnsText.Text = _controller.SetupMode == OrchestrationMode.Host
-            ? $"{_controller.SelectedTemplate.TurnCount} shared turns"
-            : "Host controlled";
-        SetupScriptWarning.Visibility = Visibility.Collapsed;
-
-        PairingEntryPanel.Visibility = _controller.SetupMode == OrchestrationMode.Remote
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
-        SetupErrorText.Text = _controller.ErrorMessage ?? "";
-        SetupErrorText.Visibility = _controller.ErrorMessage is null ? Visibility.Collapsed : Visibility.Visible;
-
-        ConnectButton.Content = _controller.IsBusy
-            ? "Connecting…"
-            : _controller.SetupMode == OrchestrationMode.Host ? "Host Meeting" : "Join Meeting";
-        ConnectButton.IsEnabled = !_controller.IsBusy
-            && _controller.SpeakerName.Trim().Length > 0;
     }
 
     private void UpdateHostSession()
@@ -384,50 +341,6 @@ public partial class OrchestrationWindow : Window
         value.Length == 0 ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
     // Event handlers
-
-    private void OnModeChanged(object sender, RoutedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        _controller.SetupMode = HostModeRadio.IsChecked == true
-            ? OrchestrationMode.Host
-            : OrchestrationMode.Remote;
-    }
-
-    private void OnSpeakerNameChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        _controller.SpeakerName = SpeakerNameBox.Text;
-    }
-
-    private void OnPairingCodeChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        _controller.PairingCodeInput = PairingCodeBox.Text;
-    }
-
-    private async void OnConnectClick(object sender, RoutedEventArgs e) =>
-        await PerformSetupActionAsync();
-
-    private async void OnPairingCodeKeyDown(object sender, KeyEventArgs e)
-    {
-        // Parity with macOS: Enter in the code field submits the setup action,
-        // under the same guard as the connect button.
-        if (e.Key != Key.Enter || !ConnectButton.IsEnabled) return;
-        e.Handled = true;
-        await PerformSetupActionAsync();
-    }
-
-    private async Task PerformSetupActionAsync()
-    {
-        if (_controller.SetupMode == OrchestrationMode.Host)
-        {
-            await _controller.StartHostingAsync();
-        }
-        else
-        {
-            await _controller.JoinMeetingAsync();
-        }
-    }
 
     private void OnCopyPairingCodeClick(object sender, RoutedEventArgs e)
     {

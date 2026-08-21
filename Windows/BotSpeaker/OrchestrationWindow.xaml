@@ -25,64 +25,6 @@
         </Border>
 
         <Grid Margin="20">
-            <!-- Setup -->
-            <DockPanel x:Name="SetupPanel">
-                <StackPanel DockPanel.Dock="Top">
-                    <UniformGrid Columns="2" Margin="0,0,0,16">
-                        <RadioButton x:Name="HostModeRadio" Content="Host" GroupName="Mode" IsChecked="True"
-                                     Style="{StaticResource {x:Type ToggleButton}}" Padding="0,6"
-                                     Checked="OnModeChanged"/>
-                        <RadioButton x:Name="RemoteModeRadio" Content="Remote Client" GroupName="Mode"
-                                     Style="{StaticResource {x:Type ToggleButton}}" Padding="0,6"
-                                     Checked="OnModeChanged"/>
-                    </UniformGrid>
-
-                    <Border Background="#14808080" CornerRadius="9" Padding="14" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="💻 This PC" FontWeight="Bold" Margin="0,0,0,10"/>
-                            <DockPanel Margin="0,0,0,8">
-                                <TextBlock Text="Device name" Width="100" FontSize="12" Foreground="Gray"
-                                           VerticalAlignment="Center"/>
-                                <TextBox x:Name="SpeakerNameBox" Padding="3" TextChanged="OnSpeakerNameChanged"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,4">
-                                <TextBlock Text="Script" Width="100" FontSize="12" Foreground="Gray"/>
-                                <TextBlock x:Name="SetupScriptText" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="Turns" Width="100" FontSize="12" Foreground="Gray"/>
-                                <TextBlock x:Name="SetupTurnsText" FontSize="12"/>
-                            </DockPanel>
-                            <TextBlock x:Name="SetupScriptWarning" FontSize="11" Foreground="DarkOrange"
-                                       TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"
-                                       Text="⚠ Choose or replicate a playable script in the main window first."/>
-                        </StackPanel>
-                    </Border>
-
-                    <StackPanel x:Name="PairingEntryPanel" Visibility="Collapsed" Margin="0,0,0,16">
-                        <TextBlock Text="Pairing code" FontWeight="Bold" Margin="0,0,0,6"/>
-                        <TextBox x:Name="PairingCodeBox" FontSize="20" FontFamily="Consolas" Padding="6"
-                                 CharacterCasing="Upper" MaxLength="6" TextChanged="OnPairingCodeChanged"
-                                 KeyDown="OnPairingCodeKeyDown"/>
-                        <TextBlock Text="Enter the six-character code shown on the host machine."
-                                   FontSize="11" Foreground="Gray" Margin="0,4,0,0"/>
-                    </StackPanel>
-
-                    <TextBlock x:Name="SetupErrorText" FontSize="12" Foreground="Red" TextWrapping="Wrap"
-                               Visibility="Collapsed"/>
-                </StackPanel>
-
-                <DockPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
-                    <Button x:Name="ConnectButton" DockPanel.Dock="Right" Content="Host Meeting"
-                            Padding="14,6" FontWeight="Bold" MinWidth="140"
-                            Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
-                            Click="OnConnectClick"/>
-                    <TextBlock Text="Cloud coordination: Firebase project bot-speaker-1"
-                               FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
-                </DockPanel>
-                <Grid/>
-            </DockPanel>
-
             <!-- Active host session -->
             <DockPanel x:Name="HostPanel" Visibility="Collapsed">
                 <!-- Pairing card -->

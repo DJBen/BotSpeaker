@@ -74,6 +74,7 @@ public partial class App : Application
 
     public void ShowOrchestrationWindow()
     {
+        if (!Orchestration.IsActive) return;
         if (_orchestrationWindow is null || !_orchestrationWindow.IsLoaded)
         {
             _orchestrationWindow = new OrchestrationWindow(Model, Orchestration);

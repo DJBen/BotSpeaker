@@ -618,16 +618,115 @@ public partial class MainWindow : Window
         return result;
     }
 
-    private void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
+    private async void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
     {
         _orchestration.PrepareHostSetup();
-        ((App)Application.Current).ShowOrchestrationWindow();
+        SetMeetingEntryButtonsEnabled(false);
+        await _orchestration.StartHostingAsync();
+        SetMeetingEntryButtonsEnabled(true);
+        if (_orchestration.IsActive)
+        {
+            ((App)Application.Current).ShowOrchestrationWindow();
+        }
+        else if (_orchestration.ErrorMessage is string error)
+        {
+            MessageBox.Show(this, error, "Couldn’t host meeting", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
-    private void OnJoinMeetingClick(object sender, RoutedEventArgs e)
+    private async void OnJoinMeetingClick(object sender, RoutedEventArgs e)
     {
-        if (!_orchestration.IsActive) _orchestration.PrepareRemoteSetup();
-        ((App)Application.Current).ShowOrchestrationWindow();
+        _orchestration.PrepareRemoteSetup();
+        var pairingCode = ShowPairingCodeDialog();
+        if (pairingCode is null) return;
+
+        _orchestration.PairingCodeInput = pairingCode;
+        SetMeetingEntryButtonsEnabled(false);
+        await _orchestration.JoinMeetingAsync();
+        SetMeetingEntryButtonsEnabled(true);
+        if (_orchestration.IsActive)
+        {
+            ((App)Application.Current).ShowOrchestrationWindow();
+        }
+        else if (_orchestration.ErrorMessage is string error)
+        {
+            MessageBox.Show(this, error, "Couldn’t join meeting", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void SetMeetingEntryButtonsEnabled(bool isEnabled)
+    {
+        JoinMeetingButton.IsEnabled = isEnabled;
+        PrepareMeetingButton.IsEnabled = isEnabled;
+    }
+
+    private string? ShowPairingCodeDialog()
+    {
+        string? result = null;
+        var dialog = new Window
+        {
+            Title = "Join Meeting",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.Height,
+            Width = 370,
+            ShowInTaskbar = false,
+        };
+        var content = new StackPanel { Margin = new Thickness(22) };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Enter the six-character code shown by the host.",
+            Foreground = Brushes.Gray,
+            Margin = new Thickness(0, 0, 0, 12),
+        });
+        var codeBox = new TextBox
+        {
+            CharacterCasing = CharacterCasing.Upper,
+            MaxLength = 6,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 22,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 16),
+        };
+        content.Children.Add(codeBox);
+
+        var buttons = new Grid();
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var cancelButton = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(10, 5, 10, 5) };
+        var joinButton = new Button
+        {
+            Content = "Join",
+            IsDefault = true,
+            IsEnabled = false,
+            Padding = new Thickness(10, 5, 10, 5),
+        };
+        codeBox.TextChanged += (_, _) =>
+        {
+            var normalized = new string(codeBox.Text.Where(char.IsLetterOrDigit).ToArray());
+            if (!string.Equals(codeBox.Text, normalized, StringComparison.Ordinal))
+            {
+                codeBox.Text = normalized;
+                codeBox.CaretIndex = normalized.Length;
+            }
+            joinButton.IsEnabled = normalized.Length == 6;
+        };
+        joinButton.Click += (_, _) =>
+        {
+            result = codeBox.Text.ToUpperInvariant();
+            dialog.DialogResult = true;
+        };
+        Grid.SetColumn(cancelButton, 0);
+        Grid.SetColumn(joinButton, 2);
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(joinButton);
+        content.Children.Add(buttons);
+        dialog.Content = content;
+        dialog.Loaded += (_, _) => codeBox.Focus();
+        dialog.ShowDialog();
+        return result;
     }
 
     private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);

@@ -11,8 +11,6 @@ struct OrchestrationView: View {
         Group {
             if controller.isActive {
                 activeSession
-            } else {
-                setup
             }
         }
         .padding(20)
@@ -33,100 +31,6 @@ struct OrchestrationView: View {
                 return .handled
             default:
                 return .ignored
-            }
-        }
-    }
-
-    private var setup: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Picker("Mode", selection: $controller.setupMode) {
-                ForEach(OrchestrationMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("This Mac", systemImage: "laptopcomputer")
-                        .font(.headline)
-                    TextField("Device name", text: $controller.speakerName)
-                        .textFieldStyle(.roundedBorder)
-
-                    if controller.setupMode == .host {
-                        LabeledContent("Meeting script") {
-                            Text(controller.selectedTemplate.title).lineLimit(1)
-                        }
-                        LabeledContent("Cast") {
-                            Text("\(controller.selectedTemplate.speakerCount) speakers")
-                        }
-                    } else {
-                        Label("The host will assign this client’s paragraphs after pairing.", systemImage: "arrow.down.doc")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(6)
-            }
-
-            if controller.setupMode == .remote {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Pairing code")
-                        .font(.headline)
-                    UppercaseCodeField(
-                        text: $controller.pairingCodeInput,
-                        placeholder: "ABC234",
-                        onSubmit: performSetupAction
-                    )
-                    .frame(height: 56)
-                    Text("Enter the six-character code shown on the host Mac.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let error = controller.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-            HStack {
-                Text("Cloud coordination: Firebase project bot-speaker-1")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: performSetupAction) {
-                    if controller.isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label(
-                            controller.setupMode == .host ? "Host Meeting" : "Join Meeting",
-                            systemImage: controller.setupMode == .host ? "dot.radiowaves.left.and.right" : "link"
-                        )
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSetupActionDisabled)
-            }
-        }
-    }
-
-    private var isSetupActionDisabled: Bool {
-        controller.isBusy
-            || controller.speakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func performSetupAction() {
-        guard !isSetupActionDisabled else { return }
-        Task {
-            if controller.setupMode == .host {
-                await controller.startHosting()
-            } else {
-                await controller.joinMeeting()
             }
         }
     }
@@ -525,72 +429,6 @@ struct OrchestrationView: View {
         case .failed: .red
         case .skipped, .stopped: .orange
         default: .secondary
-        }
-    }
-}
-
-/// An `NSTextField` that rewrites its contents to uppercase on every keystroke.
-/// SwiftUI's `TextField` does not reliably push a transformed binding back into
-/// a field that is currently being edited, so the transform happens in AppKit.
-struct UppercaseCodeField: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    let onSubmit: () -> Void
-
-    private static let characterLimit = 6
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
-        field.delegate = context.coordinator
-        field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: 30, weight: .semibold)
-        field.bezelStyle = .roundedBezel
-        field.focusRingType = .default
-        field.isBordered = true
-        field.usesSingleLineMode = true
-        field.cell?.wraps = false
-        field.cell?.isScrollable = true
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        context.coordinator.parent = self
-        if field.stringValue != text {
-            field.stringValue = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: UppercaseCodeField
-
-        init(parent: UppercaseCodeField) {
-            self.parent = parent
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let field = notification.object as? NSTextField else { return }
-            let normalized = String(field.stringValue.uppercased().prefix(UppercaseCodeField.characterLimit))
-            if field.stringValue != normalized {
-                let caret = field.currentEditor()?.selectedRange
-                field.stringValue = normalized
-                if let caret, caret.location <= normalized.count {
-                    field.currentEditor()?.selectedRange = caret
-                } else {
-                    field.currentEditor()?.selectedRange = NSRange(location: normalized.count, length: 0)
-                }
-            }
-            parent.text = normalized
-        }
-
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            parent.onSubmit()
-            return true
         }
     }
 }

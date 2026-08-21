@@ -171,7 +171,7 @@
 
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <Button Content="Join Meeting" Padding="14,6" Margin="0,0,8,0"
+                        <Button x:Name="JoinMeetingButton" Content="Join Meeting" Padding="14,6" Margin="0,0,8,0"
                                 Click="OnJoinMeetingClick"/>
                         <Button x:Name="PrepareMeetingButton"
                                 Content="Prepare Meeting" Padding="16,6" FontWeight="Bold"

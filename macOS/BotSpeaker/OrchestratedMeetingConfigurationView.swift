@@ -2,11 +2,12 @@ import SwiftUI
 
 struct OrchestratedMeetingConfigurationView: View {
     let model: AppModel
-    let controller: OrchestrationController
+    @Bindable var controller: OrchestrationController
     let onPrepareMeeting: () -> Void
     let onJoinMeeting: () -> Void
     @State private var editingSpeakerSlot: Int?
     @State private var draftSpeakerName = ""
+    @State private var isShowingJoinPrompt = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -42,27 +43,41 @@ struct OrchestratedMeetingConfigurationView: View {
             }
 
             HStack {
-                Text("Continue to pair and assign \(controller.selectedTemplate.speakerCount) clients.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Continue to pair and assign \(controller.selectedTemplate.speakerCount) clients.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if let error = controller.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+                }
                 Spacer()
                 Button {
                     controller.prepareRemoteSetup()
-                    onJoinMeeting()
+                    isShowingJoinPrompt = true
                 } label: {
                     Label("Join Meeting", systemImage: "person.3.fill")
                 }
                 .buttonStyle(.bordered)
                 .fixedSize()
+                .disabled(controller.isBusy)
                 Button {
-                    controller.prepareHostSetup()
-                    onPrepareMeeting()
+                    startHosting()
                 } label: {
-                    Label("Prepare Meeting", systemImage: "arrow.right.circle.fill")
+                    if controller.isBusy && controller.setupMode == .host {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Prepare Meeting", systemImage: "arrow.right.circle.fill")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .fixedSize()
+                .disabled(controller.isBusy)
             }
         }
         .padding(22)
@@ -80,6 +95,14 @@ struct OrchestratedMeetingConfigurationView: View {
                 .disabled(draftSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } message: {
             Text("Replaces the placeholder throughout the script.")
+        }
+        .alert("Join Meeting", isPresented: $isShowingJoinPrompt) {
+            TextField("Pairing code", text: $controller.pairingCodeInput)
+            Button("Cancel", role: .cancel) {}
+            Button("Join") { joinMeeting() }
+                .disabled(controller.pairingCodeInput.count != 6)
+        } message: {
+            Text("Enter the six-character code shown by the host.")
         }
     }
 
@@ -142,5 +165,20 @@ struct OrchestratedMeetingConfigurationView: View {
         guard !name.isEmpty else { return }
         controller.updateConfiguredSpeakerName(slot: slot, name: name)
         editingSpeakerSlot = nil
+    }
+
+    private func startHosting() {
+        controller.prepareHostSetup()
+        Task {
+            await controller.startHosting()
+            if controller.isActive { onPrepareMeeting() }
+        }
+    }
+
+    private func joinMeeting() {
+        Task {
+            await controller.joinMeeting()
+            if controller.isActive { onJoinMeeting() }
+        }
     }
 }
