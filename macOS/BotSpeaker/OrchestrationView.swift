@@ -84,11 +84,12 @@ struct OrchestrationView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Pairing code")
                         .font(.headline)
-                    TextField("ABC234", text: $controller.pairingCodeInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                        .frame(height: 56)
-                        .onSubmit(performSetupAction)
+                    UppercaseCodeField(
+                        text: $controller.pairingCodeInput,
+                        placeholder: "ABC234",
+                        onSubmit: performSetupAction
+                    )
+                    .frame(height: 56)
                     Text("Enter the six-character code shown on the host Mac.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -515,6 +516,72 @@ struct OrchestrationView: View {
         case .failed: .red
         case .skipped, .stopped: .orange
         default: .secondary
+        }
+    }
+}
+
+/// An `NSTextField` that rewrites its contents to uppercase on every keystroke.
+/// SwiftUI's `TextField` does not reliably push a transformed binding back into
+/// a field that is currently being edited, so the transform happens in AppKit.
+struct UppercaseCodeField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let onSubmit: () -> Void
+
+    private static let characterLimit = 6
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.delegate = context.coordinator
+        field.placeholderString = placeholder
+        field.font = .monospacedSystemFont(ofSize: 30, weight: .semibold)
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .default
+        field.isBordered = true
+        field.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: UppercaseCodeField
+
+        init(parent: UppercaseCodeField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            let normalized = String(field.stringValue.uppercased().prefix(UppercaseCodeField.characterLimit))
+            if field.stringValue != normalized {
+                let caret = field.currentEditor()?.selectedRange
+                field.stringValue = normalized
+                if let caret, caret.location <= normalized.count {
+                    field.currentEditor()?.selectedRange = caret
+                } else {
+                    field.currentEditor()?.selectedRange = NSRange(location: normalized.count, length: 0)
+                }
+            }
+            parent.text = normalized
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            parent.onSubmit()
+            return true
         }
     }
 }
