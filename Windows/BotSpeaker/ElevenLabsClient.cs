@@ -8,7 +8,10 @@ using System.Text.Json.Serialization;
 
 namespace BotSpeaker;
 
-public sealed class AppException(string message) : Exception(message);
+public sealed class AppException(string message, int? statusCode = null) : Exception(message)
+{
+    public int? StatusCode { get; } = statusCode;
+}
 
 public sealed record SpeechClip(string AudioPath, SpeechTiming Timing);
 

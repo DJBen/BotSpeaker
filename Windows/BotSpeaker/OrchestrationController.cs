@@ -363,7 +363,18 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             var code = new string(PairingCodeInput.ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
             if (code.Length != 6) throw new AppException("Enter the six-character pairing code.");
 
-            var pairing = await _database.GetDocumentAsync(PairingPath(code));
+            FirestoreDocument? pairing;
+            try
+            {
+                pairing = await _database.GetDocumentAsync(PairingPath(code));
+            }
+            catch (AppException error) when (error.StatusCode == 403)
+            {
+                // The security rules answer unknown, closed, and expired codes
+                // with a permission error rather than revealing which it was.
+                throw new AppException(
+                    "No open meeting matches that code. Check the six characters on the host machine and make sure pairing is still open.");
+            }
             if (pairing is null
                 || !pairing.Bool("isOpen")
                 || pairing.String("roomID") is not string roomId

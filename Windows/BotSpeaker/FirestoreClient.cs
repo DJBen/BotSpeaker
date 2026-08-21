@@ -214,7 +214,9 @@ public sealed class FirestoreClient
             catch (JsonException)
             {
             }
-            throw new AppException($"{failure} ({(int)response.StatusCode}{(detail is null ? "" : $": {detail}")}).");
+            throw new AppException(
+                $"{failure} ({(int)response.StatusCode}{(detail is null ? "" : $": {detail}")}).",
+                (int)response.StatusCode);
         }
         try
         {

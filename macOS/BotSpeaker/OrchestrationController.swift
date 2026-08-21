@@ -303,7 +303,16 @@ final class OrchestrationController {
                 .filter { $0.isLetter || $0.isNumber }
             guard code.count == 6 else { throw AppError("Enter the six-character pairing code.") }
 
-            let pairingSnapshot = try await self.pairingReference(code).getDocument()
+            let pairingSnapshot: DocumentSnapshot
+            do {
+                pairingSnapshot = try await self.pairingReference(code).getDocument()
+            } catch let error as NSError
+                where error.domain == FirestoreErrorDomain
+                    && error.code == FirestoreErrorCode.permissionDenied.rawValue {
+                // The security rules answer unknown, closed, and expired codes
+                // with a permission error rather than revealing which it was.
+                throw AppError("No open meeting matches that code. Check the six characters on the host machine and make sure pairing is still open.")
+            }
             guard let pairing = pairingSnapshot.data(),
                   pairing["isOpen"] as? Bool == true,
                   let roomID = pairing["roomID"] as? String,
