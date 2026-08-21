@@ -60,79 +60,79 @@ public sealed record OrchestratedMeetingTemplate(
         ["Product Manager", "Engineering Lead", "Privacy & Security Lead", "Customer Success Lead"],
         ["male", "female", "male", "female"],
         """
-        {{speaker_1}}: I am {{speaker_1}}, the Product Manager for Decision Digest. Thanks for making the time. The purpose of this review is to decide whether our AI meeting assistant is ready for a controlled launch, not to defend a date we already picked. I want a direct answer on product value, reliability, privacy, and customer operations. If the answer is conditional, we will name the conditions, owners, and stop signals before we leave. The first cohort is five design partners using post-meeting summaries for scheduled internal meetings. Nothing is sent automatically to task systems or external recipients.
+        {{speaker_1}}: I am {{speaker_1}}, the Product Manager for Decision Digest. Thanks for making the time. The purpose of this review is to decide whether our AI meeting assistant is ready for a controlled launch, not to defend a date we already picked. I want a direct answer on product value, reliability, privacy, and customer operations. If the answer is conditional, we will name the conditions, owners, and stop signals before we leave. For context, the first cohort is five design partners using post-meeting summaries for scheduled internal meetings. The assistant drafts decisions, action items, and open questions, and every item links back to transcript evidence. Nothing is sent automatically to task systems or external recipients.
 
-        {{speaker_2}}: I am {{speaker_2}}, the Engineering Lead. That scope matches what we have tested. The service is stable at pilot volume, and the architecture gives us a clean kill switch before a transcript enters generation. My current recommendation is a conditional go. Two technical gates remain: the export event must appear reliably in the workspace audit log, and the batching optimization must finish its live canary without moving the quality metrics. Those are bounded pieces of work, but I do not want us to blur nearly merged with production evidence.
+        {{speaker_2}}: I am {{speaker_2}}, the Engineering Lead. That scope matches what we have tested. The service is stable at pilot volume, and the architecture gives us a clean kill switch before a transcript enters generation. My current recommendation is a conditional go. Two technical gates remain: the export event must appear reliably in the workspace audit log, and the batching optimization must finish its live canary without moving the quality metrics. Those are bounded pieces of work, but I do not want us to blur “nearly merged” with “production evidence.”
 
-        {{speaker_3}}: I am {{speaker_3}}, the Privacy and Security Lead. I agree with the conditional framing. My question is slightly different: can an attendee understand that processing is happening, and can we honor a withdrawal without asking support to improvise? We require an organizer action, persistent attendee notice, a recorded notice-delivery event, and a hard rejection when notice delivery fails. I also need one end-to-end deletion exercise that starts with a participant request and ends with verified removal of the derived digest, embeddings, and temporary inference artifacts.
+        {{speaker_3}}: I am {{speaker_3}}, the Privacy and Security Lead. I agree with the conditional framing. My question is slightly different: can an attendee understand that processing is happening, and can we honor a withdrawal without asking support to improvise? Administrator enablement is necessary, but it is not enough for a live conversation. We require an organizer action, persistent attendee notice, a recorded notice-delivery event, and a hard rejection when notice delivery fails. I also need one end-to-end deletion exercise that starts with a participant request and ends with verified removal of the derived digest, embeddings, and temporary inference artifacts.
 
-        {{speaker_4}}: I am {{speaker_4}}, the Customer Success Lead. From the customer side, there is real pull. Pilot teams repeatedly tell us they recover ten to fifteen minutes after a planning meeting, especially when action items are scattered across chat and personal notes. But they also call the draft the record unless we teach them otherwise. I support the five-customer cohort if the product and launch materials consistently call it an editable, transcript-linked draft. Support needs a capability matrix, an escalation path, and a clear answer for an attendee who says, I did not want this summary created.
+        {{speaker_4}}: I am {{speaker_4}}, the Customer Success Lead. From the customer side, there is real pull. Pilot teams repeatedly tell us they recover ten to fifteen minutes after a planning meeting, especially when action items are scattered across chat and personal notes. But they also call the draft “the record” unless we teach them otherwise. I support the five-customer cohort if the product and launch materials consistently call it an editable, transcript-linked draft. Support needs a capability matrix, an escalation path, and a clear answer for an attendee who says, “I did not want this summary created.”
 
-        {{speaker_1}}: Good. We are promising faster follow-through with evidence, not perfect minutes and not an autonomous source of truth. The organizer reviews before sharing. External meetings, webinars, coaching scores, regulated templates, and automatic task creation remain out of scope. Are we comfortable that this is still useful enough for the cohort?
+        {{speaker_1}}: Good. Let me test the value proposition against those boundaries. We are promising faster follow-through with evidence, not perfect minutes and not an autonomous source of truth. The organizer reviews before sharing. External meetings, webinars, coaching scores, regulated templates, and automatic task creation remain out of scope. Are we comfortable that this is still useful enough for the cohort, or have the safeguards removed the reason customers wanted it?
 
-        {{speaker_4}}: It is still useful. Actually, the review step is part of the appeal. One caveat: the empty-state copy should say why a digest was blocked when notice validation fails. If it just says generation unavailable, administrators will open tickets and may retry in ways that confuse attendees.
+        {{speaker_4}}: It is still useful. Actually, the review step is part of the appeal for the administrators I spoke with. They do not want another bot silently publishing tasks. They want a strong first draft and a quick way to verify attribution. One caveat: the empty-state copy should say why a digest was blocked when notice validation fails. If it just says “generation unavailable,” administrators will open tickets and may retry in ways that confuse attendees.
 
-        {{speaker_2}}: Yep, that is straightforward. We already expose a structured rejection reason internally. We can map the notice-validation case to customer-safe copy without exposing infrastructure details.
+        {{speaker_2}}: Yep, that is straightforward. We already expose a structured rejection reason internally. We can map the notice-validation case to customer-safe copy without exposing infrastructure details. I will add that to the launch branch and include it in the end-to-end test.
 
-        {{speaker_3}}: That works for me. Please say, The digest was not created because attendee notice could not be confirmed. It is factual and reinforces the safeguard.
+        {{speaker_3}}: That works for me, with one wording review. Please avoid implying the attendee caused the failure. Something like, “The digest was not created because attendee notice could not be confirmed.” It is factual and it reinforces the safeguard.
 
-        {{speaker_1}}: Agreed. Now latency. The pilot median is about six seconds, the ninety-fifth percentile is just under fifteen, and the long tail reaches the high twenties. Do we need a full week of production shadowing, or is forty-eight hours enough?
+        {{speaker_1}}: Agreed. Now latency. Our pilot median is about six seconds after the meeting ends, the ninety-fifth percentile is just under fifteen, and the long tail reaches the high twenties. The launch promise says the draft appears shortly after the call. Do we need a full week of production shadowing, or is forty-eight hours enough?
 
-        {{speaker_2}}: Forty-eight hours is enough if we define the evidence before the clock starts. Replay on ten thousand pilot meetings brought the ninety-fifth percentile below eleven seconds with no measurable drop in grounding or action-item precision. I want forty-eight hours of shadow traffic, one canary organization, language-segmented quality, and a rollback exercise. If any comparison crosses the threshold, the clock resets.
+        {{speaker_2}}: Forty-eight hours is enough if we define the evidence before the clock starts. The batching change groups compatible transcript windows and removes queue overhead. Replay on ten thousand pilot meetings brought the ninety-fifth percentile below eleven seconds with no measurable drop in grounding or action-item precision. I want forty-eight hours of shadow traffic, one canary organization, language-segmented quality, and a rollback exercise. If any comparison crosses the threshold, the clock resets. Waiting seven days after clean evidence would add calendar time, not confidence.
 
-        {{speaker_3}}: I’m comfortable with that. Is regional isolation included in the comparison?
+        {{speaker_3}}: I’m comfortable with that. Is regional isolation included in the comparison? A latency win is not acceptable if a fallback can send content outside the workspace’s configured region.
 
-        {{speaker_2}}: Yes. Batches are formed only inside the organization and region boundary. Admission queues work rather than borrowing capacity from another region.
+        {{speaker_2}}: Yes. Batches are formed only inside the organization and region boundary. Admission queues work rather than borrowing capacity from another region. We have an alert on any attempted routing mismatch, and the canary dashboard breaks that out separately.
 
-        {{speaker_3}}: Great. Then no objection from me.
+        {{speaker_3}}: Great. Then no objection from me on forty-eight hours.
 
-        {{speaker_4}}: When the kill switch stops new jobs, what does a customer see for meetings already waiting? Processing forever would be worse than a clear delay state.
+        {{speaker_4}}: One operational question: when the kill switch stops new jobs, what does a customer see for meetings already waiting? “Processing” forever would be worse than a clear delay state.
 
-        {{speaker_2}}: In-flight jobs either finish on the pinned version or move to delayed by administrator control, depending on where they are in the pipeline. We do not discard the source meeting. I can give Support the exact state table before training.
+        {{speaker_2}}: In-flight jobs either finish on the pinned version or move to “delayed by administrator control,” depending on where they are in the pipeline. We do not discard the source meeting. Once the hold is lifted, eligible jobs resume. I can give Support the exact state table and screenshots before training.
 
         {{speaker_4}}: Perfect. That gives us something concrete to practice.
 
-        {{speaker_1}}: Let’s cover language scope. English, Spanish, and French meet the thresholds. German action-item recall is still several points below English, although precision remains high. My proposal is to keep all four languages in the cohort, label non-English output as beta, and make the dashboard language-specific.
+        {{speaker_1}}: Let’s cover language scope. English, Spanish, and French meet the agreed thresholds. German action-item recall is still several points below English, although precision remains high. My proposal is to keep all four languages in the cohort, label non-English output as beta, and make the readiness dashboard language-specific. Thoughts?
 
-        {{speaker_4}}: I would keep German for two customers because they joined to test it. But the account team must say beta before enablement, and the weekly report must show omissions by language rather than one blended score.
+        {{speaker_4}}: I would keep German for two of the five customers because they explicitly joined to test it. Removing it now loses useful evidence. But the account team must say “beta” before enablement, and the weekly report must show omissions by language rather than one blended satisfaction score.
 
-        {{speaker_3}}: I agree, provided the label is visible where the digest is reviewed. A language regression should pause that language independently.
+        {{speaker_3}}: I agree, provided the label is visible where the digest is reviewed, not buried in an administrator document. Also, a language regression should pause that language independently. We should not disable healthy English processing because German recall drops, and we should not hide German risk inside a healthy global average.
 
-        {{speaker_2}}: We can gate by language. The deployment system already supports a language allowlist. I will add per-language stop thresholds.
+        {{speaker_2}}: We can gate by language. The classifier change recovers four points in replay, and the deployment system already supports a language allowlist. I will add per-language stop thresholds to the launch configuration.
 
-        {{speaker_1}}: Privacy, what would make you say no-go?
+        {{speaker_1}}: Sounds aligned. Privacy, walk us through the withdrawal test and what would make you say no-go.
 
-        {{speaker_3}}: I will say no-go if notice failure can still enter generation, if derived content survives beyond the documented window, if support needs privileged engineering access to complete a withdrawal, or if audit evidence contains transcript excerpts rather than identifiers and event types.
+        {{speaker_3}}: The test begins as a real request, not a database command. Customer Success submits the request through the documented channel with a meeting identifier and participant context. We verify authorization, delete the entire derived digest, remove processing artifacts, and record acknowledgments from every subsystem. The source recording follows the customer’s separate retention policy, so the confirmation must not claim we deleted that too. I will say no-go if notice failure can still enter generation, if derived content survives beyond the documented window, if support needs privileged engineering access to complete the request, or if audit evidence contains transcript excerpts rather than identifiers and event types.
 
-        {{speaker_4}}: I’d like Support to run the withdrawal request while Engineering observes. That proves the procedure works for the team who will receive it.
+        {{speaker_4}}: I’d like Support to run the request while Engineering observes. That proves the procedure works for the team who will actually receive it.
 
-        {{speaker_2}}: Agreed. If the runbook cannot be followed without an engineer at the keyboard, it has not passed.
+        {{speaker_2}}: Agreed. We will instrument the exercise, but we won’t take over the steps. If the runbook cannot be followed without an engineer at the keyboard, it has not passed.
 
-        {{speaker_1}}: Export auditing is a hard launch gate. Administrators need actor, workspace, digest identifier, export type, and timestamp for every path.
+        {{speaker_1}}: Excellent. Let’s turn to audit logging. Today an organizer can copy or export a digest, but the workspace audit log does not reliably record every export path. I consider that a hard launch gate because administrators use the log to investigate where meeting content went.
 
-        {{speaker_3}}: Strong agreement. No transcript text in the event, and failed export attempts must be distinguishable from completed exports.
+        {{speaker_3}}: Strong agreement. Viewing and exporting are different risk events. We need actor, workspace, digest identifier, export type, and timestamp. No transcript text in the event. Failed export attempts should be distinguishable from completed exports, and the retention must match the customer’s audit policy.
 
-        {{speaker_2}}: Download and copy are implemented. The remaining path is the share-sheet handoff. It will be in Thursday’s build, and we can attach all three audit records to the checklist.
+        {{speaker_2}}: The event is implemented for download and copy. The remaining path is the share-sheet handoff. It will be in Thursday’s build. We can test all three paths against an isolated workspace and attach the resulting audit records to the launch checklist.
 
-        {{speaker_4}}: That also makes support conversations easier. We can point administrators to evidence instead of guessing from application logs.
+        {{speaker_4}}: That also makes support conversations easier. When an administrator asks whether a digest left the product, we can point them to evidence instead of guessing from application logs.
 
-        {{speaker_1}}: I’m hearing four launch conditions: complete export auditing, pass the latency canary and rollback, pass notice and withdrawal tests, and finish customer-facing training. Is anything missing?
+        {{speaker_1}}: All right. I’m hearing four launch conditions: complete export auditing, pass the forty-eight-hour latency canary and rollback exercise, pass notice and withdrawal tests end to end, and finish customer-facing training with the exact states and claims. Is anything missing?
 
-        {{speaker_2}}: Capacity reservation. It is arranged, but it belongs in the signed record. If quota falls below the buffer, admission slows before quality or isolation is compromised.
+        {{speaker_2}}: Capacity reservation. It is already arranged, but it belongs in the signed record. The first cohort has reserved model-provider capacity and thirty percent headroom at the expected peak. If quota falls below that buffer, admission slows before quality or isolation is compromised.
 
-        {{speaker_4}}: Add an escalation roster with one named engineering lead and one Customer Success owner each business day.
+        {{speaker_4}}: Add an escalation roster with one named engineering lead and one Customer Success owner each business day. A dashboard without a person watching it is not a launch control.
 
-        {{speaker_3}}: And each function needs authority to trigger a hold. The launch commander coordinates, but no function should need consensus to stop expansion when its threshold is crossed.
+        {{speaker_3}}: And each function needs authority to trigger a hold. The launch commander makes the final coordination call, but Engineering, Privacy, Security, or Customer Success should not need consensus to stop expansion when its threshold is crossed.
 
-        {{speaker_1}}: Yes. Conditional go for five customers, not unrestricted availability. {{speaker_2}} owns technical evidence. {{speaker_3}} owns notice and deletion verification. {{speaker_4}} owns checklists, training, and escalation. I own the launch record and daily review. Expansion pauses automatically on any stop threshold.
+        {{speaker_1}}: Yes to all three. Here is the decision I’ll record: conditional go for five customers, not unrestricted availability. {{speaker_2}} owns export auditing, canary evidence, capacity confirmation, and rollback. {{speaker_3}} owns notice and deletion verification plus the privacy wording. {{speaker_4}} owns cohort checklists, training, and the escalation roster. I own the capability statement, launch record, and daily review. Expansion pauses automatically on any stop threshold, and we reconvene after five hundred production digests.
 
-        {{speaker_4}}: Clear. I’ll have the checklist and simulated support cases ready by Monday.
+        {{speaker_4}}: That is clear. I’ll have the customer checklist and simulated support cases ready by Monday.
 
         {{speaker_3}}: Conditional approval from me, assuming the evidence is attached rather than summarized as a checkbox.
 
-        {{speaker_2}}: Same here. I’ll publish the canary dashboard and rollback timeline.
+        {{speaker_2}}: Same here. I’ll publish the canary dashboard and rollback timeline so everyone can review the raw result.
 
-        {{speaker_1}}: Great. We are launching a reviewable assistant, not an autonomous record keeper. I’ll send the decision log today with owners, dates, and stop conditions. Thanks, everyone.
+        {{speaker_1}}: Great. Then we have a decision. We are launching a reviewable assistant that reduces administrative work while keeping evidence and participant control visible. We are not launching an autonomous record keeper. I’ll send the decision log today with owners, dates, and stop conditions. Thanks, everyone.
         """);
 
     public static readonly OrchestratedMeetingTemplate ApiIncidentReview = new(
@@ -170,7 +170,7 @@ public sealed record OrchestratedMeetingTemplate(
 
         {{speaker_2}}: A burn-rate alert on checkout duration segmented by region would have fired around 9:41. We already calculate that service-level indicator, but paging uses a fifteen-minute window. I propose a fast five-minute burn alert paired with queue growth, plus a dashboard for database lock-wait time. I do not recommend paging directly on connection count because healthy traffic bursts can produce the same shape.
 
-        {{speaker_3}}: Can the alert include the affected customer workflow in plain language? Checkout completion delayed in us-west helps Support far more than a service identifier.
+        {{speaker_3}}: Can the alert include the affected customer workflow in plain language? “Checkout completion delayed in us-west” helps Support far more than a service identifier.
 
         {{speaker_2}}: Yes. The alert metadata can map the dependency to checkout and link the customer-impact dashboard. I’ll include that in the same change.
 
