@@ -132,6 +132,11 @@ struct OrchestrationView: View {
                 LazyVStack(spacing: 3) {
                     ForEach(Array(orderedParticipants.enumerated()), id: \.element.id) { index, participant in
                         HStack(spacing: 8) {
+                            if canReorderParticipants {
+                                Image(systemName: "line.3.horizontal")
+                                    .foregroundStyle(.tertiary)
+                                    .help("Drag to change this client’s speaker assignment")
+                            }
                             Circle()
                                 .fill(participant.isRecentlyConnected ? .green : .orange)
                                 .frame(width: 8, height: 8)
@@ -147,11 +152,6 @@ struct OrchestrationView: View {
                             Image(systemName: participantPreparationIcon(participant))
                                 .foregroundStyle(participantPreparationColor(participant))
                                 .help(participantPreparationText(participant))
-                            if controller.sessionStatus == .lobby && controller.turns.isEmpty {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundStyle(.tertiary)
-                                    .help("Drag to change this client’s speaker assignment")
-                            }
                         }
                         .padding(.horizontal, 7)
                         .padding(.vertical, 5)
