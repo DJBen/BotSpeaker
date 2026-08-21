@@ -42,6 +42,9 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                     <Button x:Name="SettingsButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                            Content="👥" FontSize="16" Margin="0,0,6,0"
+                            ToolTip="Join an orchestrated meeting" Click="OnJoinMeetingClick"/>
                     <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
                 </DockPanel>
 
@@ -165,6 +168,9 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                     <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                            Content="👥" FontSize="16" Margin="0,0,6,0"
+                            ToolTip="Join an orchestrated meeting" Click="OnJoinMeetingClick"/>
                     <TextBlock Text="👥 Orchestrated Meeting" FontSize="18" FontWeight="Bold"
                                VerticalAlignment="Center"/>
                 </DockPanel>

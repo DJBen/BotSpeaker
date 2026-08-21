@@ -624,6 +624,12 @@ public partial class MainWindow : Window
         ((App)Application.Current).ShowOrchestrationWindow();
     }
 
+    private void OnJoinMeetingClick(object sender, RoutedEventArgs e)
+    {
+        if (!_orchestration.IsActive) _orchestration.PrepareRemoteSetup();
+        ((App)Application.Current).ShowOrchestrationWindow();
+    }
+
     private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);
 
     private void OpenScriptEditor(bool forNewScript)

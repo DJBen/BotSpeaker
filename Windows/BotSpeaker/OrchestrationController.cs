@@ -191,6 +191,13 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         ErrorMessage = null;
     }
 
+    public void PrepareRemoteSetup()
+    {
+        SetupMode = OrchestrationMode.Remote;
+        PairingCodeInput = "";
+        ErrorMessage = null;
+    }
+
     public void SelectTemplate(OrchestratedMeetingTemplate template)
     {
         if (IsActive || template.Id == SelectedTemplate.Id) return;
