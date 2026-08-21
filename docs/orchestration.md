@@ -122,8 +122,9 @@ firebase deploy --only firestore:rules --project bot-speaker-1
 Neither client deletes an orchestration room when a meeting ends, so rooms —
 including the host's resolved script text — and their `participants`, `turns`,
 and per-turn `events` subcollections would otherwise live forever. The
-`orchestrationCleanup` Cloud Function in `functions/index.js` runs daily at
-04:00 America/Los_Angeles and removes:
+`orchestrationCleanup` Cloud Function in `functions/index.js` runs every third
+day at 04:00 America/Los_Angeles (`0 4 */3 * *`, so the 1st, 4th, 7th and so on
+of each month) and removes:
 
 - rooms whose status is `completed` or `stopped` and whose `activityAt` is more
   than 24 hours old;
@@ -136,10 +137,14 @@ and per-turn `events` subcollections would otherwise live forever. The
 Rooms are removed with the Admin SDK's `recursiveDelete`, so subcollections go
 with them rather than being orphaned. Both room queries key off `activityAt`,
 the marker every state-changing commit already touches, so an in-progress
-meeting is never collected mid-session — but export a transcript the same day,
-because a finished meeting only survives 24 hours. Each run handles at most 200
-rooms and 500 pairings and logs the counts; a larger backlog drains over
-consecutive days.
+meeting is never collected mid-session.
+
+Deletion happens on the first run after a record crosses its window, not the
+moment it crosses. On a three-day cadence a finished room lives up to four days
+and an idle room up to six, so export a transcript within a day or two of the
+meeting rather than relying on the room still being there. Each run handles at
+most 200 rooms and 500 pairings and logs the counts; a larger backlog drains
+over successive runs, which at this cadence is 200 rooms every three days.
 
 The retention windows and per-run limits read from environment variables
 (`FINISHED_ROOM_RETENTION_HOURS`, `IDLE_ROOM_RETENTION_HOURS`,

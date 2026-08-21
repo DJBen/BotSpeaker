@@ -146,7 +146,9 @@ exports.cleanUpOrchestrationData = cleanUpOrchestrationData;
 
 exports.orchestrationCleanup = onSchedule(
   {
-    schedule: "every day 04:00",
+    // Day-of-month step: the 1st, 4th, 7th ... of each month. The step resets
+    // at the month boundary, so one gap per month is 1-2 days rather than 3.
+    schedule: "0 4 */3 * *",
     timeZone: "America/Los_Angeles",
     region: "us-west1",
     timeoutSeconds: 540,
