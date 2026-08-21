@@ -151,6 +151,9 @@ exports.orchestrationCleanup = onSchedule(
     schedule: "0 4 */3 * *",
     timeZone: "America/Los_Angeles",
     region: "us-west1",
+    // The job streams deletes rather than holding result sets, so the smallest
+    // instance is enough.
+    memory: "256MiB",
     timeoutSeconds: 540,
     retryCount: 1,
   },
