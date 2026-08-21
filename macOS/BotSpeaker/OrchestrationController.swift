@@ -20,7 +20,12 @@ final class OrchestrationController {
     private static let speakerConfigurationDefaultsKey = "orchestratedMeetingSpeakerConfigurations"
     var setupMode: OrchestrationMode = .host
     var speakerName: String
-    var pairingCodeInput = ""
+    var pairingCodeInput = "" {
+        didSet {
+            let normalized = String(pairingCodeInput.uppercased().prefix(6))
+            if normalized != pairingCodeInput { pairingCodeInput = normalized }
+        }
+    }
     var meetingScriptText = OrchestratedMeetingTemplate.launchReadiness.text
     private(set) var selectedTemplate = OrchestratedMeetingTemplate.launchReadiness
     var speakerConfigurations: [OrchestratedSpeakerConfiguration]

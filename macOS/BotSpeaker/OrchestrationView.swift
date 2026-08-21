@@ -84,16 +84,10 @@ struct OrchestrationView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Pairing code")
                         .font(.headline)
-                    TextField(
-                        "ABC234",
-                        text: Binding(
-                            get: { controller.pairingCodeInput },
-                            set: { controller.pairingCodeInput = String($0.uppercased().prefix(6)) }
-                        )
-                    )
+                    TextField("ABC234", text: $controller.pairingCodeInput)
                         .textFieldStyle(.roundedBorder)
-                        .font(.title2.monospaced())
-                        .textCase(.uppercase)
+                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
+                        .frame(height: 56)
                         .onSubmit(performSetupAction)
                     Text("Enter the six-character code shown on the host Mac.")
                         .font(.caption)
