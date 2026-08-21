@@ -18,11 +18,6 @@ struct BotSpeakerApp: App {
         }
         .defaultSize(width: 1040, height: 720)
 
-        Window("Meeting Orchestrator", id: "orchestrator") {
-            OrchestrationView(model: model, controller: orchestration)
-        }
-        .defaultSize(width: 820, height: 680)
-
         MenuBarExtra {
             MenuBarView(model: model)
         } label: {

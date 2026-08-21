@@ -18,11 +18,12 @@ selects the shared meeting script and the ElevenLabs voice for every speaker.
 2. Fill in every speaker name, review the distinct default voices (the
    three-person incident review starts male, female, male), and review the
    resolved script preview.
-3. Choose **Prepare Meeting** to open the pairing setup, enter a device name,
-   and choose **Host Meeting**.
-4. On every other machine, select **Orchestrated meeting**, choose **Prepare
-   Meeting**, switch the setup to **Remote Client**, enter its device name and
-   the host's pairing code, then choose **Join Meeting**.
+3. Choose **Prepare Meeting**. On macOS, the pairing setup pushes into the main
+   detail pane and temporarily disables the script sidebar. Enter a device name,
+   then choose **Host Meeting**.
+4. On every other Mac, choose **Join** in the main toolbar, enter its device name
+   and the host's pairing code, then choose **Join Meeting**. Windows clients use
+   the equivalent Remote Client setup.
 5. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
    `{{speaker_2}}`, and so on.
 6. Choose **Prepare Speakers** to distribute the resolved script and the host's
@@ -55,6 +56,10 @@ skip the current turn, and stop the session. A client
 reports completion only after its local audio player reaches the end of the
 assigned audio, so slow ElevenLabs generation does not advance the next speaker
 early.
+
+On macOS, **Leave**, **Disconnect**, or **Done** returns to the selected
+orchestrated-meeting configuration in the main detail pane and unlocks the
+sidebar. Closing the main window performs the same session cleanup first.
 
 ## Timestamped transcript
 

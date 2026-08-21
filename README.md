@@ -113,15 +113,17 @@ three-person API latency incident review. The main window first shows the shared
 script preview plus a name and ElevenLabs voice picker for each speaker. Each
 template starts with distinct gender-matched voices when the ElevenLabs catalog
 provides them; the three-person incident review defaults to male, female, male.
-**Prepare Meeting** is the only entry point to the pairing setup, where
-one machine hosts a room and displays a six-character code and the remaining
-machines join as remote clients. Macs and Windows PCs interoperate freely in the
-same session — either platform can host. The host orders the paired devices and
-chooses **Prepare Speakers** to distribute the resolved script and voice
-assignments. Each client generates and caches all assigned paragraphs asynchronously;
-once every client is fully ready, the host starts the session and BotSpeaker hands turns
-between laptops automatically. When the session completes, the host can export
-a JSON transcript with exact per-speaker playback and server-received timestamps.
+On macOS, **Prepare Meeting** pushes the pairing, preparation, and live controls
+into the same main-window detail pane; the sidebar stays visible but is disabled
+for the duration of the flow. One machine hosts a room and displays a
+six-character code, while the remaining machines join as remote clients. Macs
+and Windows PCs interoperate freely in the same session — either platform can
+host. The host orders the paired devices and chooses **Prepare Speakers** to
+distribute the resolved script and voice assignments. Each client generates and
+caches all assigned paragraphs asynchronously; once every client is fully ready,
+the host starts the session and BotSpeaker hands turns between laptops
+automatically. When the session completes, the host can export a JSON transcript
+with exact per-speaker playback and server-received timestamps.
 
 Each participating machine needs its own ElevenLabs API key and virtual-audio
 output configuration. The host chooses every voice and the meeting script. See the

@@ -21,11 +21,15 @@ struct MenuBarView: View {
 }
 
 struct MainWindowView: View {
+    private enum DetailDestination: Hashable {
+        case orchestration
+    }
+
     let model: AppModel
     let orchestration: OrchestrationController
-    @Environment(\.openWindow) private var openWindow
     @State private var isShowingScriptEditor = false
     @State private var isShowingOrchestrationConfiguration = false
+    @State private var detailPath: [DetailDestination] = []
 
     var body: some View {
         Group {
@@ -34,11 +38,13 @@ struct MainWindowView: View {
                     ScriptLibrarySidebar(
                         model: model,
                         onAdd: {
+                            guard !isOrchestrationFlowPresented else { return }
                             isShowingOrchestrationConfiguration = false
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
                         onEdit: { scriptID in
+                            guard !isOrchestrationFlowPresented else { return }
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: scriptID)
                             model.prepareScriptEditor()
@@ -46,10 +52,12 @@ struct MainWindowView: View {
                         },
                         onDelete: { model.deleteCustomScript(id: $0) },
                         onReplicate: {
+                            guard !isOrchestrationFlowPresented else { return }
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: $0)
                         },
                         onSelectScript: {
+                            guard !isOrchestrationFlowPresented else { return }
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: $0)
                         },
@@ -57,24 +65,44 @@ struct MainWindowView: View {
                             ? orchestration.selectedTemplate.id
                             : nil,
                         onOpenOrchestratedMeeting: { template in
+                            guard !isOrchestrationFlowPresented else { return }
                             orchestration.selectTemplate(template)
                             isShowingOrchestrationConfiguration = true
-                        }
+                        },
+                        isInteractionDisabled: isOrchestrationFlowPresented
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
                 } detail: {
-                    Group {
-                        if isShowingOrchestrationConfiguration {
-                            OrchestratedMeetingConfigurationView(model: model, controller: orchestration)
-                        } else {
-                            ComposerView(
-                                model: model,
-                                player: model.player,
-                                context: .mainWindow
-                            )
+                    NavigationStack(path: $detailPath) {
+                        Group {
+                            if isShowingOrchestrationConfiguration {
+                                OrchestratedMeetingConfigurationView(
+                                    model: model,
+                                    controller: orchestration,
+                                    onPrepareMeeting: presentOrchestrationFlow
+                                )
+                            } else {
+                                ComposerView(
+                                    model: model,
+                                    player: model.player,
+                                    context: .mainWindow
+                                )
+                            }
+                        }
+                        .navigationTitle(selectedSectionTitle)
+                        .navigationDestination(for: DetailDestination.self) { destination in
+                            switch destination {
+                            case .orchestration:
+                                OrchestrationView(
+                                    model: model,
+                                    controller: orchestration,
+                                    onExit: dismissOrchestrationFlow
+                                )
+                                .navigationTitle("Orchestrated meeting")
+                                .navigationBarBackButtonHidden(orchestration.isActive)
+                            }
                         }
                     }
-                    .navigationTitle(selectedSectionTitle)
                 }
             } else {
                 FirstRunView(model: model)
@@ -89,12 +117,15 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
-                        if !orchestration.isActive { orchestration.prepareRemoteSetup() }
-                        openWindow(id: "orchestrator")
+                        guard !isOrchestrationFlowPresented else { return }
+                        orchestration.prepareRemoteSetup()
+                        isShowingOrchestrationConfiguration = true
+                        presentOrchestrationFlow()
                     } label: {
                         Label("Join", systemImage: "person.3.fill")
                     }
                     .help("Join an orchestrated meeting")
+                    .disabled(isOrchestrationFlowPresented)
 
                     SettingsLink {
                         Image(systemName: "gearshape")
@@ -105,6 +136,7 @@ struct MainWindowView: View {
         }
         .onKeyPress(.space) {
             guard model.hasAPIKey,
+                  !isOrchestrationFlowPresented,
                   !model.isRemoteControlled,
                   model.selectedScript.isCustom,
                   !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -121,6 +153,19 @@ struct MainWindowView: View {
         return model.selectedScript.isCustom ? "My scripts" : "Script templates"
     }
 
+    private var isOrchestrationFlowPresented: Bool {
+        !detailPath.isEmpty
+    }
+
+    private func presentOrchestrationFlow() {
+        guard detailPath.isEmpty else { return }
+        detailPath.append(.orchestration)
+    }
+
+    private func dismissOrchestrationFlow() {
+        detailPath.removeAll()
+    }
+
 }
 
 private struct ScriptLibrarySidebar: View {
@@ -132,6 +177,7 @@ private struct ScriptLibrarySidebar: View {
     let onSelectScript: (String) -> Void
     let selectedOrchestrationTemplateID: String?
     let onOpenOrchestratedMeeting: (OrchestratedMeetingTemplate) -> Void
+    let isInteractionDisabled: Bool
     @State private var scriptPendingDeletion: SpeechScript?
 
     var body: some View {
@@ -181,13 +227,14 @@ private struct ScriptLibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .disabled(model.isRemoteControlled)
+        .disabled(model.isRemoteControlled || isInteractionDisabled)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onAdd) {
                     Label("Add Script", systemImage: "plus")
                 }
                 .help("Add a custom script")
+                .disabled(model.isRemoteControlled || isInteractionDisabled)
             }
         }
         .alert(

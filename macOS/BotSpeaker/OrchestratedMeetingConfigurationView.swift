@@ -3,7 +3,7 @@ import SwiftUI
 struct OrchestratedMeetingConfigurationView: View {
     let model: AppModel
     let controller: OrchestrationController
-    @Environment(\.openWindow) private var openWindow
+    let onPrepareMeeting: () -> Void
     @State private var editingSpeakerSlot: Int?
     @State private var draftSpeakerName = ""
 
@@ -48,7 +48,7 @@ struct OrchestratedMeetingConfigurationView: View {
                 Spacer()
                 Button {
                     controller.prepareHostSetup()
-                    openWindow(id: "orchestrator")
+                    onPrepareMeeting()
                 } label: {
                     Label("Prepare Meeting", systemImage: "arrow.right.circle.fill")
                 }

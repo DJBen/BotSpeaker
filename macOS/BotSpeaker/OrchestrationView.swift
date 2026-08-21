@@ -4,22 +4,19 @@ import SwiftUI
 struct OrchestrationView: View {
     let model: AppModel
     @Bindable var controller: OrchestrationController
+    let onExit: () -> Void
     @State private var exportError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            Group {
-                if controller.isActive {
-                    activeSession
-                } else {
-                    setup
-                }
+        Group {
+            if controller.isActive {
+                activeSession
+            } else {
+                setup
             }
-            .padding(20)
         }
-        .frame(minWidth: 720, minHeight: 620)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await model.loadVoicesIfNeeded() }
         .onDisappear {
             guard controller.isActive else { return }
@@ -38,26 +35,6 @@ struct OrchestrationView: View {
                 return .ignored
             }
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.3.sequence.fill")
-                .font(.title2)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Meeting Orchestrator")
-                    .font(.title2.bold())
-                Text("Pair laptops, alternate speakers automatically, and export exact timestamps.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if controller.isActive {
-                statusPill
-            }
-        }
-        .padding(20)
     }
 
     private var setup: some View {
@@ -170,9 +147,9 @@ struct OrchestrationView: View {
 
             HSplitView {
                 participantsPanel
-                    .frame(minWidth: 300)
+                    .frame(minWidth: 260, idealWidth: 300)
                 timelinePanel
-                    .frame(minWidth: 330)
+                    .frame(minWidth: 290, idealWidth: 360)
             }
 
             if let error = controller.errorMessage ?? exportError {
@@ -236,6 +213,7 @@ struct OrchestrationView: View {
             }
             .help("Copy pairing code")
             Spacer()
+            statusPill
         }
         .padding(14)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
@@ -342,7 +320,7 @@ struct OrchestrationView: View {
 
     private var hostControls: some View {
         HStack {
-            Button("Leave") { Task { await controller.leaveSession() } }
+            Button("Leave", action: leaveFlow)
             Spacer()
             if controller.canExportTranscript {
                 Button {
@@ -395,7 +373,7 @@ struct OrchestrationView: View {
                     .buttonStyle(.borderedProminent)
                 Button("Stop", role: .destructive) { Task { await controller.stopMeeting() } }
             case .completed, .stopped:
-                Button("Done") { Task { await controller.leaveSession() } }
+                Button("Done", action: leaveFlow)
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -453,8 +431,17 @@ struct OrchestrationView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Disconnect") { Task { await controller.leaveSession() } }
+                Button("Disconnect", action: leaveFlow)
             }
+        }
+    }
+
+    private func leaveFlow() {
+        Task {
+            if controller.isActive {
+                await controller.leaveSession()
+            }
+            onExit()
         }
     }
 
