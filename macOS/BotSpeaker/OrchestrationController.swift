@@ -350,20 +350,6 @@ final class OrchestrationController {
         let destination = source + offset
         guard participantOrder.indices.contains(destination) else { return }
         participantOrder.swapAt(source, destination)
-        guard speakerConfigurations.indices.contains(source),
-              speakerConfigurations.indices.contains(destination) else { return }
-        let sourceIdentity = (
-            name: speakerConfigurations[source].name,
-            voiceID: speakerConfigurations[source].voiceID,
-            voiceName: speakerConfigurations[source].voiceName
-        )
-        speakerConfigurations[source].name = speakerConfigurations[destination].name
-        speakerConfigurations[source].voiceID = speakerConfigurations[destination].voiceID
-        speakerConfigurations[source].voiceName = speakerConfigurations[destination].voiceName
-        speakerConfigurations[destination].name = sourceIdentity.name
-        speakerConfigurations[destination].voiceID = sourceIdentity.voiceID
-        speakerConfigurations[destination].voiceName = sourceIdentity.voiceName
-        persistSpeakerConfigurations()
     }
 
     func prepareMeeting() async {
