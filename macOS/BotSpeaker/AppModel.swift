@@ -23,7 +23,6 @@ final class AppModel: ObservableObject {
 
     let player = AudioPlaybackController()
     let devices = AudioDeviceManager()
-    let interruptionMonitor = InterruptionMonitor()
 
     private let keychain = KeychainStore()
     private let client = ElevenLabsClient()
@@ -96,29 +95,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var interruptionEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: Defaults.interruptionEnabled) }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Defaults.interruptionEnabled)
-            objectWillChange.send()
-            if newValue {
-                Task { await startInterruptionMonitoring() }
-            } else {
-                interruptionMonitor.stop()
-                player.setInterruptionActive(false)
-            }
-        }
-    }
-
-    var interruptionInputUID: String {
-        get { UserDefaults.standard.string(forKey: Defaults.interruptionInputUID) ?? AudioDeviceManager.defaultInputDeviceUID() ?? "" }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Defaults.interruptionInputUID)
-            objectWillChange.send()
-            if interruptionEnabled { Task { await startInterruptionMonitoring() } }
-        }
-    }
-
     init() {
         if let data = UserDefaults.standard.data(forKey: Defaults.customScripts),
            let savedScripts = try? JSONDecoder().decode([CustomSpeechScript].self, from: data) {
@@ -139,20 +115,12 @@ final class AppModel: ObservableObject {
         player.isLooping = loopEnabled
         player.volume = Float(outputVolume)
         devices.refresh()
-        interruptionMonitor.onActivityChanged = { [weak self] isActive in
-            guard let self else { return }
-            self.player.setInterruptionActive(isActive)
-        }
 
         if selectedDeviceUID.isEmpty,
            let blackHole = devices.outputDevices.first(where: { $0.isBlackHole }) {
             selectedDeviceUID = blackHole.uid
         } else if !selectedDeviceUID.isEmpty {
             try? player.selectOutputDevice(uid: selectedDeviceUID)
-        }
-
-        if interruptionEnabled {
-            Task { await startInterruptionMonitoring() }
         }
     }
 
@@ -511,7 +479,7 @@ final class AppModel: ObservableObject {
         let script = selectedScript
         let signature = "\(script.id)|\(voiceID)|\(modelID)|\(trimmed)"
         if !forceRegenerate, currentSpeechSignature == signature, (player.hasAudio || isGenerating) {
-            if player.isPlaying || player.isBuffering || player.isWaitingForInterruption {
+            if player.isPlaying || player.isBuffering {
                 player.pause()
             } else {
                 player.play()
@@ -572,10 +540,6 @@ final class AppModel: ObservableObject {
         player.finishSequence()
         player.stop()
         currentSpeechSignature = nil
-    }
-
-    func startInterruptionMonitoring() async {
-        await interruptionMonitor.start(inputUID: interruptionInputUID)
     }
 
     private func generateSequentially(
@@ -648,8 +612,6 @@ final class AppModel: ObservableObject {
         static let deviceUID = "deviceUID"
         static let loopEnabled = "loopEnabled"
         static let outputVolume = "outputVolume"
-        static let interruptionEnabled = "interruptionEnabled"
-        static let interruptionInputUID = "interruptionInputUID"
         static let selectedScriptID = "selectedScriptID"
         static let lastPlayableScriptID = "lastPlayableScriptID"
         static let customScripts = "customScripts"

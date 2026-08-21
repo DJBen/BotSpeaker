@@ -11,8 +11,6 @@ public sealed class AppSettings
     public string OutputDeviceId { get; set; } = "";
     public bool LoopEnabled { get; set; }
     public double OutputVolume { get; set; } = 1;
-    public bool InterruptionEnabled { get; set; }
-    public string InterruptionInputId { get; set; } = "";
     public string SelectedScriptId { get; set; } = "";
     public string OrchestrationSpeakerName { get; set; } = "";
     public string LastPlayableScriptId { get; set; } = "";

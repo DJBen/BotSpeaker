@@ -96,10 +96,6 @@
                     </StackPanel>
                 </DockPanel>
 
-                <!-- Interruption banner -->
-                <TextBlock x:Name="InterruptionBanner" DockPanel.Dock="Bottom" FontSize="11" Foreground="DarkOrange"
-                           Visibility="Collapsed" Margin="0,6,0,0" Text="👂 Paused for an interruption"/>
-
                 <!-- Transport controls -->
                 <DockPanel x:Name="TransportPanel" DockPanel.Dock="Bottom" Margin="0,8,0,0">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
@@ -122,9 +118,6 @@
                                 <ContextMenu>
                                     <MenuItem x:Name="LoopMenuItem" Header="Loop playback" IsCheckable="True"
                                               Click="OnLoopChanged"/>
-                                    <MenuItem x:Name="InterruptionMenuItem" Header="Pause for interruptions" IsCheckable="True"
-                                              Click="OnInterruptionChanged"
-                                              ToolTip="Pause speech while the monitored input hears someone talking"/>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>

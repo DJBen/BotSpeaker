@@ -57,11 +57,6 @@
                 <TextBlock Text="Output device" Width="110" VerticalAlignment="Center"/>
                 <ComboBox x:Name="OutputCombo" SelectionChanged="OnOutputSelected"/>
             </DockPanel>
-            <DockPanel Margin="0,8,0,0">
-                <TextBlock Text="Interruption input" Width="110" VerticalAlignment="Center"/>
-                <ComboBox x:Name="InputCombo" SelectionChanged="OnInputSelected"/>
-            </DockPanel>
-
             <DockPanel Margin="0,10,0,0">
                 <Button Content="Refresh Devices" Padding="10,4" Click="OnRefreshDevicesClick"/>
                 <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -71,11 +66,6 @@
 
             <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,10,0,0"
                        Text="Select the cable's playback device (CABLE Input) above, then in Zoom, Meet, or Teams choose CABLE Output as your microphone."/>
-            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,6,0,0"
-                       Text="Interruption detection learns the ambient level, pauses immediately after 0.4 seconds of elevated input, and resumes after 0.75 seconds back at ambient. Direct cable output or headphones prevent Bot Speaker from detecting its own voice."/>
-            <TextBlock x:Name="InterruptionError" FontSize="11" Foreground="DarkOrange" Visibility="Collapsed"
-                       TextWrapping="Wrap" Margin="0,6,0,0"/>
-
             <TextBlock x:Name="Feedback" FontSize="11" Foreground="Gray" Margin="0,12,0,0" Visibility="Collapsed"/>
         </StackPanel>
     </ScrollViewer>

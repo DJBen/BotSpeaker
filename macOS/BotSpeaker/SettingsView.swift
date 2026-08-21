@@ -46,23 +46,10 @@ struct SettingsView: View {
                         Text(device.isBlackHole ? "\(device.name) — recommended" : device.name).tag(device.uid)
                     }
                 }
-                Picker("Interruption input", selection: Binding(get: { model.interruptionInputUID }, set: { model.interruptionInputUID = $0 })) {
-                    ForEach(model.devices.inputDevices) { device in
-                        Text(device.name).tag(device.uid)
-                    }
-                }
                 BlackHoleStatusView(model: model)
                 Text("In Zoom, Meet, or Teams, select the same BlackHole device as your microphone.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Interruption detection learns the ambient level, pauses immediately after 0.4 seconds of elevated input, and resumes after 0.75 seconds back at ambient. Direct BlackHole output or headphones prevent Bot Speaker from detecting its own voice.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let error = model.interruptionMonitor.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
             }
 
             Section("Software Update") {

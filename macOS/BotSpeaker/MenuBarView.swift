@@ -283,16 +283,6 @@ struct ComposerView: View {
                 playbackControls
             }
 
-            if model.interruptionMonitor.isHearingAudio || player.isWaitingForInterruption {
-                HStack(spacing: 6) {
-                    Image(systemName: "ear.fill")
-                    Text(player.isWaitingForInterruption ? "Paused for an interruption" : "Interruption detected")
-                }
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             Divider()
             HStack {
                 Circle()
@@ -477,9 +467,6 @@ struct ComposerView: View {
             Menu {
                 Toggle(isOn: Binding(get: { model.loopEnabled }, set: { model.loopEnabled = $0 })) {
                     Label("Loop playback", systemImage: "repeat")
-                }
-                Toggle(isOn: Binding(get: { model.interruptionEnabled }, set: { model.interruptionEnabled = $0 })) {
-                    Label("Pause for interruptions", systemImage: "ear")
                 }
             } label: {
                 Image(systemName: "gearshape.fill")

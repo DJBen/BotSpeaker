@@ -16,7 +16,6 @@ Feature parity with the macOS app:
 - Cross-platform meeting orchestration with first-paragraph warm-up and
   one-paragraph-ahead prefetching for smooth handoffs
 - Optional looping, disabled by default
-- Adaptive interruption detection (learns ambient level, pauses after 0.4 s of elevated input, resumes after 0.75 s near ambient)
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
 
 ## Requirements
@@ -52,12 +51,6 @@ On first launch, enter an ElevenLabs API key. BotSpeaker validates the key and s
 6. Use the volume slider to control the signal delivered to the cable.
 
 The cable is silent through local speakers by default. To monitor locally, enable "Listen to this device" on **CABLE Output** in the Windows Sound control panel (Recording tab → CABLE Output → Properties → Listen), routed to your headphones.
-
-## Interruption handling
-
-Enable **Pause for interruptions** in the playback controls and choose the input to monitor in Settings. BotSpeaker calibrates against ambient sound, pauses when the rolling 0.4-second input window exceeds its adaptive threshold, and resumes after the input remains near ambient for 0.75 seconds.
-
-Headphones or direct cable routing are recommended so the monitored microphone does not hear BotSpeaker's own output.
 
 ## Storage locations
 

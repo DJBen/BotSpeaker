@@ -88,7 +88,6 @@ public partial class App : Application
 
     public void ExitApplication()
     {
-        Model.InterruptionMonitor.Stop();
         Model.Player.Reset();
         if (_trayIcon is not null)
         {

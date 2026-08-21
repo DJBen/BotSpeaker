@@ -11,7 +11,7 @@ namespace BotSpeaker;
 /// Sequential chunk player: ElevenLabs MP3 chunks are decoded to 44.1 kHz mono float
 /// samples and played through WASAPI on the selected render device (normally the
 /// virtual cable). Supports append-while-generating, pause/stop/seek, looping,
-/// volume, interruption holds, and timing-based text progress — mirroring the macOS
+/// volume and timing-based text progress — mirroring the macOS
 /// AudioPlaybackController.
 /// </summary>
 public sealed class AudioPlaybackController : INotifyPropertyChanged
@@ -34,9 +34,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
 
     private double _duration;
     public double Duration { get => _duration; private set => Set(ref _duration, value); }
-
-    private bool _isWaitingForInterruption;
-    public bool IsWaitingForInterruption { get => _isWaitingForInterruption; private set => Set(ref _isWaitingForInterruption, value); }
 
     private bool _isBuffering;
     public bool IsBuffering { get => _isBuffering; private set => Set(ref _isBuffering, value); }
@@ -89,7 +86,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
     private int _stopGeneration;
     private bool _generationComplete = true;
     private bool _playRequested;
-    private bool _interruptionActive;
     private readonly DispatcherTimer _timer;
 
     public AudioPlaybackController()
@@ -106,7 +102,7 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         bool shouldResume = _playRequested;
         DisposeOutput();
         _outputDeviceId = deviceId;
-        if (HasAudio && shouldResume && !_interruptionActive)
+        if (HasAudio && shouldResume)
         {
             StartOutput();
         }
@@ -118,8 +114,7 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         TotalChunkCount = totalChunks;
         _generationComplete = false;
         _playRequested = autoplay;
-        IsWaitingForInterruption = autoplay && _interruptionActive;
-        IsBuffering = autoplay && !_interruptionActive;
+        IsBuffering = autoplay;
     }
 
     public void Append(string audioPath, SpeechTiming timing, TextSpan sourceRange)
@@ -145,12 +140,7 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
 
         if (_playRequested)
         {
-            if (_interruptionActive)
-            {
-                IsWaitingForInterruption = true;
-                IsBuffering = false;
-            }
-            else if (!IsPlaying)
+            if (!IsPlaying)
             {
                 StartOutput();
             }
@@ -183,7 +173,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         HasAudio = false;
         CurrentTime = 0;
         Duration = 0;
-        IsWaitingForInterruption = false;
         IsBuffering = false;
         GeneratedChunkCount = 0;
         TotalChunkCount = 0;
@@ -214,15 +203,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
             }
         }
 
-        if (_interruptionActive)
-        {
-            IsWaitingForInterruption = true;
-            IsBuffering = false;
-            IsPlaying = false;
-            _timer.Stop();
-            return;
-        }
-
         StartOutput();
     }
 
@@ -231,7 +211,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         UpdateCurrentTime();
         _output?.Pause();
         _playRequested = false;
-        IsWaitingForInterruption = false;
         IsBuffering = false;
         IsPlaying = false;
         _timer.Stop();
@@ -243,7 +222,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         lock (_gate) { _playCursor = 0; }
         CurrentTime = 0;
         _playRequested = false;
-        IsWaitingForInterruption = false;
         IsBuffering = false;
         IsPlaying = false;
         _timer.Stop();
@@ -251,32 +229,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
     }
 
     public void Seek(double seconds) => Seek(seconds, _playRequested);
-
-    public void SetInterruptionActive(bool active)
-    {
-        _interruptionActive = active;
-
-        if (active)
-        {
-            if (!_playRequested) return;
-            if (IsPlaying) UpdateCurrentTime();
-            _output?.Pause();
-            IsPlaying = false;
-            IsBuffering = false;
-            IsWaitingForInterruption = true;
-            _timer.Stop();
-        }
-        else
-        {
-            if (!IsWaitingForInterruption || !_playRequested)
-            {
-                IsWaitingForInterruption = false;
-                return;
-            }
-            IsWaitingForInterruption = false;
-            Play();
-        }
-    }
 
     private void Seek(double seconds, bool resume)
     {
@@ -288,8 +240,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
         }
         CurrentTime = clamped;
         UpdateTextProgress();
-        IsWaitingForInterruption = false;
-
         // The WASAPI buffer already holds pre-seek samples; restart the output so the
         // jump is immediate.
         bool wasPlaying = IsPlaying;
@@ -367,7 +317,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
             _output.Play();
             IsPlaying = true;
             IsBuffering = false;
-            IsWaitingForInterruption = false;
             _timer.Start();
         }
         catch (Exception)
@@ -397,8 +346,7 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
             else
             {
                 // Generation is still running; resume automatically when the next chunk lands.
-                IsBuffering = _playRequested && !_interruptionActive;
-                IsWaitingForInterruption = _playRequested && _interruptionActive;
+                IsBuffering = _playRequested;
             }
         }
         UpdateTextProgress();
@@ -407,7 +355,6 @@ public sealed class AudioPlaybackController : INotifyPropertyChanged
     private void FinishPlayback()
     {
         CurrentTime = Duration;
-        IsWaitingForInterruption = false;
         IsPlaying = false;
         IsBuffering = false;
         _playRequested = false;

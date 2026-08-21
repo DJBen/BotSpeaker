@@ -40,7 +40,6 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public AudioPlaybackController Player { get; } = new();
     public AudioDeviceManager Devices { get; } = new();
-    public InterruptionMonitor InterruptionMonitor { get; } = new();
     public List<CustomSpeechScript> CustomScripts => Settings.CustomScripts;
 
     public readonly AppSettings Settings;
@@ -108,40 +107,6 @@ public sealed class AppModel : INotifyPropertyChanged
         }
     }
 
-    public bool InterruptionEnabled
-    {
-        get => Settings.InterruptionEnabled;
-        set
-        {
-            Settings.InterruptionEnabled = value;
-            Settings.Save();
-            Notify();
-            if (value)
-            {
-                InterruptionMonitor.Start(InterruptionInputId);
-            }
-            else
-            {
-                InterruptionMonitor.Stop();
-                Player.SetInterruptionActive(false);
-            }
-        }
-    }
-
-    public string InterruptionInputId
-    {
-        get => string.IsNullOrEmpty(Settings.InterruptionInputId)
-            ? AudioDeviceManager.DefaultInputDeviceId() ?? ""
-            : Settings.InterruptionInputId;
-        set
-        {
-            Settings.InterruptionInputId = value;
-            Settings.Save();
-            Notify();
-            if (InterruptionEnabled) InterruptionMonitor.Start(value);
-        }
-    }
-
     public string SelectedVoiceName =>
         Voices.FirstOrDefault(v => v.Id == VoiceId)?.Name
         ?? $"Voice ID {VoiceId[..Math.Min(8, VoiceId.Length)]}…";
@@ -171,7 +136,6 @@ public sealed class AppModel : INotifyPropertyChanged
         Player.IsLooping = Settings.LoopEnabled;
         Player.Volume = (float)Settings.OutputVolume;
         Devices.Refresh();
-        InterruptionMonitor.OnActivityChanged = active => Player.SetInterruptionActive(active);
 
         if (string.IsNullOrEmpty(SelectedDeviceId))
         {
@@ -181,11 +145,6 @@ public sealed class AppModel : INotifyPropertyChanged
         else
         {
             try { Player.SelectOutputDevice(SelectedDeviceId); } catch (AppException) { }
-        }
-
-        if (InterruptionEnabled)
-        {
-            InterruptionMonitor.Start(InterruptionInputId);
         }
     }
 
@@ -546,7 +505,7 @@ public sealed class AppModel : INotifyPropertyChanged
         var signature = $"{script.Id}|{VoiceId}|{ModelId}|{trimmed}";
         if (!forceRegenerate && _currentSpeechSignature == signature && (Player.HasAudio || IsGenerating))
         {
-            if (Player.IsPlaying || Player.IsBuffering || Player.IsWaitingForInterruption)
+            if (Player.IsPlaying || Player.IsBuffering)
             {
                 Player.Pause();
             }

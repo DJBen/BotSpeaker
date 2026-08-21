@@ -9,7 +9,6 @@ final class AudioPlaybackController: ObservableObject {
     @Published private(set) var hasAudio = false
     @Published private(set) var currentTime: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
-    @Published private(set) var isWaitingForInterruption = false
     @Published private(set) var isBuffering = false
     @Published private(set) var generatedChunkCount = 0
     @Published private(set) var totalChunkCount = 0
@@ -46,7 +45,6 @@ final class AudioPlaybackController: ObservableObject {
     private var isCurrentChunkScheduled = false
     private var generationComplete = true
     private var playRequested = false
-    private var interruptionActive = false
 
     init() {
         engine.attach(node)
@@ -90,8 +88,7 @@ final class AudioPlaybackController: ObservableObject {
         totalChunkCount = totalChunks
         generationComplete = false
         playRequested = autoplay
-        isWaitingForInterruption = autoplay && interruptionActive
-        isBuffering = autoplay && !interruptionActive
+        isBuffering = autoplay
     }
 
     func append(url: URL, timing: SpeechTiming, sourceRange: NSRange) throws {
@@ -116,16 +113,11 @@ final class AudioPlaybackController: ObservableObject {
             currentTime = startTime
             scheduleCurrentChunk()
             if playRequested {
-                if interruptionActive {
-                    isWaitingForInterruption = true
-                    isBuffering = false
-                } else {
-                    try prepareEngine()
-                    node.play()
-                    isPlaying = true
-                    isBuffering = false
-                    startTimer()
-                }
+                try prepareEngine()
+                node.play()
+                isPlaying = true
+                isBuffering = false
+                startTimer()
             }
         }
         updateTextProgress()
@@ -152,7 +144,6 @@ final class AudioPlaybackController: ObservableObject {
         hasAudio = false
         currentTime = 0
         duration = 0
-        isWaitingForInterruption = false
         isBuffering = false
         generatedChunkCount = 0
         totalChunkCount = 0
@@ -177,17 +168,9 @@ final class AudioPlaybackController: ObservableObject {
                     return
                 }
             }
-            if interruptionActive {
-                isWaitingForInterruption = true
-                isBuffering = false
-                isPlaying = false
-                stopTimer()
-                return
-            }
             if !isCurrentChunkScheduled { scheduleCurrentChunk() }
             try prepareEngine()
             node.play()
-            isWaitingForInterruption = false
             isBuffering = false
             isPlaying = true
             startTimer()
@@ -200,7 +183,6 @@ final class AudioPlaybackController: ObservableObject {
         updateCurrentTime()
         node.pause()
         playRequested = false
-        isWaitingForInterruption = false
         isBuffering = false
         isPlaying = false
         stopTimer()
@@ -214,7 +196,6 @@ final class AudioPlaybackController: ObservableObject {
         currentTime = 0
         isCurrentChunkScheduled = false
         playRequested = false
-        isWaitingForInterruption = false
         isBuffering = false
         isPlaying = false
         stopTimer()
@@ -223,30 +204,8 @@ final class AudioPlaybackController: ObservableObject {
     }
 
     func seek(to seconds: TimeInterval) throws {
-        isWaitingForInterruption = false
         let shouldResume = playRequested
         try seek(to: seconds, resume: shouldResume)
-    }
-
-    func setInterruptionActive(_ active: Bool) {
-        interruptionActive = active
-
-        if active {
-            guard playRequested else { return }
-            if isPlaying { updateCurrentTime() }
-            node.pause()
-            isPlaying = false
-            isBuffering = false
-            isWaitingForInterruption = true
-            stopTimer()
-        } else {
-            guard isWaitingForInterruption, playRequested else {
-                isWaitingForInterruption = false
-                return
-            }
-            isWaitingForInterruption = false
-            play()
-        }
     }
 
     private func seek(to seconds: TimeInterval, resume: Bool) throws {
@@ -280,18 +239,11 @@ final class AudioPlaybackController: ObservableObject {
             scheduleCurrentChunk()
             if resume {
                 playRequested = true
-                if interruptionActive {
-                    isWaitingForInterruption = true
-                    isPlaying = false
-                    isBuffering = false
-                    stopTimer()
-                } else {
-                    try prepareEngine()
-                    node.play()
-                    isPlaying = true
-                    isBuffering = false
-                    startTimer()
-                }
+                try prepareEngine()
+                node.play()
+                isPlaying = true
+                isBuffering = false
+                startTimer()
             } else {
                 playRequested = false
                 isPlaying = false
@@ -305,8 +257,7 @@ final class AudioPlaybackController: ObservableObject {
         } else {
             playRequested = resume
             isPlaying = false
-            isWaitingForInterruption = resume && interruptionActive
-            isBuffering = resume && !generationComplete && !interruptionActive
+            isBuffering = resume && !generationComplete
             stopTimer()
         }
     }
@@ -354,17 +305,10 @@ final class AudioPlaybackController: ObservableObject {
         if chunks.indices.contains(currentChunkIndex) {
             scheduleCurrentChunk()
             if playRequested {
-                if interruptionActive {
-                    isPlaying = false
-                    isBuffering = false
-                    isWaitingForInterruption = true
-                    stopTimer()
-                } else {
-                    node.play()
-                    isPlaying = true
-                    isBuffering = false
-                    startTimer()
-                }
+                node.play()
+                isPlaying = true
+                isBuffering = false
+                startTimer()
             }
         } else if generationComplete {
             finishPlayback()
@@ -380,8 +324,7 @@ final class AudioPlaybackController: ObservableObject {
         } else {
             node.stop()
             isPlaying = false
-            isWaitingForInterruption = playRequested && interruptionActive
-            isBuffering = playRequested && !interruptionActive
+            isBuffering = playRequested
             stopTimer()
         }
         updateTextProgress()
@@ -390,7 +333,6 @@ final class AudioPlaybackController: ObservableObject {
     private func finishPlayback() {
         currentTime = duration
         currentChunkIndex = chunks.count
-        isWaitingForInterruption = false
         isPlaying = false
         isBuffering = false
         playRequested = false
@@ -411,7 +353,6 @@ final class AudioPlaybackController: ObservableObject {
         scheduledGeneration += 1
         isCurrentChunkScheduled = false
         isPlaying = false
-        isWaitingForInterruption = false
         stopTimer()
     }
 

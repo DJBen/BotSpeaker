@@ -16,7 +16,6 @@ public partial class SettingsWindow : Window
         _model = model;
         InitializeComponent();
         _model.PropertyChanged += OnModelChanged;
-        _model.InterruptionMonitor.PropertyChanged += OnModelChanged;
         Loaded += async (_, _) =>
         {
             UpdateAll();
@@ -52,14 +51,6 @@ public partial class SettingsWindow : Window
                 .Concat(outputs.Select(d => d.IsVirtualCable ? $"{d.Name} — recommended" : d.Name))
                 .ToList();
             OutputCombo.SelectedIndex = outputs.FindIndex(d => d.Id == _model.SelectedDeviceId) + 1;
-
-            var inputs = _model.Devices.InputDevices;
-            InputCombo.ItemsSource = inputs.Select(d => d.Name).ToList();
-            InputCombo.SelectedIndex = inputs.FindIndex(d => d.Id == _model.InterruptionInputId);
-
-            InterruptionError.Text = _model.InterruptionMonitor.ErrorMessage ?? "";
-            InterruptionError.Visibility = _model.InterruptionMonitor.ErrorMessage is null
-                ? Visibility.Collapsed : Visibility.Visible;
         }
         finally
         {
@@ -137,17 +128,6 @@ public partial class SettingsWindow : Window
         if (index >= 0 && index < outputs.Count && outputs[index].Id != _model.SelectedDeviceId)
         {
             _model.SelectedDeviceId = outputs[index].Id;
-        }
-    }
-
-    private void OnInputSelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        var inputs = _model.Devices.InputDevices;
-        int index = InputCombo.SelectedIndex;
-        if (index >= 0 && index < inputs.Count && inputs[index].Id != _model.InterruptionInputId)
-        {
-            _model.InterruptionInputId = inputs[index].Id;
         }
     }
 

@@ -18,7 +18,6 @@ public sealed record AudioDevice(string Id, string Name)
 public sealed class AudioDeviceManager
 {
     public List<AudioDevice> OutputDevices { get; private set; } = [];
-    public List<AudioDevice> InputDevices { get; private set; } = [];
 
     public event Action? DevicesChanged;
 
@@ -27,10 +26,6 @@ public sealed class AudioDeviceManager
         using var enumerator = new MMDeviceEnumerator();
         OutputDevices = Enumerate(enumerator, DataFlow.Render)
             .OrderByDescending(d => d.IsVirtualCable)
-            .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-        InputDevices = Enumerate(enumerator, DataFlow.Capture)
-            .OrderBy(d => d.IsVirtualCable)
             .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
         DevicesChanged?.Invoke();
@@ -67,17 +62,4 @@ public sealed class AudioDeviceManager
         }
     }
 
-    public static string? DefaultInputDeviceId()
-    {
-        try
-        {
-            using var enumerator = new MMDeviceEnumerator();
-            using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-            return device.ID;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
 }

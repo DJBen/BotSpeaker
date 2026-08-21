@@ -26,8 +26,6 @@
 	<false/>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Bot Speaker listens for meeting interruptions so it can pause generated speech naturally.</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUEnableInstallerLauncherService</key>

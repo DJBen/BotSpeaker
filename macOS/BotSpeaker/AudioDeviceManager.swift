@@ -27,7 +27,6 @@ enum BlackHoleStatus: Equatable {
 @MainActor
 final class AudioDeviceManager: ObservableObject {
     @Published private(set) var outputDevices: [AudioDevice] = []
-    @Published private(set) var inputDevices: [AudioDevice] = []
     @Published private(set) var blackHoleStatus: BlackHoleStatus = .notInstalled(driverFolderReadable: true)
 
     /// Shell command that makes Core Audio rescan the HAL folder. Sandboxed apps cannot
@@ -41,10 +40,6 @@ final class AudioDeviceManager: ObservableObject {
         blackHoleStatus = Self.readBlackHoleStatus(devices: devices)
         outputDevices = devices.filter { Self.channelCount(for: $0.id, scope: kAudioDevicePropertyScopeOutput) > 0 }.sorted {
             if $0.isBlackHole != $1.isBlackHole { return $0.isBlackHole }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-        inputDevices = devices.filter { Self.channelCount(for: $0.id, scope: kAudioDevicePropertyScopeInput) > 0 }.sorted {
-            if $0.isBlackHole != $1.isBlackHole { return !$0.isBlackHole }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
@@ -63,18 +58,6 @@ final class AudioDeviceManager: ObservableObject {
 
     static func deviceID(forUID uid: String) -> AudioDeviceID? {
         readDevices().first(where: { $0.uid == uid })?.id
-    }
-
-    static func defaultInputDeviceUID() -> String? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceID = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr else { return nil }
-        return stringProperty(kAudioDevicePropertyDeviceUID, deviceID: deviceID)
     }
 
     private static func readDevices() -> [AudioDevice] {

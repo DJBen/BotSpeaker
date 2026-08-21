@@ -4,7 +4,7 @@
 
 <img width="463" height="609" alt="Screenshot 2026-08-11 at 6 26 49 PM" src="https://github.com/user-attachments/assets/dc4b369e-45b9-4c7f-9f81-0f75ef43c896" />
 
-BotSpeaker is a native macOS and Windows utility that turns meeting scripts into ElevenLabs speech and sends it to a virtual microphone. It lets you simulate additional attendees in Microsoft Teams, Zoom, Google Meet, and other meeting applications while retaining control over voice, timing, volume, interruptions, and playback position.
+BotSpeaker is a native macOS and Windows utility that turns meeting scripts into ElevenLabs speech and sends it to a virtual microphone. It lets you simulate additional attendees in Microsoft Teams, Zoom, Google Meet, and other meeting applications while retaining control over voice, timing, volume, and playback position.
 
 The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/). The Windows app uses WPF and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
 
@@ -42,11 +42,6 @@ The repository and its release downloads are public.
 - Timestamped JSON transcript export with both playback-device and
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
-- Adaptive interruption detection that:
-  - learns the selected input's ambient level;
-  - detects elevated sound over a 0.4-second window;
-  - pauses speech immediately, without waiting for a sentence boundary; and
-  - resumes after 0.75 seconds continuously near ambient level.
 
 ## Runtime requirements
 
@@ -122,12 +117,6 @@ Each participating machine needs its own playable script, voice, ElevenLabs API
 key, and virtual-audio output configuration. See the
 [meeting orchestration guide](docs/orchestration.md) for setup, privacy, protocol,
 and transcript details.
-
-## Interruption handling
-
-Enable **Pause for interruptions** from the playback-options menu and choose the input to monitor in Settings. BotSpeaker calibrates against ambient sound, pauses when the rolling 0.4-second input window exceeds its adaptive threshold, and resumes after the input remains near ambient for 0.75 seconds.
-
-Headphones or direct virtual-device routing are recommended so the monitored microphone does not hear BotSpeaker's own output.
 
 ## Project structure
 

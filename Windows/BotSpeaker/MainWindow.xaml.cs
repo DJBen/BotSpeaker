@@ -35,7 +35,6 @@ public partial class MainWindow : Window
 
         _model.PropertyChanged += OnModelChanged;
         _model.Player.PropertyChanged += OnPlayerChanged;
-        _model.InterruptionMonitor.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(UpdateInterruptionBanner);
 
         Loaded += async (_, _) =>
         {
@@ -135,7 +134,6 @@ public partial class MainWindow : Window
                 _ => "🔊",
             };
             LoopMenuItem.IsChecked = _model.LoopEnabled;
-            InterruptionMenuItem.IsChecked = _model.InterruptionEnabled;
 
             DeviceDot.Fill = _model.SelectedDeviceAvailable ? Brushes.LimeGreen : Brushes.Orange;
             DeviceName.Text = _model.SelectedDeviceName;
@@ -197,23 +195,12 @@ public partial class MainWindow : Window
                 GenerationLabel.Text = $"Generating {player.GeneratedChunkCount}/{player.TotalChunkCount}";
             }
 
-            UpdateInterruptionBanner();
             RenderHighlight();
         }
         finally
         {
             _suppressUiEvents = false;
         }
-    }
-
-    private void UpdateInterruptionBanner()
-    {
-        var player = _model.Player;
-        bool visible = _model.InterruptionMonitor.IsHearingAudio || player.IsWaitingForInterruption;
-        InterruptionBanner.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        InterruptionBanner.Text = player.IsWaitingForInterruption
-            ? "👂 Paused for an interruption"
-            : "👂 Interruption detected";
     }
 
     private void RenderHighlight()
@@ -545,12 +532,6 @@ public partial class MainWindow : Window
     {
         if (_suppressUiEvents) return;
         _model.LoopEnabled = LoopMenuItem.IsChecked;
-    }
-
-    private void OnInterruptionChanged(object sender, RoutedEventArgs e)
-    {
-        if (_suppressUiEvents) return;
-        _model.InterruptionEnabled = InterruptionMenuItem.IsChecked;
     }
 
     private void OnScrubStarted(object sender, DragStartedEventArgs e) => _isScrubbing = true;
