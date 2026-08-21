@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace BotSpeaker;
@@ -383,7 +384,19 @@ public partial class OrchestrationWindow : Window
         _controller.MeetingScriptText = MeetingScriptBox.Text;
     }
 
-    private async void OnConnectClick(object sender, RoutedEventArgs e)
+    private async void OnConnectClick(object sender, RoutedEventArgs e) =>
+        await PerformSetupActionAsync();
+
+    private async void OnPairingCodeKeyDown(object sender, KeyEventArgs e)
+    {
+        // Parity with macOS: Enter in the code field submits the setup action,
+        // under the same guard as the connect button.
+        if (e.Key != Key.Enter || !ConnectButton.IsEnabled) return;
+        e.Handled = true;
+        await PerformSetupActionAsync();
+    }
+
+    private async Task PerformSetupActionAsync()
     {
         if (_controller.SetupMode == OrchestrationMode.Host)
         {

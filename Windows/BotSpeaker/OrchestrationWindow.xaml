@@ -62,7 +62,8 @@
                     <StackPanel x:Name="PairingEntryPanel" Visibility="Collapsed" Margin="0,0,0,16">
                         <TextBlock Text="Pairing code" FontWeight="Bold" Margin="0,0,0,6"/>
                         <TextBox x:Name="PairingCodeBox" FontSize="20" FontFamily="Consolas" Padding="6"
-                                 CharacterCasing="Upper" MaxLength="6" TextChanged="OnPairingCodeChanged"/>
+                                 CharacterCasing="Upper" MaxLength="6" TextChanged="OnPairingCodeChanged"
+                                 KeyDown="OnPairingCodeKeyDown"/>
                         <TextBlock Text="Enter the six-character code shown on the host machine."
                                    FontSize="11" Foreground="Gray" Margin="0,4,0,0"/>
                     </StackPanel>
