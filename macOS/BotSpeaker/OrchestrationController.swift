@@ -359,13 +359,15 @@ final class OrchestrationController {
         participantOrder.swapAt(source, destination)
     }
 
-    func moveParticipant(id: String, before destinationID: String) {
+    func moveParticipant(id: String, relativeTo destinationID: String, insertAfter: Bool) {
         guard turns.isEmpty,
               let source = participantOrder.firstIndex(of: id),
               let destination = participantOrder.firstIndex(of: destinationID),
               source != destination else { return }
+        var insertionIndex = destination + (insertAfter ? 1 : 0)
         let participantID = participantOrder.remove(at: source)
-        participantOrder.insert(participantID, at: min(destination, participantOrder.endIndex))
+        if source < insertionIndex { insertionIndex -= 1 }
+        participantOrder.insert(participantID, at: min(insertionIndex, participantOrder.endIndex))
     }
 
     func prepareMeeting() async {

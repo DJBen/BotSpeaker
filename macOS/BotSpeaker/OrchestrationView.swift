@@ -1,11 +1,14 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct OrchestrationView: View {
     let model: AppModel
     @Bindable var controller: OrchestrationController
     let onExit: () -> Void
     @State private var exportError: String?
+    @State private var draggedParticipantID: String?
+    @State private var participantDropTarget: ParticipantDropTarget?
 
     var body: some View {
         Group {
@@ -158,20 +161,67 @@ struct OrchestrationView: View {
                                 : Color.clear,
                             in: RoundedRectangle(cornerRadius: 8)
                         )
-                        .draggable(participant.id) {
+                        .overlay(alignment: .top) {
+                            participantInsertionIndicator
+                                .opacity(isDropTarget(participant.id, edge: .before) ? 1 : 0)
+                                .offset(y: -3)
+                        }
+                        .overlay(alignment: .bottom) {
+                            participantInsertionIndicator
+                                .opacity(isDropTarget(participant.id, edge: .after) ? 1 : 0)
+                                .offset(y: 3)
+                        }
+                        .animation(.easeOut(duration: 0.1), value: participantDropTarget)
+                        .onDrag {
+                            guard canReorderParticipants else { return NSItemProvider() }
+                            draggedParticipantID = participant.id
+                            return NSItemProvider(object: participant.id as NSString)
+                        } preview: {
                             Label(participant.displayName, systemImage: "person.fill")
                                 .padding(8)
                         }
-                        .dropDestination(for: String.self) { participantIDs, _ in
-                            guard let participantID = participantIDs.first else { return false }
-                            controller.moveParticipant(id: participantID, before: participant.id)
-                            return true
-                        }
+                        .onDrop(
+                            of: [.text],
+                            delegate: ParticipantReorderDropDelegate(
+                                destinationID: participant.id,
+                                isEnabled: canReorderParticipants,
+                                draggedParticipantID: $draggedParticipantID,
+                                dropTarget: $participantDropTarget,
+                                onMove: { participantID, destinationID, edge in
+                                    controller.moveParticipant(
+                                        id: participantID,
+                                        relativeTo: destinationID,
+                                        insertAfter: edge == .after
+                                    )
+                                }
+                            )
+                        )
                     }
                 }
                 .padding(6)
             }
         }
+    }
+
+    private var participantInsertionIndicator: some View {
+        HStack(spacing: 0) {
+            Circle()
+                .frame(width: 6, height: 6)
+            Rectangle()
+                .frame(height: 2)
+        }
+        .foregroundStyle(Color.accentColor)
+        .shadow(color: Color.accentColor.opacity(0.25), radius: 1)
+        .padding(.horizontal, 2)
+        .allowsHitTesting(false)
+    }
+
+    private var canReorderParticipants: Bool {
+        controller.sessionStatus == .lobby && controller.turns.isEmpty
+    }
+
+    private func isDropTarget(_ participantID: String, edge: ParticipantInsertionEdge) -> Bool {
+        participantDropTarget == ParticipantDropTarget(participantID: participantID, edge: edge)
     }
 
     private var timelinePanel: some View {
@@ -430,5 +480,71 @@ struct OrchestrationView: View {
         case .skipped, .stopped: .orange
         default: .secondary
         }
+    }
+}
+
+private enum ParticipantInsertionEdge: Equatable {
+    case before
+    case after
+}
+
+private struct ParticipantDropTarget: Equatable {
+    let participantID: String
+    let edge: ParticipantInsertionEdge
+}
+
+private struct ParticipantReorderDropDelegate: DropDelegate {
+    let destinationID: String
+    let isEnabled: Bool
+    @Binding var draggedParticipantID: String?
+    @Binding var dropTarget: ParticipantDropTarget?
+    let onMove: (String, String, ParticipantInsertionEdge) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        isEnabled && draggedParticipantID != nil
+    }
+
+    func dropEntered(info: DropInfo) {
+        updateTarget(for: info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard isEnabled else { return DropProposal(operation: .forbidden) }
+        updateTarget(for: info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTarget?.participantID == destinationID {
+            dropTarget = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let participantID = draggedParticipantID,
+              let target = dropTarget,
+              target.participantID == destinationID,
+              participantID != destinationID else {
+            clearDragState()
+            return false
+        }
+        onMove(participantID, destinationID, target.edge)
+        clearDragState()
+        return true
+    }
+
+    private func updateTarget(for info: DropInfo) {
+        guard let participantID = draggedParticipantID,
+              participantID != destinationID else {
+            if dropTarget?.participantID == destinationID { dropTarget = nil }
+            return
+        }
+        let edge: ParticipantInsertionEdge = info.location.y < 22 ? .before : .after
+        dropTarget = ParticipantDropTarget(participantID: destinationID, edge: edge)
+    }
+
+    private func clearDragState() {
+        draggedParticipantID = nil
+        dropTarget = nil
     }
 }
