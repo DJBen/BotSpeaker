@@ -8,7 +8,7 @@ import SwiftUI
 /// `coreaudiod` does not rescan that folder until it restarts — so no device ever
 /// appears and the install looks like it silently failed.
 struct BlackHoleStatusView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     @State private var didCopyCommand = false
 
     private static let downloadURL = URL(string: "https://existential.audio/blackhole/")!

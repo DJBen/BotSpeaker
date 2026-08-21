@@ -2,21 +2,28 @@ import AVFoundation
 import AudioToolbox
 import Combine
 import Foundation
+import Observation
 
 @MainActor
-final class AudioPlaybackController: ObservableObject {
-    @Published private(set) var isPlaying = false
-    @Published private(set) var hasAudio = false
-    @Published private(set) var currentTime: TimeInterval = 0
-    @Published private(set) var duration: TimeInterval = 0
-    @Published private(set) var isBuffering = false
-    @Published private(set) var generatedChunkCount = 0
-    @Published private(set) var totalChunkCount = 0
-    @Published private(set) var playedTextLength = 0
-    @Published private(set) var activeTextRange: NSRange?
-    @Published var isLooping = false
+@Observable
+final class AudioPlaybackController {
+    private(set) var isPlaying = false {
+        didSet {
+            if isPlaying && !oldValue { onPlaybackStarted?() }
+        }
+    }
+    private(set) var hasAudio = false
+    private(set) var currentTime: TimeInterval = 0
+    private(set) var duration: TimeInterval = 0
+    private(set) var isBuffering = false
+    private(set) var generatedChunkCount = 0
+    private(set) var totalChunkCount = 0
+    private(set) var playedTextLength = 0
+    private(set) var activeTextRange: NSRange?
+    var isLooping = false
 
-    var onPlaybackFinished: (() -> Void)?
+    @ObservationIgnored var onPlaybackStarted: (() -> Void)?
+    @ObservationIgnored var onPlaybackFinished: (() -> Void)?
 
     var volume: Float = 1 {
         didSet {
@@ -35,16 +42,16 @@ final class AudioPlaybackController: ObservableObject {
         }
     }
 
-    private let engine = AVAudioEngine()
-    private let node = AVAudioPlayerNode()
-    private var chunks: [PlaybackChunk] = []
-    private var timer: AnyCancellable?
-    private var currentChunkIndex = 0
-    private var startFrame: AVAudioFramePosition = 0
-    private var scheduledGeneration = 0
-    private var isCurrentChunkScheduled = false
-    private var generationComplete = true
-    private var playRequested = false
+    @ObservationIgnored private let engine = AVAudioEngine()
+    @ObservationIgnored private let node = AVAudioPlayerNode()
+    @ObservationIgnored private var chunks: [PlaybackChunk] = []
+    @ObservationIgnored private var timer: AnyCancellable?
+    @ObservationIgnored private var currentChunkIndex = 0
+    @ObservationIgnored private var startFrame: AVAudioFramePosition = 0
+    @ObservationIgnored private var scheduledGeneration = 0
+    @ObservationIgnored private var isCurrentChunkScheduled = false
+    @ObservationIgnored private var generationComplete = true
+    @ObservationIgnored private var playRequested = false
 
     init() {
         engine.attach(node)

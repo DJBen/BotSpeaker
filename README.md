@@ -28,17 +28,19 @@ The repository and its release downloads are public.
 - Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
 - ElevenLabs API-key setup, validation, and platform-encrypted storage
 - ElevenLabs voice selection
+- Speech generated at a 1.1× default speed for a more natural meeting pace
 - Sequential, sentence-aware speech generation for long scripts
 - Persistent audio-chunk caching per script, voice, model, and surrounding context
-- Two coordinated meeting scenarios with seven role templates and one-time speaker-name substitution
+- Three incident-review role templates with one-time speaker-name substitution
+- One host-controlled, four-speaker **AI meeting assistant launch readiness** conversation
 - Side-by-side script library and playback workspace, plus named custom scripts
 - Play, pause, stop, seek, and progress-aware text highlighting
 - Persistent output-volume control applied before audio reaches the virtual device
-- Multi-machine meeting orchestration across macOS and Windows with host/client
-  pairing, automatic round-robin speaker handoff, and host pause, resume, skip,
-  and stop controls
-- Orchestration prefetching that prepares every client's first paragraph in the
-  lobby and keeps the following paragraph cached for smooth speaker transitions
+- Multi-machine meeting orchestration across macOS and Windows: the host owns a
+  shared `{{speaker_1}}`-style script, assigns roles by client order, and controls
+  automatic handoff, pause, resume, skip, and stop
+- Orchestration prefetching that distributes the plan before playback, prepares
+  every client's first assigned paragraph, and keeps the following turn cached
 - Timestamped JSON transcript export with both playback-device and
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
@@ -105,16 +107,24 @@ See [Windows/README.md](Windows/README.md) for monitoring and storage details.
 
 ## Orchestrate multiple machines
 
-Open **Meeting Orchestrator** from the people icon in the BotSpeaker header. One
-machine hosts a room and displays a six-character pairing code; the other
-machines join as remote speakers. Macs and Windows PCs interoperate freely in
-the same session — either platform can host. The host orders the participants
-and starts the session, after which BotSpeaker hands paragraph-level turns
-between laptops automatically. When the session completes, the host can export a
-JSON transcript with exact per-speaker playback and server-received timestamps.
+Choose a template under **Orchestrated meeting** in the script sidebar. The
+built-in scenarios include a four-person AI assistant launch review and a
+three-person API latency incident review. The main window first shows the shared
+script preview plus a name and ElevenLabs voice picker for each speaker. Each
+template starts with distinct gender-matched voices when the ElevenLabs catalog
+provides them; the three-person incident review defaults to male, female, male.
+**Prepare Meeting** is the only entry point to the pairing setup, where
+one machine hosts a room and displays a six-character code and the remaining
+machines join as remote clients. Macs and Windows PCs interoperate freely in the
+same session — either platform can host. The host orders the paired devices and
+chooses **Prepare Speakers** to distribute the resolved script and voice
+assignments. Each client generates its assigned paragraphs asynchronously; once
+every first turn is ready, the host starts the session and BotSpeaker hands turns
+between laptops automatically. When the session completes, the host can export
+a JSON transcript with exact per-speaker playback and server-received timestamps.
 
-Each participating machine needs its own playable script, voice, ElevenLabs API
-key, and virtual-audio output configuration. See the
+Each participating machine needs its own ElevenLabs API key and virtual-audio
+output configuration. The host chooses every voice and the meeting script. See the
 [meeting orchestration guide](docs/orchestration.md) for setup, privacy, protocol,
 and transcript details.
 

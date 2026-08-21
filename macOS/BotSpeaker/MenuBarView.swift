@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct MenuBarView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         Group {
@@ -21,8 +21,10 @@ struct MenuBarView: View {
 }
 
 struct MainWindowView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
+    let orchestration: OrchestrationController
     @State private var isShowingScriptEditor = false
+    @State private var isShowingOrchestrationConfiguration = false
 
     var body: some View {
         Group {
@@ -31,24 +33,44 @@ struct MainWindowView: View {
                     ScriptLibrarySidebar(
                         model: model,
                         onAdd: {
+                            isShowingOrchestrationConfiguration = false
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
                         onEdit: { scriptID in
+                            isShowingOrchestrationConfiguration = false
                             model.selectScript(id: scriptID)
                             model.prepareScriptEditor()
                             isShowingScriptEditor = true
                         },
                         onDelete: { model.deleteCustomScript(id: $0) },
-                        onReplicate: { model.selectScript(id: $0) }
+                        onReplicate: {
+                            isShowingOrchestrationConfiguration = false
+                            model.selectScript(id: $0)
+                        },
+                        onSelectScript: {
+                            isShowingOrchestrationConfiguration = false
+                            model.selectScript(id: $0)
+                        },
+                        selectedOrchestrationTemplateID: isShowingOrchestrationConfiguration
+                            ? orchestration.selectedTemplate.id
+                            : nil,
+                        onOpenOrchestratedMeeting: { template in
+                            orchestration.selectTemplate(template)
+                            isShowingOrchestrationConfiguration = true
+                        }
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
                 } detail: {
-                    ComposerView(
-                        model: model,
-                        player: model.player,
-                        context: .mainWindow
-                    )
+                    if isShowingOrchestrationConfiguration {
+                        OrchestratedMeetingConfigurationView(model: model, controller: orchestration)
+                    } else {
+                        ComposerView(
+                            model: model,
+                            player: model.player,
+                            context: .mainWindow
+                        )
+                    }
                 }
             } else {
                 FirstRunView(model: model)
@@ -75,11 +97,14 @@ struct MainWindowView: View {
 }
 
 private struct ScriptLibrarySidebar: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     let onAdd: () -> Void
     let onEdit: (String) -> Void
     let onDelete: (UUID) -> Void
     let onReplicate: (String) -> Void
+    let onSelectScript: (String) -> Void
+    let selectedOrchestrationTemplateID: String?
+    let onOpenOrchestratedMeeting: (OrchestratedMeetingTemplate) -> Void
     @State private var scriptPendingDeletion: SpeechScript?
 
     var body: some View {
@@ -95,6 +120,13 @@ private struct ScriptLibrarySidebar: View {
                                 }
                             }
                     }
+                }
+            }
+
+            Section("Orchestrated meeting") {
+                ForEach(OrchestratedMeetingTemplate.all) { template in
+                    OrchestratedMeetingRow(template: template)
+                        .tag(orchestrationSelectionID(for: template))
                 }
             }
 
@@ -151,12 +183,25 @@ private struct ScriptLibrarySidebar: View {
 
     private var scriptSelection: Binding<String?> {
         Binding(
-            get: { model.selectedScriptID },
+            get: {
+                selectedOrchestrationTemplateID.map { "orchestrated:\($0)" } ?? model.selectedScriptID
+            },
             set: { id in
                 guard let id else { return }
-                model.selectScript(id: id)
+                if id.hasPrefix("orchestrated:"),
+                   let template = OrchestratedMeetingTemplate.all.first(where: {
+                       orchestrationSelectionID(for: $0) == id
+                   }) {
+                    onOpenOrchestratedMeeting(template)
+                } else {
+                    onSelectScript(id)
+                }
             }
         )
+    }
+
+    private func orchestrationSelectionID(for template: OrchestratedMeetingTemplate) -> String {
+        "orchestrated:\(template.id)"
     }
 
     private var deletionAlertIsPresented: Binding<Bool> {
@@ -164,6 +209,25 @@ private struct ScriptLibrarySidebar: View {
             get: { scriptPendingDeletion != nil },
             set: { if !$0 { scriptPendingDeletion = nil } }
         )
+    }
+}
+
+private struct OrchestratedMeetingRow: View {
+    let template: OrchestratedMeetingTemplate
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(template.title).lineLimit(1)
+                Text("\(template.detail) · \(template.turnCount) turns")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } icon: {
+            Image(systemName: "person.3.sequence.fill")
+        }
+        .padding(.vertical, 3)
     }
 }
 
@@ -194,10 +258,10 @@ struct ComposerView: View {
         case menuBar
     }
 
-    @ObservedObject var model: AppModel
-    @ObservedObject var player: AudioPlaybackController
-    let context: Context
+    @Bindable var model: AppModel
+    let player: AudioPlaybackController
     @Environment(\.openWindow) private var openWindow
+    let context: Context
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
     @State private var templateError: String?
@@ -208,11 +272,6 @@ struct ComposerView: View {
                 Label("Bot Speaker", systemImage: "waveform")
                     .font(.headline)
                 Spacer()
-                Button { openWindow(id: "orchestrator") } label: {
-                    Image(systemName: "person.3.sequence")
-                }
-                .buttonStyle(.plain)
-                .help("Meeting Orchestrator")
                 SettingsLink { Image(systemName: "gearshape") }
                     .buttonStyle(.plain)
                     .help("Settings")
@@ -506,7 +565,7 @@ struct ComposerView: View {
 }
 
 private struct CustomScriptEditorSheet: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var saveError: String?
 
@@ -577,7 +636,7 @@ private struct AnnotationKey: View {
 }
 
 struct VoicePicker: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         HStack(spacing: 8) {

@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 struct OrchestrationView: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var controller: OrchestrationController
+    let model: AppModel
+    @Bindable var controller: OrchestrationController
     @State private var exportError: String?
 
     var body: some View {
@@ -54,27 +54,22 @@ struct OrchestrationView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("This Mac’s speaker", systemImage: "laptopcomputer")
+                    Label("This Mac", systemImage: "laptopcomputer")
                         .font(.headline)
-                    TextField("Speaker name", text: $controller.speakerName)
+                    TextField("Device name", text: $controller.speakerName)
                         .textFieldStyle(.roundedBorder)
 
-                    LabeledContent("Script") {
-                        Text(model.selectedScript.title)
-                            .lineLimit(1)
-                    }
-                    LabeledContent("Voice") {
-                        Text(model.selectedVoiceName)
-                            .lineLimit(1)
-                    }
-                    LabeledContent("Turns") {
-                        Text("\(OrchestrationScriptSegmenter.segments(for: model.text).count) paragraphs")
-                    }
-
-                    if !model.selectedScript.isCustom {
-                        Label("Choose or replicate a playable script in the main window first.", systemImage: "exclamationmark.triangle.fill")
+                    if controller.setupMode == .host {
+                        LabeledContent("Meeting script") {
+                            Text(controller.selectedTemplate.title).lineLimit(1)
+                        }
+                        LabeledContent("Cast") {
+                            Text("\(controller.selectedTemplate.speakerCount) speakers")
+                        }
+                    } else {
+                        Label("The host will assign this client’s paragraphs after pairing.", systemImage: "arrow.down.doc")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,7 +123,6 @@ struct OrchestrationView: View {
     private var isSetupActionDisabled: Bool {
         controller.isBusy
             || controller.speakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !model.selectedScript.isCustom
     }
 
     private func performSetupAction() {
@@ -154,6 +148,7 @@ struct OrchestrationView: View {
     private var hostSession: some View {
         VStack(spacing: 16) {
             pairingCard
+            scriptPlanCard
 
             HSplitView {
                 participantsPanel
@@ -170,6 +165,36 @@ struct OrchestrationView: View {
             }
 
             hostControls
+        }
+    }
+
+    private var scriptPlanCard: some View {
+        GroupBox("Orchestrated meeting") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(controller.selectedTemplate.title).fontWeight(.semibold)
+                        Text("Reorder paired clients to map {{speaker_1}} through {{speaker_\(controller.selectedTemplate.speakerCount)}}.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(controller.turns.isEmpty ? "Draft" : "Prepared")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: Capsule())
+                }
+                TextEditor(text: $controller.meetingScriptText)
+                    .font(.body)
+                    .frame(minHeight: 110, maxHeight: 150)
+                    .disabled(!controller.turns.isEmpty)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.separator, lineWidth: 1)
+                    )
+            }
+            .padding(6)
         }
     }
 
@@ -218,7 +243,7 @@ struct OrchestrationView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(participant.displayName)
                                     .fontWeight(.medium)
-                                Text("\(participant.scriptTitle) · \(participant.segmentCount) turns")
+                                Text(participantAssignmentText(index: index, participant: participant))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -241,7 +266,7 @@ struct OrchestrationView: View {
                                 .lineLimit(1)
                             }
                             Spacer()
-                            if controller.sessionStatus == .lobby {
+                            if controller.sessionStatus == .lobby && controller.turns.isEmpty {
                                 VStack(spacing: 2) {
                                     Button { controller.moveParticipant(id: participant.id, by: -1) } label: {
                                         Image(systemName: "chevron.up")
@@ -284,7 +309,7 @@ struct OrchestrationView: View {
                     ContentUnavailableView(
                         "No turns yet",
                         systemImage: "list.number",
-                        description: Text("Pair speakers, arrange them, then start the meeting.")
+                        description: Text("Pair \(controller.selectedTemplate.speakerCount) speakers, arrange their roles, then prepare the host script.")
                     )
                 }
 
@@ -336,13 +361,23 @@ struct OrchestrationView: View {
 
             switch controller.sessionStatus {
             case .lobby:
-                Button {
-                    Task { await controller.startMeeting() }
-                } label: {
-                    Label("Start Meeting", systemImage: "play.fill")
+                if controller.turns.isEmpty {
+                    Button {
+                        Task { await controller.prepareMeeting() }
+                    } label: {
+                        Label("Prepare Speakers", systemImage: "waveform.badge.plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!controller.canPrepareMeeting)
+                } else {
+                    Button {
+                        Task { await controller.startMeeting() }
+                    } label: {
+                        Label("Start Meeting", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!controller.canStartMeeting)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!controller.canStartMeeting)
             case .running:
                 Button("Skip Turn") { Task { await controller.skipCurrentTurn() } }
                 Button("Pause") { Task { await controller.pauseMeeting() } }
@@ -377,11 +412,11 @@ struct OrchestrationView: View {
                 VStack(spacing: 10) {
                     LabeledContent("Room", value: controller.pairingCode)
                     LabeledContent("Speaker", value: controller.speakerName)
-                    LabeledContent("Script", value: model.selectedScript.title)
+                    LabeledContent("Script", value: controller.meetingScriptTitle)
                     LabeledContent("Voice", value: model.selectedVoiceName)
                     LabeledContent(
                         "Prepared paragraphs",
-                        value: "\(controller.preparedLocalSegmentCount) of \(OrchestrationScriptSegmenter.segments(for: model.selectedScript.text).count)"
+                        value: "\(controller.preparedLocalSegmentCount) of \(controller.localAssignedSegmentCount)"
                     )
                     LabeledContent("Preparation", value: controller.preparationStatus)
                 }
@@ -419,6 +454,12 @@ struct OrchestrationView: View {
     private var orderedParticipants: [OrchestrationParticipant] {
         let byID = Dictionary(uniqueKeysWithValues: controller.participants.map { ($0.id, $0) })
         return controller.participantOrder.compactMap { byID[$0] }
+    }
+
+    private func participantAssignmentText(index: Int, participant: OrchestrationParticipant) -> String {
+        let template = controller.selectedTemplate
+        guard index < template.speakerRoles.count else { return "Unassigned client · \(participant.voiceName)" }
+        return "{{speaker_\(index + 1)}} · \(template.speakerRoles[index]) · \(participant.segmentCount) turns"
     }
 
     private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {

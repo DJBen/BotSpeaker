@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct FirstRunView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     @State private var key = ""
     @State private var isSaving = false
     @State private var error: String?

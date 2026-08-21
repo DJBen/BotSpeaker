@@ -2,19 +2,19 @@ import SwiftUI
 
 @main
 struct BotSpeakerApp: App {
-    @StateObject private var model: AppModel
-    @StateObject private var orchestration: OrchestrationController
-    @StateObject private var updates = UpdateController()
+    @State private var model: AppModel
+    @State private var orchestration: OrchestrationController
+    @State private var updates = UpdateController()
 
     init() {
         let model = AppModel()
-        _model = StateObject(wrappedValue: model)
-        _orchestration = StateObject(wrappedValue: OrchestrationController(model: model))
+        _model = State(initialValue: model)
+        _orchestration = State(initialValue: OrchestrationController(model: model))
     }
 
     var body: some Scene {
         WindowGroup("Bot Speaker", id: "composer") {
-            MainWindowView(model: model)
+            MainWindowView(model: model, orchestration: orchestration)
         }
         .defaultSize(width: 1040, height: 720)
 

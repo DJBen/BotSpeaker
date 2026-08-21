@@ -24,13 +24,8 @@ struct ExampleExcerpt: Identifiable {
     static let scenarios: [ExampleScenario] = [
         ExampleScenario(
             id: "authentication-incident-review",
-            title: "Authentication incident review",
+            title: "Script templates",
             excerpts: [incidentManager, incidentTechnicalLead, incidentSupportLead]
-        ),
-        ExampleScenario(
-            id: "meeting-assistant-launch-readiness",
-            title: "AI meeting assistant launch readiness",
-            excerpts: [launchProductManager, launchEngineeringLead, launchPrivacyLead, launchCustomerSuccessLead]
         )
     ]
 

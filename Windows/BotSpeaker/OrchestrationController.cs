@@ -34,6 +34,17 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private string _pairingCodeInput = "";
     public string PairingCodeInput { get => _pairingCodeInput; set => Set(ref _pairingCodeInput, value); }
 
+    private string _meetingScriptText = OrchestratedMeetingTemplate.LaunchReadiness.Text;
+    public string MeetingScriptText { get => _meetingScriptText; set => Set(ref _meetingScriptText, value); }
+
+    private OrchestratedMeetingTemplate _selectedTemplate = OrchestratedMeetingTemplate.LaunchReadiness;
+    public OrchestratedMeetingTemplate SelectedTemplate { get => _selectedTemplate; private set => Set(ref _selectedTemplate, value); }
+
+    private string _meetingScriptTitle = OrchestratedMeetingTemplate.LaunchReadiness.Title;
+    public string MeetingScriptTitle { get => _meetingScriptTitle; private set => Set(ref _meetingScriptTitle, value); }
+
+    public List<OrchestratedSpeakerConfiguration> SpeakerConfigurations { get; }
+
     private OrchestrationMode? _activeMode;
     public OrchestrationMode? ActiveMode { get => _activeMode; private set => Set(ref _activeMode, value); }
 
@@ -103,6 +114,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private CancellationTokenSource? _prefetchCancellation;
     private Task? _prefetchTask;
     private int? _prefetchSegmentIndex;
+    private string? _defaultVoicesAppliedForTemplateId;
 
     public OrchestrationController(AppModel model)
     {
@@ -110,6 +122,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _speakerName = string.IsNullOrWhiteSpace(model.Settings.OrchestrationSpeakerName)
             ? Environment.MachineName
             : model.Settings.OrchestrationSpeakerName;
+        SpeakerConfigurations = OrchestratedMeetingTemplate.LaunchReadiness.SpeakerRoles
+            .Select((role, index) => new OrchestratedSpeakerConfiguration
+            {
+                Slot = index + 1,
+                Role = role,
+                VoiceId = model.VoiceId,
+                VoiceName = model.SelectedVoiceName,
+            })
+            .ToList();
 
         _pollTimer = new DispatcherTimer { Interval = PollInterval };
         _pollTimer.Tick += async (_, _) => await PollAsync();
@@ -129,6 +150,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     public bool IsActive => ActiveMode is not null;
     public bool IsHost => ActiveMode == OrchestrationMode.Host;
     public string? LocalParticipantId => _userId;
+    public int LocalAssignedSegmentCount => _localSegments.Count;
 
     public OrchestrationTurn? ActiveTurn =>
         ActiveTurnIndex >= 0 && ActiveTurnIndex < Turns.Count ? Turns[ActiveTurnIndex] : null;
@@ -138,12 +160,108 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         get
         {
             var connected = Participants.Where(p => p.IsRecentlyConnected).ToList();
+            var assignedIds = Turns.Select(t => t.ParticipantUid).ToHashSet();
             return IsHost
                 && SessionStatus == OrchestrationSessionStatus.Lobby
-                && connected.Count > 0
-                && connected.All(p => p.IsFirstTurnPrepared)
+                && Turns.Count > 0
+                && assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id)?.IsFirstTurnPrepared == true)
                 && !IsBusy;
         }
+    }
+
+    public bool CanPrepareMeeting =>
+        IsHost
+        && SessionStatus == OrchestrationSessionStatus.Lobby
+        && Turns.Count == 0
+        && Participants.Count(p => p.IsRecentlyConnected) >= SelectedTemplate.SpeakerCount
+        && !IsBusy;
+
+    public bool IsSpeakerConfigurationComplete =>
+        SpeakerConfigurations.Count == SelectedTemplate.SpeakerCount
+        && SpeakerConfigurations.All(configuration =>
+            !string.IsNullOrWhiteSpace(configuration.Name)
+            && !string.IsNullOrWhiteSpace(configuration.VoiceId));
+
+    public string ConfiguredScriptPreview => SpeakerConfigurations.Aggregate(
+        MeetingScriptText,
+        (preview, configuration) => preview.Replace(
+            configuration.Placeholder,
+            string.IsNullOrWhiteSpace(configuration.Name) ? configuration.Placeholder : configuration.Name.Trim(),
+            StringComparison.Ordinal));
+
+    public void PrepareHostSetup()
+    {
+        SetupMode = OrchestrationMode.Host;
+        ErrorMessage = null;
+    }
+
+    public void SelectTemplate(OrchestratedMeetingTemplate template)
+    {
+        if (IsActive || template.Id == SelectedTemplate.Id) return;
+        SelectedTemplate = template;
+        MeetingScriptText = template.Text;
+        MeetingScriptTitle = template.Title;
+        SpeakerConfigurations.Clear();
+        SpeakerConfigurations.AddRange(template.SpeakerRoles.Select((role, index) =>
+            new OrchestratedSpeakerConfiguration
+            {
+                Slot = index + 1,
+                Role = role,
+                VoiceId = _model.VoiceId,
+                VoiceName = _model.SelectedVoiceName,
+            }));
+        _defaultVoicesAppliedForTemplateId = null;
+        ApplyDefaultTemplateVoices();
+        NotifySpeakerConfigurationChanged();
+    }
+
+    public void ApplyDefaultTemplateVoices()
+    {
+        if (_defaultVoicesAppliedForTemplateId == SelectedTemplate.Id || _model.Voices.Count == 0) return;
+        var usedVoiceIds = new HashSet<string>(StringComparer.Ordinal);
+        for (int index = 0; index < SpeakerConfigurations.Count; index++)
+        {
+            string? preferredGender = index < SelectedTemplate.DefaultVoiceGenders.Count
+                ? SelectedTemplate.DefaultVoiceGenders[index]
+                : null;
+            var matchingUnused = _model.Voices.FirstOrDefault(voice =>
+                preferredGender is not null
+                && !usedVoiceIds.Contains(voice.Id)
+                && string.Equals(voice.Labels?.GetValueOrDefault("gender"), preferredGender, StringComparison.OrdinalIgnoreCase));
+            var matching = _model.Voices.FirstOrDefault(voice =>
+                preferredGender is not null
+                && string.Equals(voice.Labels?.GetValueOrDefault("gender"), preferredGender, StringComparison.OrdinalIgnoreCase));
+            var fallback = _model.Voices.FirstOrDefault(voice => !usedVoiceIds.Contains(voice.Id)) ?? _model.Voices[0];
+            var selectedVoice = matchingUnused ?? matching ?? fallback;
+            SpeakerConfigurations[index].VoiceId = selectedVoice.Id;
+            SpeakerConfigurations[index].VoiceName = selectedVoice.Name;
+            usedVoiceIds.Add(selectedVoice.Id);
+        }
+        _defaultVoicesAppliedForTemplateId = SelectedTemplate.Id;
+        NotifySpeakerConfigurationChanged();
+    }
+
+    public void UpdateSpeakerName(int slot, string name)
+    {
+        var configuration = SpeakerConfigurations.First(item => item.Slot == slot);
+        configuration.Name = name;
+        NotifySpeakerConfigurationChanged();
+    }
+
+    public void UpdateSpeakerVoice(int slot, string voiceId)
+    {
+        var configuration = SpeakerConfigurations.First(item => item.Slot == slot);
+        configuration.VoiceId = voiceId;
+        configuration.VoiceName = _model.Voices.FirstOrDefault(voice => voice.Id == voiceId)?.Name
+            ?? $"Voice ID {voiceId[..Math.Min(8, voiceId.Length)]}…";
+        NotifySpeakerConfigurationChanged();
+    }
+
+    private void NotifySpeakerConfigurationChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SpeakerConfigurations)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSpeakerConfigurationComplete)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConfiguredScriptPreview)));
     }
 
     public bool CanExportTranscript =>
@@ -174,6 +292,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["status"] = OrchestrationSessionStatus.Lobby.RawValue(),
                     ["activeTurnIndex"] = -1,
                     ["totalTurns"] = 0,
+                    ["scriptTemplateID"] = SelectedTemplate.Id,
+                    ["scriptTitle"] = SelectedTemplate.Title,
+                    ["scriptText"] = MeetingScriptText,
                 },
                 ServerTimestampFields = ["createdAt", "updatedAt", "activityAt"],
                 MustExist = false,
@@ -248,6 +369,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     public void MoveParticipant(string id, int offset)
     {
+        if (Turns.Count > 0) return;
         var order = new List<string>(ParticipantOrder);
         int source = order.IndexOf(id);
         if (source < 0) return;
@@ -257,57 +379,133 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         ParticipantOrder = order;
     }
 
-    public async Task StartMeetingAsync()
+    public async Task PrepareMeetingAsync()
     {
         if (!IsHost || SessionId is not string sessionId) return;
         await PerformBusyOperationAsync(async () =>
         {
-            var connectedById = Participants
-                .Where(p => p.IsRecentlyConnected)
-                .ToDictionary(p => p.Id);
-            var ordered = ParticipantOrder
-                .Where(connectedById.ContainsKey)
-                .Select(id => connectedById[id])
-                .ToList();
-            if (ordered.Count == 0) throw new AppException("Pair at least one ready speaker.");
-
-            var plan = new List<(OrchestrationParticipant Participant, int SegmentIndex)>();
-            int maximumSegments = ordered.Max(p => p.SegmentCount);
-            for (int segmentIndex = 0; segmentIndex < maximumSegments; segmentIndex++)
-            {
-                foreach (var participant in ordered)
-                {
-                    if (segmentIndex < participant.SegmentCount) plan.Add((participant, segmentIndex));
-                }
-            }
-            if (plan.Count == 0) throw new AppException("The paired speakers have no script turns.");
-            if (plan.Count > MaximumTurnCount)
+            var template = SelectedTemplate;
+            var parsedTurns = template.ParseTurns(MeetingScriptText);
+            if (parsedTurns.Count > MaximumTurnCount)
             {
                 throw new AppException(
-                    $"This session has {plan.Count} turns. Shorten the scripts to {MaximumTurnCount} turns or fewer.");
+                    $"This script has {parsedTurns.Count} turns. Shorten it to {MaximumTurnCount} turns or fewer.");
+            }
+            var connectedById = Participants.Where(p => p.IsRecentlyConnected).ToDictionary(p => p.Id);
+            var assigned = ParticipantOrder
+                .Where(connectedById.ContainsKey)
+                .Select(id => connectedById[id])
+                .Take(template.SpeakerCount)
+                .ToList();
+            if (assigned.Count < template.SpeakerCount)
+            {
+                throw new AppException($"Pair {template.SpeakerCount} speakers before preparing this meeting.");
+            }
+            if (!IsSpeakerConfigurationComplete)
+            {
+                throw new AppException("Configure all speaker names and voices in the main window first.");
             }
 
+            var segmentCounts = new int[template.SpeakerCount];
             var writes = new List<FirestoreWrite>();
-            for (int index = 0; index < plan.Count; index++)
+            for (int index = 0; index < parsedTurns.Count; index++)
             {
-                var item = plan[index];
+                var parsed = parsedTurns[index];
+                var participant = assigned[parsed.SpeakerIndex];
+                var speakerConfiguration = SpeakerConfigurations[parsed.SpeakerIndex];
+                int segmentIndex = segmentCounts[parsed.SpeakerIndex]++;
+                var resolvedText = parsed.Text;
+                foreach (var configuration in SpeakerConfigurations)
+                {
+                    resolvedText = resolvedText.Replace(
+                        configuration.Placeholder,
+                        configuration.Name.Trim(),
+                        StringComparison.Ordinal);
+                }
                 writes.Add(new FirestoreWrite
                 {
                     DocumentPath = TurnPath(sessionId, index.ToString("00000")),
                     Fields = new()
                     {
                         ["index"] = index,
-                        ["participantUID"] = item.Participant.Id,
-                        ["speakerName"] = item.Participant.DisplayName,
-                        ["scriptTitle"] = item.Participant.ScriptTitle,
-                        ["segmentIndex"] = item.SegmentIndex,
-                        ["status"] = (index == 0
-                            ? OrchestrationTurnStatus.Assigned
-                            : OrchestrationTurnStatus.Queued).RawValue(),
+                        ["participantUID"] = participant.Id,
+                        ["speakerName"] = speakerConfiguration.Name.Trim(),
+                        ["speakerSlot"] = parsed.SpeakerIndex + 1,
+                        ["voiceID"] = speakerConfiguration.VoiceId,
+                        ["voiceName"] = speakerConfiguration.VoiceName,
+                        ["scriptTitle"] = template.Title,
+                        ["segmentIndex"] = segmentIndex,
+                        ["text"] = resolvedText,
+                        ["status"] = OrchestrationTurnStatus.Queued.RawValue(),
                     },
                     ServerTimestampFields = ["createdAt", "updatedAt"],
                 });
             }
+            for (int speakerIndex = 0; speakerIndex < assigned.Count; speakerIndex++)
+            {
+                var configuration = SpeakerConfigurations[speakerIndex];
+                writes.Add(new FirestoreWrite
+                {
+                    DocumentPath = ParticipantPath(sessionId, assigned[speakerIndex].Id),
+                    Fields = new()
+                    {
+                        ["displayName"] = configuration.Name.Trim(),
+                        ["scriptTitle"] = template.Title,
+                        ["voiceName"] = configuration.VoiceName,
+                        ["segmentCount"] = segmentCounts[speakerIndex],
+                        ["preparedSegmentCount"] = 0,
+                        ["preparationError"] = "",
+                        ["status"] = "preparing",
+                    },
+                    UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "status"],
+                    MustExist = true,
+                });
+            }
+            writes.Add(new FirestoreWrite
+            {
+                DocumentPath = RoomPath(sessionId),
+                Fields = new()
+                {
+                    ["scriptTemplateID"] = template.Id,
+                    ["scriptTitle"] = template.Title,
+                    ["scriptText"] = MeetingScriptText,
+                    ["totalTurns"] = parsedTurns.Count,
+                    ["orderedParticipantIDs"] = assigned.Select(p => p.Id).ToList(),
+                    ["planRevision"] = Guid.NewGuid().ToString(),
+                },
+                UpdateMask = ["scriptTemplateID", "scriptTitle", "scriptText", "totalTurns", "orderedParticipantIDs", "planRevision"],
+                ServerTimestampFields = ["updatedAt", "activityAt"],
+                MustExist = true,
+            });
+            await _database.CommitAsync(writes);
+            await PollAsync();
+        });
+    }
+
+    public async Task StartMeetingAsync()
+    {
+        if (!IsHost || SessionId is not string sessionId) return;
+        await PerformBusyOperationAsync(async () =>
+        {
+            if (Turns.Count == 0) throw new AppException("Prepare the orchestrated script first.");
+            var connected = Participants.Where(p => p.IsRecentlyConnected).ToList();
+            var assignedIds = Turns.Select(t => t.ParticipantUid).ToHashSet();
+            if (!assignedIds.All(id => connected.FirstOrDefault(p => p.Id == id)?.IsFirstTurnPrepared == true))
+            {
+                throw new AppException("Wait until every assigned speaker has prepared a first turn.");
+            }
+
+            var writes = new List<FirestoreWrite>
+            {
+                new()
+                {
+                    DocumentPath = TurnPath(sessionId, Turns[0].Id),
+                    Fields = new() { ["status"] = OrchestrationTurnStatus.Assigned.RawValue() },
+                    UpdateMask = ["status"],
+                    ServerTimestampFields = ["updatedAt"],
+                    MustExist = true,
+                },
+            };
             writes.Add(new FirestoreWrite
             {
                 DocumentPath = RoomPath(sessionId),
@@ -316,10 +514,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["status"] = OrchestrationSessionStatus.Running.RawValue(),
                     ["pairingOpen"] = false,
                     ["activeTurnIndex"] = 0,
-                    ["totalTurns"] = plan.Count,
-                    ["orderedParticipantIDs"] = ordered.Select(p => p.Id).ToList(),
+                    ["totalTurns"] = Turns.Count,
                 },
-                UpdateMask = ["status", "pairingOpen", "activeTurnIndex", "totalTurns", "orderedParticipantIDs"],
+                UpdateMask = ["status", "pairingOpen", "activeTurnIndex", "totalTurns"],
                 ServerTimestampFields = ["startedAt", "updatedAt", "activityAt"],
                 MustExist = true,
             });
@@ -491,6 +688,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 turn.ParticipantUid,
                 participantById.GetValueOrDefault(turn.ParticipantUid)?.DisplayName ?? turn.SpeakerName,
                 turn.ScriptTitle,
+                turn.SpeakerSlot,
                 turn.SegmentIndex,
                 turn.Text,
                 turn.Status.RawValue(),
@@ -502,7 +700,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 turn.Error);
         }).ToList();
         var transcript = new OrchestrationTranscript(
-            1, sessionId, PairingCode, SessionStatus.RawValue(), StartedAt, EndedAt, DateTime.UtcNow,
+            2, sessionId, PairingCode, SessionStatus.RawValue(), StartedAt, EndedAt, DateTime.UtcNow,
             speakers, exportedTurns);
         var options = new JsonSerializerOptions
         {
@@ -527,22 +725,16 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     // Local speaker preparation
 
-    private sealed record LocalSpeaker(string Name, string ScriptTitle, string VoiceName, List<string> Segments);
+    private sealed record LocalSpeaker(string Name, string VoiceName);
 
     private LocalSpeaker PrepareLocalSpeaker()
     {
         if (!_model.HasApiKey) throw new AppException("Add an ElevenLabs API key before pairing this PC.");
-        if (!_model.SelectedScript.IsCustom)
-        {
-            throw new AppException("Choose or replicate a playable script before joining orchestration.");
-        }
         var name = SpeakerName.Trim();
         if (name.Length == 0) throw new AppException("Enter this speaker's name.");
-        var segments = OrchestrationScriptSegmenter.Segments(_model.Text);
-        if (segments.Count == 0) throw new AppException("The selected script is empty.");
         _model.Settings.OrchestrationSpeakerName = name;
         _model.Settings.Save();
-        return new LocalSpeaker(name, _model.SelectedScript.Title, _model.SelectedVoiceName, segments);
+        return new LocalSpeaker(name, _model.SelectedVoiceName);
     }
 
     private async Task WriteLocalParticipantAsync(string roomId, string code, string uid, LocalSpeaker local)
@@ -553,12 +745,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             ["roomID"] = roomId,
             ["pairingCode"] = code,
             ["displayName"] = local.Name,
-            ["scriptTitle"] = local.ScriptTitle,
+            ["scriptTitle"] = "Waiting for host script",
             ["voiceName"] = local.VoiceName,
-            ["segmentCount"] = local.Segments.Count,
+            ["segmentCount"] = 0,
             ["preparedSegmentCount"] = 0,
             ["preparationError"] = "",
-            ["status"] = "preparing",
+            ["status"] = "waiting",
             ["isConnected"] = true,
         };
         try
@@ -587,12 +779,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     Fields = new()
                     {
                         ["displayName"] = local.Name,
-                        ["scriptTitle"] = local.ScriptTitle,
+                        ["scriptTitle"] = "Waiting for host script",
                         ["voiceName"] = local.VoiceName,
-                        ["segmentCount"] = local.Segments.Count,
+                        ["segmentCount"] = 0,
                         ["preparedSegmentCount"] = 0,
                         ["preparationError"] = "",
-                        ["status"] = "preparing",
+                        ["status"] = "waiting",
                         ["isConnected"] = true,
                     },
                     UpdateMask = ["displayName", "scriptTitle", "voiceName", "segmentCount", "preparedSegmentCount", "preparationError", "status", "isConnected"],
@@ -611,12 +803,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         PairingCode = code;
         PairingCodeInput = code;
         _hostUid = hostUid;
-        _localSegments = local.Segments;
-        _localScriptTitle = local.ScriptTitle;
+        _localSegments = [];
+        _localScriptTitle = MeetingScriptTitle;
         _localVoiceName = local.VoiceName;
         _preparedLocalSegments.Clear();
         PreparedLocalSegmentCount = 0;
-        PreparationStatus = "Preparing first turn…";
+        PreparationStatus = "Waiting for the host script";
         PreparationError = null;
         ParticipantOrder = [];
         SessionStatus = OrchestrationSessionStatus.Lobby;
@@ -630,7 +822,6 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _pollTimer.Start();
         _heartbeatTimer.Start();
         _ = PollAsync();
-        ScheduleNextPrefetch();
     }
 
     // Polling — the Windows analog of the macOS snapshot listeners. Every state-
@@ -701,6 +892,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         ActiveTurnIndex = room.Int("activeTurnIndex", -1);
         StartedAt = room.Timestamp("startedAt");
         EndedAt = room.Timestamp("endedAt");
+        MeetingScriptTitle = room.String("scriptTitle") ?? MeetingScriptTitle;
+        if (!IsHost && room.String("scriptText") is string scriptText) MeetingScriptText = scriptText;
 
         switch (SessionStatus)
         {
@@ -784,6 +977,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     participantUid,
                     d.String("speakerName") ?? "Speaker",
                     d.String("scriptTitle") ?? "Script",
+                    d.Int("speakerSlot"),
+                    d.String("voiceID"),
+                    d.String("voiceName"),
                     d.Int("segmentIndex"),
                     status.Value,
                     d.String("text"),
@@ -798,6 +994,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             .OrderBy(t => t.Index)
             .ToList();
         if (!turns.SequenceEqual(Turns)) Turns = turns;
+        ConfigureLocalSegmentsFromTurns();
 
         if (_activeExecutionTurnId is string executionTurnId
             && Turns.FirstOrDefault(t => t.Id == executionTurnId) is OrchestrationTurn executionTurn
@@ -818,6 +1015,33 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         {
             _ = AdvanceAfterTerminalTurnAsync(active);
         }
+    }
+
+    private void ConfigureLocalSegmentsFromTurns()
+    {
+        if (_userId is not string uid) return;
+        var assignedTurns = Turns
+            .Where(turn => turn.ParticipantUid == uid)
+            .OrderBy(turn => turn.SegmentIndex)
+            .ToList();
+        if (assignedTurns.Count == 0 || assignedTurns.Any(turn => string.IsNullOrEmpty(turn.Text))) return;
+        var segments = assignedTurns.Select(turn => turn.Text!).ToList();
+        if (segments.SequenceEqual(_localSegments)) return;
+
+        CancelPrefetch();
+        _localSegments = segments;
+        _localScriptTitle = assignedTurns[0].ScriptTitle;
+        if (!string.IsNullOrWhiteSpace(assignedTurns[0].VoiceId))
+        {
+            _model.VoiceId = assignedTurns[0].VoiceId!;
+        }
+        _localVoiceName = assignedTurns[0].VoiceName ?? _model.SelectedVoiceName;
+        _preparedLocalSegments.Clear();
+        PreparedLocalSegmentCount = 0;
+        PreparationError = null;
+        PreparationStatus = "Preparing first assigned turn…";
+        ScheduleNextPrefetch();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalAssignedSegmentCount)));
     }
 
     // Turn execution on this machine
@@ -1052,11 +1276,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 DocumentPath = ParticipantPath(sessionId, uid),
                 Fields = new()
                 {
+                    ["scriptTitle"] = _localScriptTitle,
+                    ["segmentCount"] = _localSegments.Count,
                     ["preparedSegmentCount"] = PreparedLocalSegmentCount,
                     ["preparationError"] = error ?? "",
-                    ["status"] = PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                    ["status"] = _localSegments.Count == 0
+                        ? "waiting"
+                        : PreparedLocalSegmentCount > 0 ? "ready" : "preparing",
                 },
-                UpdateMask = ["preparedSegmentCount", "preparationError", "status"],
+                UpdateMask = ["scriptTitle", "segmentCount", "preparedSegmentCount", "preparationError", "status"],
                 ServerTimestampFields = ["lastSeenAt"],
                 MustExist = true,
             },

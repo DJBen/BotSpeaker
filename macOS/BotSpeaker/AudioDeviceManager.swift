@@ -1,7 +1,7 @@
 import AudioToolbox
-import Combine
 import CoreAudio
 import Foundation
+import Observation
 
 struct AudioDevice: Identifiable, Hashable {
     let id: AudioDeviceID
@@ -25,9 +25,10 @@ enum BlackHoleStatus: Equatable {
 }
 
 @MainActor
-final class AudioDeviceManager: ObservableObject {
-    @Published private(set) var outputDevices: [AudioDevice] = []
-    @Published private(set) var blackHoleStatus: BlackHoleStatus = .notInstalled(driverFolderReadable: true)
+@Observable
+final class AudioDeviceManager {
+    private(set) var outputDevices: [AudioDevice] = []
+    private(set) var blackHoleStatus: BlackHoleStatus = .notInstalled(driverFolderReadable: true)
 
     /// Shell command that makes Core Audio rescan the HAL folder. Sandboxed apps cannot
     /// run this themselves, so we hand it to the user instead.

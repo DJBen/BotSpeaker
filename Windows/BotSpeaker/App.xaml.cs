@@ -21,7 +21,7 @@ public partial class App : Application
         Model = new AppModel();
         Orchestration = new OrchestrationController(Model);
 
-        _mainWindow = new MainWindow(Model);
+        _mainWindow = new MainWindow(Model, Orchestration);
         _mainWindow.Show();
 
         SetUpTrayIcon();

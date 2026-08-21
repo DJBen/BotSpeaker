@@ -368,14 +368,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		FCA200012F90000100B075EA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.17.0;
-			};
-		};
 		FCA100012F80000100B075EA /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
@@ -384,9 +376,22 @@
 				minimumVersion = 2.9.4;
 			};
 		};
+		FCA200012F90000100B075EA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.17.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FCA100022F80000200B075EA /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FCA100012F80000100B075EA /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		FCA200022F90000200B075EA /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FCA200012F90000100B075EA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
@@ -396,11 +401,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FCA200012F90000100B075EA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
-		};
-		FCA100022F80000200B075EA /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FCA100012F80000100B075EA /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

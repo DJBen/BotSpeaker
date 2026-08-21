@@ -4,56 +4,73 @@ import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
 import Foundation
+import Observation
 import UniformTypeIdentifiers
 
 @MainActor
-final class OrchestrationController: ObservableObject {
-    @Published var setupMode: OrchestrationMode = .host
-    @Published var speakerName: String
-    @Published var pairingCodeInput = ""
-    @Published private(set) var activeMode: OrchestrationMode?
-    @Published private(set) var sessionID: String?
-    @Published private(set) var pairingCode = ""
-    @Published private(set) var sessionStatus: OrchestrationSessionStatus = .lobby
-    @Published private(set) var pairingOpen = false
-    @Published private(set) var participants: [OrchestrationParticipant] = []
-    @Published private(set) var participantOrder: [String] = []
-    @Published private(set) var turns: [OrchestrationTurn] = []
-    @Published private(set) var activeTurnIndex = -1
-    @Published private(set) var startedAt: Date?
-    @Published private(set) var endedAt: Date?
-    @Published private(set) var preparedLocalSegmentCount = 0
-    @Published private(set) var preparationStatus = "Not prepared"
-    @Published private(set) var preparationError: String?
-    @Published private(set) var isBusy = false
-    @Published private(set) var errorMessage: String?
+@Observable
+final class OrchestrationController {
+    var setupMode: OrchestrationMode = .host
+    var speakerName: String
+    var pairingCodeInput = ""
+    var meetingScriptText = OrchestratedMeetingTemplate.launchReadiness.text
+    private(set) var selectedTemplate = OrchestratedMeetingTemplate.launchReadiness
+    var speakerConfigurations: [OrchestratedSpeakerConfiguration]
+    private(set) var activeMode: OrchestrationMode?
+    private(set) var sessionID: String?
+    private(set) var pairingCode = ""
+    private(set) var sessionStatus: OrchestrationSessionStatus = .lobby
+    private(set) var pairingOpen = false
+    private(set) var participants: [OrchestrationParticipant] = []
+    private(set) var participantOrder: [String] = []
+    private(set) var turns: [OrchestrationTurn] = []
+    private(set) var activeTurnIndex = -1
+    private(set) var startedAt: Date?
+    private(set) var endedAt: Date?
+    private(set) var preparedLocalSegmentCount = 0
+    private(set) var preparationStatus = "Not prepared"
+    private(set) var preparationError: String?
+    private(set) var isBusy = false
+    private(set) var errorMessage: String?
+    private(set) var meetingScriptTitle = OrchestratedMeetingTemplate.launchReadiness.title
 
-    private weak var model: AppModel?
-    private let database: Firestore
-    private var userID: String?
-    private var hostUID: String?
-    private var localSegments: [String] = []
-    private var localScriptTitle = ""
-    private var localVoiceName = ""
-    private var activeExecutionTurnID: String?
-    private var hasReportedPlaybackStart = false
-    private var isAdvancing = false
-    private var previousSessionStatus: OrchestrationSessionStatus = .lobby
-    private var roomListener: ListenerRegistration?
-    private var participantsListener: ListenerRegistration?
-    private var turnsListener: ListenerRegistration?
-    private var heartbeatTimer: AnyCancellable?
-    private var executionWatchdogTimer: AnyCancellable?
-    private var orchestrationActivity: NSObjectProtocol?
-    private var playbackObservation: AnyCancellable?
-    private var turnExecutionTask: Task<Void, Never>?
-    private var preparedLocalSegments: Set<Int> = []
-    private var prefetchSegmentIndex: Int?
-    private var prefetchTask: Task<Void, Error>?
-    private var prefetchObserverTask: Task<Void, Never>?
+    @ObservationIgnored private weak var model: AppModel?
+    @ObservationIgnored private let database: Firestore
+    @ObservationIgnored private var userID: String?
+    @ObservationIgnored private var hostUID: String?
+    @ObservationIgnored private var localSegments: [String] = []
+    @ObservationIgnored private var localScriptTitle = ""
+    @ObservationIgnored private var localVoiceName = ""
+    @ObservationIgnored private var activeExecutionTurnID: String?
+    @ObservationIgnored private var hasReportedPlaybackStart = false
+    @ObservationIgnored private var isAdvancing = false
+    @ObservationIgnored private var previousSessionStatus: OrchestrationSessionStatus = .lobby
+    @ObservationIgnored private var roomListener: ListenerRegistration?
+    @ObservationIgnored private var participantsListener: ListenerRegistration?
+    @ObservationIgnored private var turnsListener: ListenerRegistration?
+    @ObservationIgnored private var heartbeatTimer: AnyCancellable?
+    @ObservationIgnored private var executionWatchdogTimer: AnyCancellable?
+    @ObservationIgnored private var orchestrationActivity: NSObjectProtocol?
+    @ObservationIgnored private var turnExecutionTask: Task<Void, Never>?
+    @ObservationIgnored private var preparedLocalSegments: Set<Int> = []
+    @ObservationIgnored private var prefetchSegmentIndex: Int?
+    @ObservationIgnored private var prefetchTask: Task<Void, Error>?
+    @ObservationIgnored private var prefetchObserverTask: Task<Void, Never>?
+    @ObservationIgnored private var defaultVoicesAppliedForTemplateID: String?
 
     init(model: AppModel) {
         self.model = model
+        speakerConfigurations = OrchestratedMeetingTemplate.launchReadiness.speakerRoles
+            .enumerated()
+            .map { index, role in
+                OrchestratedSpeakerConfiguration(
+                    slot: index + 1,
+                    role: role,
+                    name: "",
+                    voiceID: model.voiceID,
+                    voiceName: model.selectedVoiceName
+                )
+            }
         speakerName = UserDefaults.standard.string(forKey: "orchestrationSpeakerName")
             ?? Host.current().localizedName
             ?? "Speaker"
@@ -63,12 +80,9 @@ final class OrchestrationController: ObservableObject {
         }
         database = Firestore.firestore()
 
-        playbackObservation = model.player.$isPlaying
-            .removeDuplicates()
-            .sink { [weak self] isPlaying in
-                guard let self, isPlaying else { return }
-                self.playbackDidStart()
-            }
+        model.player.onPlaybackStarted = { [weak self] in
+            self?.playbackDidStart()
+        }
         model.player.onPlaybackFinished = { [weak self] in
             self?.playbackDidFinish()
         }
@@ -77,6 +91,7 @@ final class OrchestrationController: ObservableObject {
     var isActive: Bool { activeMode != nil }
     var isHost: Bool { activeMode == .host }
     var localParticipantID: String? { userID }
+    var localAssignedSegmentCount: Int { localSegments.count }
 
     var activeTurn: OrchestrationTurn? {
         guard turns.indices.contains(activeTurnIndex) else { return nil }
@@ -85,11 +100,101 @@ final class OrchestrationController: ObservableObject {
 
     var canStartMeeting: Bool {
         let connected = participants.filter(\.isRecentlyConnected)
+        let assignedIDs = Set(turns.map(\.participantUID))
         return isHost
             && sessionStatus == .lobby
-            && !connected.isEmpty
-            && connected.allSatisfy(\.isFirstTurnPrepared)
+            && !turns.isEmpty
+            && assignedIDs.allSatisfy { id in
+                connected.first(where: { $0.id == id })?.isFirstTurnPrepared == true
+            }
             && !isBusy
+    }
+
+    var canPrepareMeeting: Bool {
+        isHost
+            && sessionStatus == .lobby
+            && turns.isEmpty
+            && participants.filter(\.isRecentlyConnected).count >= selectedTemplate.speakerCount
+            && !isBusy
+    }
+
+    var isSpeakerConfigurationComplete: Bool {
+        speakerConfigurations.count == selectedTemplate.speakerCount
+            && speakerConfigurations.allSatisfy {
+                !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && !$0.voiceID.isEmpty
+            }
+    }
+
+    var configuredScriptPreview: String {
+        speakerConfigurations.reduce(meetingScriptText) { preview, configuration in
+            let replacement = configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return preview.replacingOccurrences(
+                of: configuration.placeholder,
+                with: replacement.isEmpty ? configuration.placeholder : replacement
+            )
+        }
+    }
+
+    func prepareHostSetup() {
+        setupMode = .host
+        errorMessage = nil
+    }
+
+    func selectTemplate(_ template: OrchestratedMeetingTemplate) {
+        guard !isActive, template.id != selectedTemplate.id else { return }
+        selectedTemplate = template
+        meetingScriptText = template.text
+        meetingScriptTitle = template.title
+        speakerConfigurations = template.speakerRoles.enumerated().map { index, role in
+            OrchestratedSpeakerConfiguration(
+                slot: index + 1,
+                role: role,
+                name: "",
+                voiceID: model?.voiceID ?? "",
+                voiceName: model?.selectedVoiceName ?? "Choose a voice"
+            )
+        }
+        defaultVoicesAppliedForTemplateID = nil
+        applyDefaultTemplateVoices()
+    }
+
+    func applyDefaultTemplateVoices() {
+        guard defaultVoicesAppliedForTemplateID != selectedTemplate.id,
+              let voices = model?.voices,
+              !voices.isEmpty else { return }
+        var usedVoiceIDs: Set<String> = []
+        for index in speakerConfigurations.indices {
+            let preferredGender = selectedTemplate.defaultVoiceGenders.indices.contains(index)
+                ? selectedTemplate.defaultVoiceGenders[index].lowercased()
+                : nil
+            let matchingUnused = voices.first {
+                preferredGender != nil
+                    && !usedVoiceIDs.contains($0.id)
+                    && $0.labels["gender"]?.lowercased() == preferredGender
+            }
+            let matching = voices.first {
+                preferredGender != nil && $0.labels["gender"]?.lowercased() == preferredGender
+            }
+            let fallback = voices.first { !usedVoiceIDs.contains($0.id) } ?? voices[0]
+            let voice = matchingUnused ?? matching ?? fallback
+            speakerConfigurations[index].voiceID = voice.id
+            speakerConfigurations[index].voiceName = voice.name
+            usedVoiceIDs.insert(voice.id)
+        }
+        defaultVoicesAppliedForTemplateID = selectedTemplate.id
+    }
+
+    func updateConfiguredVoice(slot: Int, voiceID: String) {
+        guard let index = speakerConfigurations.firstIndex(where: { $0.slot == slot }) else { return }
+        speakerConfigurations[index].voiceID = voiceID
+        speakerConfigurations[index].voiceName = model?.voices.first(where: { $0.id == voiceID })?.name
+            ?? "Voice ID \(voiceID.prefix(8))…"
+    }
+
+    func updateConfiguredSpeakerName(slot: Int, name: String) {
+        guard let index = speakerConfigurations.firstIndex(where: { $0.slot == slot }) else { return }
+        speakerConfigurations[index].name = name
     }
 
     var canExportTranscript: Bool {
@@ -111,6 +216,9 @@ final class OrchestrationController: ObservableObject {
                 "status": OrchestrationSessionStatus.lobby.rawValue,
                 "activeTurnIndex": -1,
                 "totalTurns": 0,
+                "scriptTemplateID": self.selectedTemplate.id,
+                "scriptTitle": self.selectedTemplate.title,
+                "scriptText": self.meetingScriptText,
                 "createdAt": FieldValue.serverTimestamp(),
                 "updatedAt": FieldValue.serverTimestamp(),
                 "activityAt": FieldValue.serverTimestamp()
@@ -177,57 +285,112 @@ final class OrchestrationController: ObservableObject {
     }
 
     func moveParticipant(id: String, by offset: Int) {
+        guard turns.isEmpty else { return }
         guard let source = participantOrder.firstIndex(of: id) else { return }
         let destination = source + offset
         guard participantOrder.indices.contains(destination) else { return }
         participantOrder.swapAt(source, destination)
     }
 
-    func startMeeting() async {
+    func prepareMeeting() async {
         guard isHost, let sessionID else { return }
         await performBusyOperation {
+            let template = self.selectedTemplate
+            let parsedTurns = try OrchestratedScriptParser.parse(
+                self.meetingScriptText,
+                speakerCount: template.speakerCount
+            )
+            guard parsedTurns.count <= 450 else {
+                throw AppError("This script has \(parsedTurns.count) turns. Shorten it to 450 turns or fewer.")
+            }
             let connectedByID = Dictionary(
                 uniqueKeysWithValues: self.participants
                     .filter(\.isRecentlyConnected)
                     .map { ($0.id, $0) }
             )
             let ordered = self.participantOrder.compactMap { connectedByID[$0] }
-            guard !ordered.isEmpty else { throw AppError("Pair at least one ready speaker.") }
-
-            var plan: [(OrchestrationParticipant, Int)] = []
-            let maximumSegments = ordered.map(\.segmentCount).max() ?? 0
-            for segmentIndex in 0..<maximumSegments {
-                for participant in ordered where segmentIndex < participant.segmentCount {
-                    plan.append((participant, segmentIndex))
-                }
+            guard ordered.count >= template.speakerCount else {
+                throw AppError("Pair \(template.speakerCount) speakers before preparing this meeting.")
             }
-            guard !plan.isEmpty else { throw AppError("The paired speakers have no script turns.") }
-            guard plan.count <= 450 else {
-                throw AppError("This session has \(plan.count) turns. Shorten the scripts to 450 turns or fewer.")
+            let assigned = Array(ordered.prefix(template.speakerCount))
+            guard self.isSpeakerConfigurationComplete else {
+                throw AppError("Configure all speaker names and voices in the main window first.")
             }
-
+            var segmentCounts = Array(repeating: 0, count: template.speakerCount)
             let batch = self.database.batch()
-            for (index, item) in plan.enumerated() {
+            for (index, parsedTurn) in parsedTurns.enumerated() {
+                let participant = assigned[parsedTurn.speakerIndex]
+                let speakerConfiguration = self.speakerConfigurations[parsedTurn.speakerIndex]
+                let segmentIndex = segmentCounts[parsedTurn.speakerIndex]
+                segmentCounts[parsedTurn.speakerIndex] += 1
+                var resolvedText = parsedTurn.text
+                for configuration in self.speakerConfigurations {
+                    resolvedText = resolvedText.replacingOccurrences(
+                        of: configuration.placeholder,
+                        with: configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                }
                 let turnID = String(format: "%05d", index)
                 batch.setData([
                     "index": index,
-                    "participantUID": item.0.id,
-                    "speakerName": item.0.displayName,
-                    "scriptTitle": item.0.scriptTitle,
-                    "segmentIndex": item.1,
-                    "status": index == 0
-                        ? OrchestrationTurnStatus.assigned.rawValue
-                        : OrchestrationTurnStatus.queued.rawValue,
+                    "participantUID": participant.id,
+                    "speakerName": speakerConfiguration.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "speakerSlot": parsedTurn.speakerIndex + 1,
+                    "voiceID": speakerConfiguration.voiceID,
+                    "voiceName": speakerConfiguration.voiceName,
+                    "scriptTitle": template.title,
+                    "segmentIndex": segmentIndex,
+                    "text": resolvedText,
+                    "status": OrchestrationTurnStatus.queued.rawValue,
                     "createdAt": FieldValue.serverTimestamp(),
                     "updatedAt": FieldValue.serverTimestamp()
                 ], forDocument: self.turnReference(roomID: sessionID, turnID: turnID))
             }
+            for (speakerIndex, participant) in assigned.enumerated() {
+                let configuration = self.speakerConfigurations[speakerIndex]
+                batch.updateData([
+                    "displayName": configuration.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "scriptTitle": template.title,
+                    "voiceName": configuration.voiceName,
+                    "segmentCount": segmentCounts[speakerIndex],
+                    "preparedSegmentCount": 0,
+                    "preparationError": "",
+                    "status": "preparing"
+                ], forDocument: self.participantReference(roomID: sessionID, uid: participant.id))
+            }
+            batch.updateData([
+                "scriptTemplateID": template.id,
+                "scriptTitle": template.title,
+                "scriptText": self.meetingScriptText,
+                "totalTurns": parsedTurns.count,
+                "orderedParticipantIDs": assigned.map(\.id),
+                "planRevision": UUID().uuidString,
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
+            ], forDocument: self.roomReference(sessionID))
+            try await batch.commit()
+        }
+    }
+
+    func startMeeting() async {
+        guard isHost, let sessionID else { return }
+        await performBusyOperation {
+            guard !self.turns.isEmpty else { throw AppError("Prepare the orchestrated script first.") }
+            let connected = self.participants.filter(\.isRecentlyConnected)
+            let assignedIDs = Set(self.turns.map(\.participantUID))
+            guard assignedIDs.allSatisfy({ id in
+                connected.first(where: { $0.id == id })?.isFirstTurnPrepared == true
+            }) else { throw AppError("Wait until every assigned speaker has prepared a first turn.") }
+            let batch = self.database.batch()
+            batch.updateData([
+                "status": OrchestrationTurnStatus.assigned.rawValue,
+                "updatedAt": FieldValue.serverTimestamp()
+            ], forDocument: self.turnReference(roomID: sessionID, turnID: self.turns[0].id))
             batch.updateData([
                 "status": OrchestrationSessionStatus.running.rawValue,
                 "pairingOpen": false,
                 "activeTurnIndex": 0,
-                "totalTurns": plan.count,
-                "orderedParticipantIDs": ordered.map(\.id),
+                "totalTurns": self.turns.count,
                 "startedAt": FieldValue.serverTimestamp(),
                 "updatedAt": FieldValue.serverTimestamp(),
                 "activityAt": FieldValue.serverTimestamp()
@@ -341,6 +504,7 @@ final class OrchestrationController: ObservableObject {
                 speakerID: turn.participantUID,
                 speakerName: participantByID[turn.participantUID]?.displayName ?? turn.speakerName,
                 scriptTitle: turn.scriptTitle,
+                speakerSlot: turn.speakerSlot,
                 segmentIndex: turn.segmentIndex,
                 text: turn.text,
                 status: turn.status.rawValue,
@@ -353,7 +517,7 @@ final class OrchestrationController: ObservableObject {
             )
         }
         let transcript = OrchestrationTranscript(
-            schemaVersion: 1,
+            schemaVersion: 2,
             sessionID: sessionID,
             pairingCode: pairingCode,
             status: sessionStatus.rawValue,
@@ -379,19 +543,12 @@ final class OrchestrationController: ObservableObject {
     private func prepareLocalSpeaker() throws -> LocalSpeaker {
         guard let model else { throw AppError("The local BotSpeaker session is unavailable.") }
         guard model.hasAPIKey else { throw AppError("Add an ElevenLabs API key before pairing this Mac.") }
-        guard model.selectedScript.isCustom else {
-            throw AppError("Choose or replicate a playable script before joining orchestration.")
-        }
         let name = speakerName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw AppError("Enter this speaker’s name.") }
-        let segments = OrchestrationScriptSegmenter.segments(for: model.text)
-        guard !segments.isEmpty else { throw AppError("The selected script is empty.") }
         UserDefaults.standard.set(name, forKey: "orchestrationSpeakerName")
         return LocalSpeaker(
             name: name,
-            scriptTitle: model.selectedScript.title,
-            voiceName: model.selectedVoiceName,
-            segments: segments
+            voiceName: model.selectedVoiceName
         )
     }
 
@@ -417,12 +574,12 @@ final class OrchestrationController: ObservableObject {
             "roomID": roomID,
             "pairingCode": code,
             "displayName": local.name,
-            "scriptTitle": local.scriptTitle,
+            "scriptTitle": "Waiting for host script",
             "voiceName": local.voiceName,
-            "segmentCount": local.segments.count,
+            "segmentCount": 0,
             "preparedSegmentCount": 0,
             "preparationError": "",
-            "status": "preparing",
+            "status": "waiting",
             "isConnected": true,
             "joinedAt": FieldValue.serverTimestamp(),
             "lastSeenAt": FieldValue.serverTimestamp()
@@ -443,12 +600,12 @@ final class OrchestrationController: ObservableObject {
         pairingCode = code
         pairingCodeInput = code
         self.hostUID = hostUID
-        localSegments = local.segments
-        localScriptTitle = local.scriptTitle
+        localSegments = []
+        localScriptTitle = meetingScriptTitle
         localVoiceName = local.voiceName
         preparedLocalSegments = []
         preparedLocalSegmentCount = 0
-        preparationStatus = "Preparing first turn…"
+        preparationStatus = "Waiting for the host script"
         preparationError = nil
         participantOrder = []
         sessionStatus = .lobby
@@ -460,7 +617,6 @@ final class OrchestrationController: ObservableObject {
         attachListeners(roomID: roomID)
         startHeartbeat(roomID: roomID)
         startExecutionWatchdog()
-        scheduleNextPrefetch()
     }
 
     private func attachListeners(roomID: String) {
@@ -502,6 +658,10 @@ final class OrchestrationController: ObservableObject {
         activeTurnIndex = data["activeTurnIndex"] as? Int ?? -1
         startedAt = Self.date(from: data["startedAt"])
         endedAt = Self.date(from: data["endedAt"])
+        meetingScriptTitle = data["scriptTitle"] as? String ?? meetingScriptTitle
+        if let scriptText = data["scriptText"] as? String, activeMode == .remote {
+            meetingScriptText = scriptText
+        }
 
         switch sessionStatus {
         case .lobby:
@@ -573,6 +733,9 @@ final class OrchestrationController: ObservableObject {
                 participantUID: participantUID,
                 speakerName: data["speakerName"] as? String ?? "Speaker",
                 scriptTitle: data["scriptTitle"] as? String ?? "Script",
+                speakerSlot: data["speakerSlot"] as? Int ?? 0,
+                voiceID: data["voiceID"] as? String,
+                voiceName: data["voiceName"] as? String,
                 segmentIndex: data["segmentIndex"] as? Int ?? 0,
                 status: status,
                 text: data["text"] as? String,
@@ -583,6 +746,7 @@ final class OrchestrationController: ObservableObject {
                 error: data["error"] as? String
             )
         }
+        configureLocalSegmentsFromTurns()
         if let executionTurnID = activeExecutionTurnID,
            let executionTurn = turns.first(where: { $0.id == executionTurnID }),
            executionTurn.status.isTerminal {
@@ -602,6 +766,30 @@ final class OrchestrationController: ObservableObject {
         if isHost, let active = activeTurn, active.status.isTerminal {
             Task { await advanceAfterTerminalTurn(active) }
         }
+    }
+
+    private func configureLocalSegmentsFromTurns() {
+        guard let uid = userID else { return }
+        let assignedTurns = turns
+            .filter { $0.participantUID == uid }
+            .sorted { $0.segmentIndex < $1.segmentIndex }
+        guard !assignedTurns.isEmpty,
+              assignedTurns.allSatisfy({ $0.text?.isEmpty == false }) else { return }
+        let newSegments = assignedTurns.compactMap(\.text)
+        guard newSegments != localSegments else { return }
+
+        cancelPrefetch()
+        localSegments = newSegments
+        localScriptTitle = assignedTurns[0].scriptTitle
+        if let assignedVoiceID = assignedTurns[0].voiceID, !assignedVoiceID.isEmpty {
+            model?.voiceID = assignedVoiceID
+        }
+        localVoiceName = assignedTurns[0].voiceName ?? model?.selectedVoiceName ?? localVoiceName
+        preparedLocalSegments = []
+        preparedLocalSegmentCount = 0
+        preparationError = nil
+        preparationStatus = "Preparing first assigned turn…"
+        scheduleNextPrefetch()
     }
 
     private func maybeExecuteActiveTurn() {
@@ -775,6 +963,8 @@ final class OrchestrationController: ObservableObject {
     private func publishPreparationState(error: String?) async {
         guard let sessionID, let uid = userID else { return }
         var data: [String: Any] = [
+            "scriptTitle": localScriptTitle,
+            "segmentCount": localSegments.count,
             "preparedSegmentCount": preparedLocalSegmentCount,
             "status": preparedLocalSegmentCount > 0 ? "ready" : "preparing",
             "lastSeenAt": FieldValue.serverTimestamp()
@@ -975,7 +1165,9 @@ final class OrchestrationController: ObservableObject {
                 guard let self, let uid = self.userID else { return }
                 Task {
                     try? await self.participantReference(roomID: roomID, uid: uid).updateData([
-                        "status": self.preparedLocalSegmentCount > 0 ? "ready" : "preparing",
+                        "status": self.localSegments.isEmpty
+                            ? "waiting"
+                            : self.preparedLocalSegmentCount > 0 ? "ready" : "preparing",
                         "preparedSegmentCount": self.preparedLocalSegmentCount,
                         "preparationError": self.preparationError ?? "",
                         "isConnected": true,
@@ -1106,8 +1298,6 @@ final class OrchestrationController: ObservableObject {
 
     private struct LocalSpeaker {
         let name: String
-        let scriptTitle: String
         let voiceName: String
-        let segments: [String]
     }
 }

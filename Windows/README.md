@@ -10,11 +10,11 @@ Feature parity with the macOS app:
 - ElevenLabs voice selection
 - Sequential, sentence-aware speech generation for long scripts (identical chunking to macOS)
 - Persistent audio-chunk caching per script, voice, model, and surrounding context
-- Three read-only example meeting scripts plus named custom scripts with a separate editor window
+- Three read-only incident-review templates plus named custom scripts with a separate editor window
 - Play, pause, stop, seek, and progress-aware text highlighting driven by ElevenLabs character timestamps
 - Persistent output-volume control applied before audio reaches the virtual cable
-- Cross-platform meeting orchestration with first-paragraph warm-up and
-  one-paragraph-ahead prefetching for smooth handoffs
+- Cross-platform meeting orchestration where the host distributes one
+  placeholder-driven script and every client prefetches its assigned turns
 - Optional looping, disabled by default
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
 

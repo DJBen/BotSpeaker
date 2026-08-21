@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var updates: UpdateController
+    let model: AppModel
+    let updates: UpdateController
     @State private var key = ""
     @State private var feedback: String?
     @State private var keyEditorError: String?

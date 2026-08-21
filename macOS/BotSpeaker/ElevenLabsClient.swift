@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 
 struct ElevenLabsClient {
+    static let defaultSpeechSpeed = 1.1
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -89,7 +91,8 @@ struct ElevenLabsClient {
             text: text,
             modelID: modelID,
             previousText: previousText,
-            nextText: nextText
+            nextText: nextText,
+            voiceSettings: VoiceSettings(speed: Self.defaultSpeechSpeed)
         ))
 
         let (data, response) = try await session.data(for: request)
@@ -124,7 +127,7 @@ struct ElevenLabsClient {
             .appendingPathComponent(safeCacheComponent(namespace), isDirectory: true)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let digest = SHA256.hash(data: Data(
-            "\(voiceID)|\(modelID)|\(previousText ?? "")|\(text)|\(nextText ?? "")".utf8
+            "\(voiceID)|\(modelID)|speed=\(Self.defaultSpeechSpeed)|\(previousText ?? "")|\(text)|\(nextText ?? "")".utf8
         ))
             .map { String(format: "%02x", $0) }
             .joined()
@@ -332,13 +335,19 @@ private struct SpeechRequest: Encodable {
     let modelID: String
     let previousText: String?
     let nextText: String?
+    let voiceSettings: VoiceSettings
 
     enum CodingKeys: String, CodingKey {
         case text
         case modelID = "model_id"
         case previousText = "previous_text"
         case nextText = "next_text"
+        case voiceSettings = "voice_settings"
     }
+}
+
+private struct VoiceSettings: Encodable {
+    let speed: Double
 }
 
 private struct APIErrorEnvelope: Decodable {

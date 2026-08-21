@@ -37,14 +37,11 @@
             </DockPanel>
 
             <!-- Composer -->
-            <DockPanel Grid.Column="1" Margin="16" LastChildFill="True">
+            <DockPanel x:Name="ComposerPanel" Grid.Column="1" Margin="16" LastChildFill="True">
                 <!-- Header -->
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                     <Button x:Name="SettingsButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
-                    <Button x:Name="OrchestratorButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                            Content="👥" FontSize="16" ToolTip="Meeting Orchestrator" Margin="0,0,6,0"
-                            Click="OnOrchestratorClick"/>
                     <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
                 </DockPanel>
 
@@ -160,6 +157,41 @@
                     <RichTextBox x:Name="ScriptViewer" IsReadOnly="True" IsDocumentEnabled="True"
                                  BorderThickness="0" Padding="8" VerticalScrollBarVisibility="Auto"/>
                 </Border>
+            </DockPanel>
+
+            <!-- Host-owned orchestrated meeting configuration -->
+            <DockPanel x:Name="OrchestrationConfigurationPanel" Grid.Column="1" Margin="16"
+                       LastChildFill="True" Visibility="Collapsed">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                            Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                    <TextBlock Text="👥 Orchestrated Meeting" FontSize="18" FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                    <Button x:Name="PrepareMeetingButton" DockPanel.Dock="Right"
+                            Content="Prepare Meeting" Padding="16,6" FontWeight="Bold"
+                            Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                            Click="OnOpenMeetingSetupClick"/>
+                    <TextBlock Text="You’ll pair and assign the clients in the setup window."
+                               FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <TextBlock x:Name="OrchestrationTemplateTitle" FontWeight="Bold"/>
+                    <TextBlock Text="Name the speakers and choose the ElevenLabs voice each paired client will use."
+                               FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <GroupBox DockPanel.Dock="Top" Header="Speakers" Padding="8" Margin="0,0,0,12">
+                    <StackPanel x:Name="SpeakerConfigurationList"/>
+                </GroupBox>
+
+                <GroupBox Header="Script preview" Padding="8">
+                    <TextBox x:Name="OrchestrationScriptPreview" IsReadOnly="True" AcceptsReturn="True"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="8"/>
+                </GroupBox>
             </DockPanel>
         </Grid>
 

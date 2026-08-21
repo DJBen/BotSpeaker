@@ -14,6 +14,8 @@ namespace BotSpeaker;
 public partial class MainWindow : Window
 {
     private readonly AppModel _model;
+    private readonly OrchestrationController _orchestration;
+    private bool _showOrchestrationConfiguration;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
     private ScriptEditorWindow? _scriptEditor;
@@ -28,9 +30,10 @@ public partial class MainWindow : Window
     private Run? _renderedActiveRun;
     private ScrollViewer? _scriptScroller;
 
-    public MainWindow(AppModel model)
+    public MainWindow(AppModel model, OrchestrationController orchestration)
     {
         _model = model;
+        _orchestration = orchestration;
         InitializeComponent();
 
         _model.PropertyChanged += OnModelChanged;
@@ -83,6 +86,10 @@ public partial class MainWindow : Window
         try
         {
             FirstRunPanel.Visibility = _model.HasApiKey ? Visibility.Collapsed : Visibility.Visible;
+            ComposerPanel.Visibility = _showOrchestrationConfiguration ? Visibility.Collapsed : Visibility.Visible;
+            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             UpdateCableStatus();
 
             var script = _model.SelectedScript;
@@ -90,6 +97,7 @@ public partial class MainWindow : Window
             ScriptDetail.Text = $"{script.Detail} · {script.WordCount} words";
 
             UpdateSidebar();
+            if (_showOrchestrationConfiguration) UpdateOrchestrationConfiguration();
 
             // Templates are not playable; they show the speaker-name entry instead.
             bool isCustom = script.IsCustom;
@@ -316,9 +324,6 @@ public partial class MainWindow : Window
 
     // Event handlers
 
-    private void OnOrchestratorClick(object sender, RoutedEventArgs e) =>
-        ((App)Application.Current).ShowOrchestrationWindow();
-
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         if (_settingsWindow is null || !_settingsWindow.IsLoaded)
@@ -339,13 +344,35 @@ public partial class MainWindow : Window
             templateItems.AddRange(scenario.Excerpts.Select(e => BuildSidebarItem(e.SpeechScript, isTemplate: true)));
             isFirstScenario = false;
         }
+        templateItems.Add(BuildSidebarHeader("Orchestrated meeting", isFirstScenario: false));
+        templateItems.AddRange(OrchestratedMeetingTemplate.All.Select(BuildOrchestratedMeetingItem));
         TemplateList.ItemsSource = templateItems;
-        TemplateList.SelectedItem = templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
+        TemplateList.SelectedItem = _showOrchestrationConfiguration
+            ? templateItems.FirstOrDefault(i => i.Tag as string == "orchestrated:" + _orchestration.SelectedTemplate.Id)
+            : templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
 
         var custom = _model.PlayableScripts;
         CustomList.ItemsSource = custom.Select(s => BuildSidebarItem(s, isTemplate: false)).ToList();
         CustomList.SelectedIndex = custom.FindIndex(s => s.Id == _model.SelectedScriptId);
         CustomEmptyHint.Visibility = custom.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private ListBoxItem BuildOrchestratedMeetingItem(OrchestratedMeetingTemplate template)
+    {
+        var panel = new StackPanel { Margin = new Thickness(2, 3, 2, 3) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "👥 " + template.Title,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{template.Detail} · {template.TurnCount} turns",
+            FontSize = 10,
+            Foreground = Brushes.Gray,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        return new ListBoxItem { Content = panel, Tag = "orchestrated:" + template.Id };
     }
 
     private static ListBoxItem BuildSidebarHeader(string title, bool isFirstScenario)
@@ -388,7 +415,11 @@ public partial class MainWindow : Window
         if (isTemplate)
         {
             var replicate = new MenuItem { Header = "Replicate…" };
-            replicate.Click += (_, _) => _model.SelectScript(script.Id);
+            replicate.Click += (_, _) =>
+            {
+                _showOrchestrationConfiguration = false;
+                _model.SelectScript(script.Id);
+            };
             menu.Items.Add(replicate);
         }
         else
@@ -414,7 +445,21 @@ public partial class MainWindow : Window
         if (_suppressUiEvents) return;
         if (TemplateList.SelectedItem is ListBoxItem { Tag: string id })
         {
-            _model.SelectScript(id);
+            if (id.StartsWith("orchestrated:", StringComparison.Ordinal))
+            {
+                var templateId = id["orchestrated:".Length..];
+                var template = OrchestratedMeetingTemplate.All.FirstOrDefault(item => item.Id == templateId);
+                if (template is null) return;
+                _orchestration.SelectTemplate(template);
+                _showOrchestrationConfiguration = true;
+                CustomList.SelectedItem = null;
+                UpdateAll();
+            }
+            else
+            {
+                _showOrchestrationConfiguration = false;
+                _model.SelectScript(id);
+            }
         }
     }
 
@@ -423,14 +468,147 @@ public partial class MainWindow : Window
         if (_suppressUiEvents) return;
         if (CustomList.SelectedItem is ListBoxItem { Tag: string id })
         {
+            _showOrchestrationConfiguration = false;
             _model.SelectScript(id);
         }
+    }
+
+    private void UpdateOrchestrationConfiguration()
+    {
+        _orchestration.ApplyDefaultTemplateVoices();
+        SpeakerConfigurationList.Children.Clear();
+        foreach (var configuration in _orchestration.SpeakerConfigurations)
+        {
+            var row = new Grid { Margin = new Thickness(2, 5, 2, 5) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(155) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var identity = new StackPanel();
+            identity.Children.Add(new TextBlock
+            {
+                Text = configuration.Placeholder,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11,
+            });
+            identity.Children.Add(new TextBlock
+            {
+                Text = configuration.Role,
+                FontSize = 10,
+                Foreground = Brushes.Gray,
+            });
+            Grid.SetColumn(identity, 0);
+            row.Children.Add(identity);
+
+            int slot = configuration.Slot;
+            var nameEditor = new Grid();
+            nameEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            nameEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var nameBox = new TextBox
+            {
+                Text = configuration.Name,
+                Padding = new Thickness(4),
+                Height = 28,
+                VerticalContentAlignment = VerticalAlignment.Center,
+            };
+            var confirmNameButton = new Button
+            {
+                Content = "✓",
+                Width = 28,
+                Height = 28,
+                Padding = new Thickness(0),
+                ToolTip = "Apply speaker name",
+                IsEnabled = false,
+                Background = Brushes.Transparent,
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+            };
+            var confirmNameBorder = new Border
+            {
+                Width = 28,
+                Height = 28,
+                Margin = new Thickness(5, 0, 0, 0),
+                CornerRadius = new CornerRadius(14),
+                Background = new SolidColorBrush(Color.FromRgb(0x86, 0x86, 0x86)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1F, 0x4F, 0xA8)),
+                BorderThickness = new Thickness(1),
+                Visibility = Visibility.Hidden,
+                Child = confirmNameButton,
+            };
+            void CommitSpeakerName()
+            {
+                if (nameBox.Text == configuration.Name) return;
+                _orchestration.UpdateSpeakerName(slot, nameBox.Text);
+                RefreshOrchestrationPreview();
+                confirmNameButton.IsEnabled = false;
+                confirmNameBorder.Background = new SolidColorBrush(Color.FromRgb(0x86, 0x86, 0x86));
+            }
+            nameBox.TextChanged += (_, _) =>
+            {
+                bool hasPendingChange = nameBox.Text != configuration.Name;
+                confirmNameButton.IsEnabled = hasPendingChange;
+                confirmNameBorder.Background = new SolidColorBrush(hasPendingChange
+                    ? Color.FromRgb(0x2E, 0x6B, 0xD6)
+                    : Color.FromRgb(0x86, 0x86, 0x86));
+            };
+            nameEditor.IsKeyboardFocusWithinChanged += (_, _) =>
+                confirmNameBorder.Visibility = nameEditor.IsKeyboardFocusWithin
+                    ? Visibility.Visible
+                    : Visibility.Hidden;
+            nameBox.KeyDown += (_, eventArgs) =>
+            {
+                if (eventArgs.Key != Key.Enter) return;
+                CommitSpeakerName();
+                eventArgs.Handled = true;
+            };
+            confirmNameButton.Click += (_, _) => CommitSpeakerName();
+            Grid.SetColumn(nameBox, 0);
+            Grid.SetColumn(confirmNameBorder, 1);
+            nameEditor.Children.Add(nameBox);
+            nameEditor.Children.Add(confirmNameBorder);
+            Grid.SetColumn(nameEditor, 1);
+            row.Children.Add(nameEditor);
+
+            var voiceCombo = new ComboBox
+            {
+                ItemsSource = _model.Voices,
+                DisplayMemberPath = nameof(ElevenLabsVoice.DisplayName),
+                SelectedValuePath = nameof(ElevenLabsVoice.Id),
+                SelectedValue = configuration.VoiceId,
+                IsEnabled = !_model.IsLoadingVoices,
+            };
+            voiceCombo.SelectionChanged += (_, _) =>
+            {
+                if (_suppressUiEvents || voiceCombo.SelectedValue is not string voiceId) return;
+                _orchestration.UpdateSpeakerVoice(slot, voiceId);
+                RefreshOrchestrationPreview();
+            };
+            Grid.SetColumn(voiceCombo, 3);
+            row.Children.Add(voiceCombo);
+            SpeakerConfigurationList.Children.Add(row);
+        }
+        RefreshOrchestrationPreview();
+    }
+
+    private void RefreshOrchestrationPreview()
+    {
+        OrchestrationTemplateTitle.Text = _orchestration.SelectedTemplate.Title;
+        OrchestrationScriptPreview.Text = _orchestration.ConfiguredScriptPreview;
+        PrepareMeetingButton.IsEnabled = true;
+    }
+
+    private void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
+    {
+        _orchestration.PrepareHostSetup();
+        ((App)Application.Current).ShowOrchestrationWindow();
     }
 
     private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);
 
     private void OpenScriptEditor(bool forNewScript)
     {
+        _showOrchestrationConfiguration = false;
         if (_scriptEditor is null || !_scriptEditor.IsLoaded)
         {
             _scriptEditor = new ScriptEditorWindow(_model) { Owner = this };

@@ -14,6 +14,7 @@ public sealed record SpeechClip(string AudioPath, SpeechTiming Timing);
 
 public sealed class ElevenLabsClient
 {
+    public const double DefaultSpeechSpeed = 1.1;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(180) };
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -87,7 +88,12 @@ public sealed class ElevenLabsClient
         request.Headers.Add("xi-api-key", apiKey);
         request.Headers.Add("Accept", "audio/mpeg");
         request.Content = new StringContent(
-            JsonSerializer.Serialize(new SpeechRequest(text, modelId, previousText, nextText)),
+            JsonSerializer.Serialize(new SpeechRequest(
+                text,
+                modelId,
+                previousText,
+                nextText,
+                new VoiceSettings(DefaultSpeechSpeed))),
             Encoding.UTF8,
             "application/json");
 
@@ -121,7 +127,7 @@ public sealed class ElevenLabsClient
             "BotSpeaker", "Audio", SafeCacheComponent(cacheNamespace));
         Directory.CreateDirectory(baseDirectory);
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"{voiceId}|{modelId}|{previousText ?? ""}|{text}|{nextText ?? ""}")));
+            $"{voiceId}|{modelId}|speed={DefaultSpeechSpeed}|{previousText ?? ""}|{text}|{nextText ?? ""}")));
         var stem = Path.Combine(baseDirectory, digest);
         return (stem + ".mp3", stem + ".timing.json");
     }
@@ -157,7 +163,11 @@ public sealed class ElevenLabsClient
         [property: JsonPropertyName("text")] string Text,
         [property: JsonPropertyName("model_id")] string ModelId,
         [property: JsonPropertyName("previous_text")] string? PreviousText,
-        [property: JsonPropertyName("next_text")] string? NextText);
+        [property: JsonPropertyName("next_text")] string? NextText,
+        [property: JsonPropertyName("voice_settings")] VoiceSettings VoiceSettings);
+
+    private sealed record VoiceSettings(
+        [property: JsonPropertyName("speed")] double Speed);
 
     private sealed record TimedSpeechResponse(
         [property: JsonPropertyName("audio_base64")] string? AudioBase64,

@@ -9,30 +9,39 @@ host.
 
 ## Run a coordinated meeting
 
-Every machine needs BotSpeaker, an ElevenLabs API key, a playable custom script,
-and a virtual output device (BlackHole 2ch on macOS, VB-Audio Virtual Cable on
-Windows).
+Every machine needs BotSpeaker, an ElevenLabs API key, and a virtual output
+device (BlackHole 2ch on macOS, VB-Audio Virtual Cable on Windows). The host
+selects the shared meeting script and the ElevenLabs voice for every speaker.
 
-1. On each machine, choose or replicate the script for that participant and
-   select its ElevenLabs voice.
-2. Open **Meeting Orchestrator** from the people icon in BotSpeaker's header.
-3. On the host machine, enter its speaker name and choose **Host Meeting**.
-4. On every other machine, choose **Remote Client**, enter its speaker name and
+1. On the host, choose an entry under **Orchestrated meeting** in the script
+   sidebar. Templates may require different numbers of paired clients.
+2. Fill in every speaker name, review the distinct default voices (the
+   three-person incident review starts male, female, male), and review the
+   resolved script preview.
+3. Choose **Prepare Meeting** to open the pairing setup, enter a device name,
+   and choose **Host Meeting**.
+4. On every other machine, select **Orchestrated meeting**, choose **Prepare
+   Meeting**, switch the setup to **Remote Client**, enter its device name and
    the host's pairing code, then choose **Join Meeting**.
-5. On the host, arrange the speakers in the desired order and choose
+5. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
+   `{{speaker_2}}`, and so on.
+6. Choose **Prepare Speakers** to distribute the resolved script and the host's
+   per-speaker voice assignments.
+7. Wait for every assigned client to report its first turn ready, then choose
    **Start Meeting**.
 
-As soon as a machine pairs, it generates and caches its first paragraph without
-loading the audio player, reports that readiness to the host, and the Start
-button unlocks after every connected speaker's first turn is ready. The
-security rules require the readiness fields, so clients predating prefetch
-cannot join.
+Preparing the meeting writes the ordered, resolved turn plan to the room. Each
+client downloads the turns assigned to its anonymous participant ID, generates
+and caches its first paragraph without loading the audio player, and reports
+readiness to the host. The Start button unlocks after every assigned speaker's
+first turn is ready.
 
-BotSpeaker splits each script at paragraph boundaries. Turns are scheduled in a
-round-robin sequence: each connected speaker delivers its next paragraph, then
-control passes to the next speaker. A very long paragraph is split at sentence
-boundaries. Local play, script-selection, and Space-key controls are locked
-while a machine is paired.
+The host script is an explicit timeline: every non-empty paragraph must start
+with `{{speaker_N}}:`. The prefix selects the client in that numbered host
+order; placeholder references inside the paragraph are replaced with paired
+speaker names before distribution. This allows natural short replies,
+agreement, and longer statements without forcing a round-robin order. Local
+play, script-selection, and Space-key controls are locked while paired.
 
 During the meeting, every client keeps one local paragraph ahead of its most
 recently finished turn. The lookahead uses the exact same cache key, chunking,
@@ -56,7 +65,8 @@ the host. The schema includes:
 
 - the session ID, pairing code, status, and session start/end time;
 - every speaker's anonymous session ID, name, script title, and voice name;
-- every turn's speaker, paragraph index, spoken text, and outcome;
+- every turn's speaker, `speakerSlot`, per-speaker paragraph index, spoken text,
+  and outcome;
 - playback start/end timestamps reported by the speaker's machine; and
 - corresponding server-received timestamps for clock-independent auditing.
 
@@ -81,9 +91,11 @@ either platform also touches an `activityAt` server-timestamp marker on the
 room document — the one room field the rules allow a non-host participant to
 update. Each poll tick then costs a single room read, and the collections are
 re-listed only when the marker moves, plus a 30-second full resync that keeps
-heartbeat freshness visible. Heartbeats deliberately do not move the marker. Audio, ElevenLabs keys, and complete scripts are never
-uploaded as session setup data; only the active paragraph is attached to its
-turn when that speaker begins preparing it.
+heartbeat freshness visible. Heartbeats deliberately do not move the marker.
+Audio and ElevenLabs keys never leave the local client. The host's shared script
+and resolved turn text are stored in the Firestore session room so remote
+clients can prepare before their turn; do not place secrets in an orchestrated
+script.
 
 The host is authoritative for room state and turn advancement. Security rules
 limit room reads to paired participants, prohibit pairing-code enumeration, let

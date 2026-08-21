@@ -78,10 +78,13 @@ public partial class OrchestrationWindow : Window
         if (SpeakerNameBox.Text != _controller.SpeakerName) SpeakerNameBox.Text = _controller.SpeakerName;
         if (PairingCodeBox.Text != _controller.PairingCodeInput) PairingCodeBox.Text = _controller.PairingCodeInput;
 
-        SetupScriptText.Text = _model.SelectedScript.Title;
-        SetupVoiceText.Text = _model.SelectedVoiceName;
-        SetupTurnsText.Text = $"{OrchestrationScriptSegmenter.Segments(_model.Text).Count} paragraphs";
-        SetupScriptWarning.Visibility = _model.SelectedScript.IsCustom ? Visibility.Collapsed : Visibility.Visible;
+        SetupScriptText.Text = _controller.SetupMode == OrchestrationMode.Host
+            ? _controller.SelectedTemplate.Title
+            : "Assigned by host after pairing";
+        SetupTurnsText.Text = _controller.SetupMode == OrchestrationMode.Host
+            ? $"{_controller.SelectedTemplate.TurnCount} shared turns"
+            : "Host controlled";
+        SetupScriptWarning.Visibility = Visibility.Collapsed;
 
         PairingEntryPanel.Visibility = _controller.SetupMode == OrchestrationMode.Remote
             ? Visibility.Visible
@@ -94,17 +97,24 @@ public partial class OrchestrationWindow : Window
             ? "Connecting…"
             : _controller.SetupMode == OrchestrationMode.Host ? "Host Meeting" : "Join Meeting";
         ConnectButton.IsEnabled = !_controller.IsBusy
-            && _controller.SpeakerName.Trim().Length > 0
-            && _model.SelectedScript.IsCustom;
+            && _controller.SpeakerName.Trim().Length > 0;
     }
 
     private void UpdateHostSession()
     {
+        SpeakerMappingText.Text =
+            $"Reorder paired clients to map {{{{speaker_1}}}} through {{{{speaker_{_controller.SelectedTemplate.SpeakerCount}}}}}.";
         PairingCodeText.Text = _controller.PairingCode;
         AllowPairingCheck.IsChecked = _controller.PairingOpen;
         AllowPairingCheck.Visibility = _controller.SessionStatus == OrchestrationSessionStatus.Lobby
             ? Visibility.Visible
             : Visibility.Collapsed;
+        if (MeetingScriptBox.Text != _controller.MeetingScriptText)
+        {
+            MeetingScriptBox.Text = _controller.MeetingScriptText;
+        }
+        MeetingScriptBox.IsReadOnly = _controller.Turns.Count > 0;
+        PlanStateText.Text = _controller.Turns.Count == 0 ? "Draft" : "Prepared";
 
         RebuildSpeakersList();
         RebuildTimeline();
@@ -114,7 +124,13 @@ public partial class OrchestrationWindow : Window
 
         var status = _controller.SessionStatus;
         ExportButton.Visibility = _controller.CanExportTranscript ? Visibility.Visible : Visibility.Collapsed;
-        StartButton.Visibility = status == OrchestrationSessionStatus.Lobby ? Visibility.Visible : Visibility.Collapsed;
+        PrepareButton.Visibility = status == OrchestrationSessionStatus.Lobby && _controller.Turns.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PrepareButton.IsEnabled = _controller.CanPrepareMeeting;
+        StartButton.Visibility = status == OrchestrationSessionStatus.Lobby && _controller.Turns.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         StartButton.IsEnabled = _controller.CanStartMeeting;
         SkipButton.Visibility = status is OrchestrationSessionStatus.Running or OrchestrationSessionStatus.Paused
             ? Visibility.Visible
@@ -146,7 +162,7 @@ public partial class OrchestrationWindow : Window
             var participant = ordered[index];
             var row = new DockPanel { Margin = new Thickness(2) };
 
-            if (lobby)
+            if (lobby && _controller.Turns.Count == 0)
             {
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal };
                 var up = new Button { Content = "▲", FontSize = 9, Padding = new Thickness(5, 2, 5, 2), IsEnabled = index > 0 };
@@ -187,7 +203,9 @@ public partial class OrchestrationWindow : Window
             });
             textPanel.Children.Add(new TextBlock
             {
-                Text = $"{participant.ScriptTitle} · {participant.SegmentCount} turns",
+                Text = index < _controller.SelectedTemplate.SpeakerRoles.Count
+                    ? $"{{{{speaker_{index + 1}}}}} · {_controller.SelectedTemplate.SpeakerRoles[index]} · {participant.SegmentCount} turns"
+                    : $"Unassigned client · {participant.VoiceName}",
                 FontSize = 11,
                 Foreground = Brushes.Gray,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -293,10 +311,9 @@ public partial class OrchestrationWindow : Window
 
         RemoteRoomText.Text = _controller.PairingCode;
         RemoteSpeakerText.Text = _controller.SpeakerName;
-        RemoteScriptText.Text = _model.SelectedScript.Title;
+        RemoteScriptText.Text = _controller.MeetingScriptTitle;
         RemoteVoiceText.Text = _model.SelectedVoiceName;
-        int totalSegments = OrchestrationScriptSegmenter.Segments(_model.SelectedScript.Text).Count;
-        RemoteTurnsText.Text = $"{_controller.PreparedLocalSegmentCount} of {totalSegments}";
+        RemoteTurnsText.Text = $"{_controller.PreparedLocalSegmentCount} of {_controller.LocalAssignedSegmentCount}";
 
         if (_controller.ActiveTurn is OrchestrationTurn turn)
         {
@@ -360,6 +377,12 @@ public partial class OrchestrationWindow : Window
         _controller.PairingCodeInput = PairingCodeBox.Text;
     }
 
+    private void OnMeetingScriptChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressUiEvents || _controller.Turns.Count > 0) return;
+        _controller.MeetingScriptText = MeetingScriptBox.Text;
+    }
+
     private async void OnConnectClick(object sender, RoutedEventArgs e)
     {
         if (_controller.SetupMode == OrchestrationMode.Host)
@@ -391,6 +414,8 @@ public partial class OrchestrationWindow : Window
     }
 
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _controller.StartMeetingAsync();
+
+    private async void OnPrepareClick(object sender, RoutedEventArgs e) => await _controller.PrepareMeetingAsync();
 
     private async void OnPauseClick(object sender, RoutedEventArgs e) => await _controller.PauseMeetingAsync();
 

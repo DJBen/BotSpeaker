@@ -73,6 +73,9 @@ struct OrchestrationTurn: Identifiable, Hashable {
     let participantUID: String
     let speakerName: String
     let scriptTitle: String
+    let speakerSlot: Int
+    let voiceID: String?
+    let voiceName: String?
     let segmentIndex: Int
     let status: OrchestrationTurnStatus
     let text: String?
@@ -106,6 +109,7 @@ struct OrchestrationTranscript: Codable {
         let speakerID: String
         let speakerName: String
         let scriptTitle: String
+        let speakerSlot: Int
         let segmentIndex: Int
         let text: String?
         let status: String

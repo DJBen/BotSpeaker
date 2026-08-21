@@ -1,34 +1,35 @@
-import Combine
 import Foundation
+import Observation
 
 @MainActor
-final class AppModel: ObservableObject {
-    @Published private(set) var text = ExampleExcerpt.incidentManager.text
-    @Published private(set) var selectedScriptID = ExampleExcerpt.incidentManager.speechScript.id
-    @Published private(set) var customScripts: [CustomSpeechScript] = []
-    @Published var templateSpeakerName = ""
-    @Published var scriptDraftTitle = ""
-    @Published var scriptDraftText = ""
-    @Published private(set) var editingCustomScriptID: UUID?
-    @Published var isGenerating = false
-    @Published var errorMessage: String?
-    @Published private(set) var hasAPIKey = false
-    @Published private(set) var voices: [ElevenLabsVoice] = []
-    @Published private(set) var isLoadingVoices = false
-    @Published private(set) var voiceLoadError: String?
-    @Published private(set) var isRemoteControlled = false
-    @Published private(set) var remoteControlStatus = ""
+@Observable
+final class AppModel {
+    private(set) var text = ExampleExcerpt.incidentManager.text
+    private(set) var selectedScriptID = ExampleExcerpt.incidentManager.speechScript.id
+    private(set) var customScripts: [CustomSpeechScript] = []
+    var templateSpeakerName = ""
+    var scriptDraftTitle = ""
+    var scriptDraftText = ""
+    private(set) var editingCustomScriptID: UUID?
+    var isGenerating = false
+    var errorMessage: String?
+    private(set) var hasAPIKey = false
+    private(set) var voices: [ElevenLabsVoice] = []
+    private(set) var isLoadingVoices = false
+    private(set) var voiceLoadError: String?
+    private(set) var isRemoteControlled = false
+    private(set) var remoteControlStatus = ""
     /// Result of the most recent manual device refresh, shown next to the refresh button.
-    @Published private(set) var deviceRefreshFeedback: String?
+    private(set) var deviceRefreshFeedback: String?
 
     let player = AudioPlaybackController()
     let devices = AudioDeviceManager()
 
-    private let keychain = KeychainStore()
-    private let client = ElevenLabsClient()
-    private var generationTask: Task<Void, Never>?
-    private var generationID = UUID()
-    private var currentSpeechSignature: String?
+    @ObservationIgnored private let keychain = KeychainStore()
+    @ObservationIgnored private let client = ElevenLabsClient()
+    @ObservationIgnored private var generationTask: Task<Void, Never>?
+    @ObservationIgnored private var generationID = UUID()
+    @ObservationIgnored private var currentSpeechSignature: String?
 
     var bundledScripts: [SpeechScript] {
         ExampleExcerpt.all.map(\.speechScript)
@@ -58,40 +59,35 @@ final class AppModel: ObservableObject {
         availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.incidentManager.speechScript
     }
 
-    var voiceID: String {
-        get { UserDefaults.standard.string(forKey: Defaults.voiceID) ?? "JBFqnCBsd6RMkjVDRZzb" }
-        set { UserDefaults.standard.set(newValue, forKey: Defaults.voiceID); objectWillChange.send() }
+    var voiceID = UserDefaults.standard.string(forKey: Defaults.voiceID) ?? "JBFqnCBsd6RMkjVDRZzb" {
+        didSet { UserDefaults.standard.set(voiceID, forKey: Defaults.voiceID) }
     }
 
-    var modelID: String {
-        get { UserDefaults.standard.string(forKey: Defaults.modelID) ?? "eleven_flash_v2_5" }
-        set { UserDefaults.standard.set(newValue, forKey: Defaults.modelID); objectWillChange.send() }
+    var modelID = UserDefaults.standard.string(forKey: Defaults.modelID) ?? "eleven_flash_v2_5" {
+        didSet { UserDefaults.standard.set(modelID, forKey: Defaults.modelID) }
     }
 
-    var selectedDeviceUID: String {
-        get { UserDefaults.standard.string(forKey: Defaults.deviceUID) ?? "" }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Defaults.deviceUID)
-            objectWillChange.send()
-            try? player.selectOutputDevice(uid: newValue)
+    var selectedDeviceUID = UserDefaults.standard.string(forKey: Defaults.deviceUID) ?? "" {
+        didSet {
+            UserDefaults.standard.set(selectedDeviceUID, forKey: Defaults.deviceUID)
+            try? player.selectOutputDevice(uid: selectedDeviceUID)
         }
     }
 
-    var loopEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: Defaults.loopEnabled) as? Bool ?? false }
-        set { UserDefaults.standard.set(newValue, forKey: Defaults.loopEnabled); player.isLooping = newValue; objectWillChange.send() }
+    var loopEnabled = UserDefaults.standard.object(forKey: Defaults.loopEnabled) as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(loopEnabled, forKey: Defaults.loopEnabled)
+            player.isLooping = loopEnabled
+        }
     }
 
-    var outputVolume: Double {
-        get {
-            guard UserDefaults.standard.object(forKey: Defaults.outputVolume) != nil else { return 1 }
-            return UserDefaults.standard.double(forKey: Defaults.outputVolume)
-        }
-        set {
-            let clamped = min(max(newValue, 0), 1)
+    var outputVolume = UserDefaults.standard.object(forKey: Defaults.outputVolume) == nil
+        ? 1
+        : UserDefaults.standard.double(forKey: Defaults.outputVolume) {
+        didSet {
+            let clamped = min(max(outputVolume, 0), 1)
             UserDefaults.standard.set(clamped, forKey: Defaults.outputVolume)
             player.volume = Float(clamped)
-            objectWillChange.send()
         }
     }
 

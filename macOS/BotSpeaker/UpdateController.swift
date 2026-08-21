@@ -1,13 +1,14 @@
-import Combine
 import Foundation
+import Observation
 import Sparkle
 
 @MainActor
-final class UpdateController: ObservableObject {
-    @Published private(set) var canCheckForUpdates = false
+@Observable
+final class UpdateController {
+    private(set) var canCheckForUpdates = false
 
     let updaterController: SPUStandardUpdaterController
-    private var observation: NSKeyValueObservation?
+    @ObservationIgnored private var observation: NSKeyValueObservation?
 
     init() {
         updaterController = SPUStandardUpdaterController(
@@ -22,8 +23,10 @@ final class UpdateController: ObservableObject {
             \.canCheckForUpdates,
             options: [.initial, .new]
         ) { [weak self] updater, _ in
-            Task { @MainActor in
-                self?.canCheckForUpdates = updater.canCheckForUpdates
+            guard let controller = self else { return }
+            let canCheckForUpdates = updater.canCheckForUpdates
+            Task { @MainActor [controller] in
+                controller.canCheckForUpdates = canCheckForUpdates
             }
         }
     }

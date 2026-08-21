@@ -28,10 +28,6 @@
     <EmbeddedResource Include="Examples\incident-review-manager.txt" />
     <EmbeddedResource Include="Examples\incident-review-technical-lead.txt" />
     <EmbeddedResource Include="Examples\incident-review-support-lead.txt" />
-    <EmbeddedResource Include="Examples\meeting-assistant-launch-product-manager.txt" />
-    <EmbeddedResource Include="Examples\meeting-assistant-launch-engineering-lead.txt" />
-    <EmbeddedResource Include="Examples\meeting-assistant-launch-privacy-lead.txt" />
-    <EmbeddedResource Include="Examples\meeting-assistant-launch-customer-success-lead.txt" />
   </ItemGroup>
 
   <ItemGroup>
