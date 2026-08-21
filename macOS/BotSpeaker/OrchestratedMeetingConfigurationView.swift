@@ -9,15 +9,6 @@ struct OrchestratedMeetingConfigurationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label("Orchestrated Meeting", systemImage: "person.3.sequence.fill")
-                    .font(.title2.bold())
-                Spacer()
-                SettingsLink { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
-                    .help("Settings")
-            }
-
             VStack(alignment: .leading, spacing: 3) {
                 Text(controller.selectedTemplate.title)
                     .font(.headline)

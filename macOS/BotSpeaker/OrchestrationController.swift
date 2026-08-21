@@ -146,6 +146,12 @@ final class OrchestrationController {
         errorMessage = nil
     }
 
+    func prepareRemoteSetup() {
+        setupMode = .remote
+        pairingCodeInput = ""
+        errorMessage = nil
+    }
+
     func selectTemplate(_ template: OrchestratedMeetingTemplate) {
         guard !isActive, template.id != selectedTemplate.id else { return }
         selectedTemplate = template

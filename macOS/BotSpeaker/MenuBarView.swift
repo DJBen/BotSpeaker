@@ -23,6 +23,7 @@ struct MenuBarView: View {
 struct MainWindowView: View {
     let model: AppModel
     let orchestration: OrchestrationController
+    @Environment(\.openWindow) private var openWindow
     @State private var isShowingScriptEditor = false
     @State private var isShowingOrchestrationConfiguration = false
 
@@ -62,15 +63,18 @@ struct MainWindowView: View {
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
                 } detail: {
-                    if isShowingOrchestrationConfiguration {
-                        OrchestratedMeetingConfigurationView(model: model, controller: orchestration)
-                    } else {
-                        ComposerView(
-                            model: model,
-                            player: model.player,
-                            context: .mainWindow
-                        )
+                    Group {
+                        if isShowingOrchestrationConfiguration {
+                            OrchestratedMeetingConfigurationView(model: model, controller: orchestration)
+                        } else {
+                            ComposerView(
+                                model: model,
+                                player: model.player,
+                                context: .mainWindow
+                            )
+                        }
                     }
+                    .navigationTitle(selectedSectionTitle)
                 }
             } else {
                 FirstRunView(model: model)
@@ -80,6 +84,24 @@ struct MainWindowView: View {
         .task { await model.loadVoicesIfNeeded() }
         .sheet(isPresented: $isShowingScriptEditor) {
             CustomScriptEditorSheet(model: model)
+        }
+        .toolbar {
+            if model.hasAPIKey {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        if !orchestration.isActive { orchestration.prepareRemoteSetup() }
+                        openWindow(id: "orchestrator")
+                    } label: {
+                        Label("Join", systemImage: "person.3.fill")
+                    }
+                    .help("Join an orchestrated meeting")
+
+                    SettingsLink {
+                        Image(systemName: "gearshape")
+                    }
+                    .help("Settings")
+                }
+            }
         }
         .onKeyPress(.space) {
             guard model.hasAPIKey,
@@ -92,6 +114,11 @@ struct MainWindowView: View {
             Task { await model.primaryAction() }
             return .handled
         }
+    }
+
+    private var selectedSectionTitle: String {
+        if isShowingOrchestrationConfiguration { return "Orchestrated meeting" }
+        return model.selectedScript.isCustom ? "My scripts" : "Script templates"
     }
 
 }
@@ -268,13 +295,19 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack {
-                Label("Bot Speaker", systemImage: "waveform")
-                    .font(.headline)
-                Spacer()
-                SettingsLink { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
-                    .help("Settings")
+            if context == .menuBar {
+                HStack {
+                    Label("Bot Speaker", systemImage: "waveform")
+                        .font(.headline)
+                    Spacer()
+                    SettingsLink {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                            .frame(width: 28, height: 28)
+                    }
+                        .buttonStyle(.plain)
+                        .help("Settings")
+                }
             }
 
             scriptHeader
