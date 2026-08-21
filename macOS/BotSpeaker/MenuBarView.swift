@@ -79,7 +79,8 @@ struct MainWindowView: View {
                                 OrchestratedMeetingConfigurationView(
                                     model: model,
                                     controller: orchestration,
-                                    onPrepareMeeting: presentOrchestrationFlow
+                                    onPrepareMeeting: presentOrchestrationFlow,
+                                    onJoinMeeting: presentOrchestrationFlow
                                 )
                             } else {
                                 ComposerView(
@@ -116,17 +117,6 @@ struct MainWindowView: View {
         .toolbar {
             if model.hasAPIKey {
                 ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        guard !isOrchestrationFlowPresented else { return }
-                        orchestration.prepareRemoteSetup()
-                        isShowingOrchestrationConfiguration = true
-                        presentOrchestrationFlow()
-                    } label: {
-                        Label("Join", systemImage: "person.3.fill")
-                    }
-                    .help("Join an orchestrated meeting")
-                    .disabled(isOrchestrationFlowPresented)
-
                     SettingsLink {
                         Image(systemName: "gearshape")
                     }

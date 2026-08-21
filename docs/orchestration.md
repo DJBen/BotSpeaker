@@ -21,9 +21,9 @@ selects the shared meeting script and the ElevenLabs voice for every speaker.
 3. Choose **Prepare Meeting**. On macOS, the pairing setup pushes into the main
    detail pane and temporarily disables the script sidebar. Enter a device name,
    then choose **Host Meeting**.
-4. On every other Mac, choose **Join** in the main toolbar, enter its device name
-   and the host's pairing code, then choose **Join Meeting**. Windows clients use
-   the equivalent Remote Client setup.
+4. On every other machine, select the same orchestrated template and choose
+   **Join Meeting** beside **Prepare Meeting**. Enter its device name and the
+   host's pairing code, then confirm **Join Meeting** in the Remote Client setup.
 5. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
    `{{speaker_2}}`, and so on.
 6. Choose **Prepare Speakers** to distribute the resolved script and the host's

@@ -42,9 +42,6 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                     <Button x:Name="SettingsButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
-                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                            Content="👥" FontSize="16" Margin="0,0,6,0"
-                            ToolTip="Join an orchestrated meeting" Click="OnJoinMeetingClick"/>
                     <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
                 </DockPanel>
 
@@ -168,18 +165,19 @@
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                     <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
                             Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
-                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
-                            Content="👥" FontSize="16" Margin="0,0,6,0"
-                            ToolTip="Join an orchestrated meeting" Click="OnJoinMeetingClick"/>
                     <TextBlock Text="👥 Orchestrated Meeting" FontSize="18" FontWeight="Bold"
                                VerticalAlignment="Center"/>
                 </DockPanel>
 
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                    <Button x:Name="PrepareMeetingButton" DockPanel.Dock="Right"
-                            Content="Prepare Meeting" Padding="16,6" FontWeight="Bold"
-                            Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
-                            Click="OnOpenMeetingSetupClick"/>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="Join Meeting" Padding="14,6" Margin="0,0,8,0"
+                                Click="OnJoinMeetingClick"/>
+                        <Button x:Name="PrepareMeetingButton"
+                                Content="Prepare Meeting" Padding="16,6" FontWeight="Bold"
+                                Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                                Click="OnOpenMeetingSetupClick"/>
+                    </StackPanel>
                     <TextBlock Text="You’ll pair and assign the clients in the setup window."
                                FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
                 </DockPanel>

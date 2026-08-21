@@ -4,6 +4,7 @@ struct OrchestratedMeetingConfigurationView: View {
     let model: AppModel
     let controller: OrchestrationController
     let onPrepareMeeting: () -> Void
+    let onJoinMeeting: () -> Void
     @State private var editingSpeakerSlot: Int?
     @State private var draftSpeakerName = ""
 
@@ -41,11 +42,19 @@ struct OrchestratedMeetingConfigurationView: View {
             }
 
             HStack {
-                Text("You’ll pair and assign \(controller.selectedTemplate.speakerCount) clients in the setup window.")
+                Text("Continue to pair and assign \(controller.selectedTemplate.speakerCount) clients.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
+                Button {
+                    controller.prepareRemoteSetup()
+                    onJoinMeeting()
+                } label: {
+                    Label("Join Meeting", systemImage: "person.3.fill")
+                }
+                .buttonStyle(.bordered)
+                .fixedSize()
                 Button {
                     controller.prepareHostSetup()
                     onPrepareMeeting()

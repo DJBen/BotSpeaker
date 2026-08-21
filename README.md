@@ -115,7 +115,8 @@ template starts with distinct gender-matched voices when the ElevenLabs catalog
 provides them; the three-person incident review defaults to male, female, male.
 On macOS, **Prepare Meeting** pushes the pairing, preparation, and live controls
 into the same main-window detail pane; the sidebar stays visible but is disabled
-for the duration of the flow. One machine hosts a room and displays a
+for the duration of the flow. Remote participants use **Join Meeting** beside
+**Prepare Meeting** on the same configuration screen. One machine hosts a room and displays a
 six-character code, while the remaining machines join as remote clients. Macs
 and Windows PCs interoperate freely in the same session — either platform can
 host. The host orders the paired devices and chooses **Prepare Speakers** to
