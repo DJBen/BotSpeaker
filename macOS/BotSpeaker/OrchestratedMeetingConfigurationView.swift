@@ -96,8 +96,9 @@ struct OrchestratedMeetingConfigurationView: View {
             .help("Edit speaker name")
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(configuration.placeholder).font(.caption.monospaced())
-                Text(configuration.name.isEmpty ? configuration.role : configuration.name)
+                Text(configuration.name.isEmpty ? configuration.placeholder : configuration.name)
+                    .font(configuration.name.isEmpty ? .caption.monospaced() : .caption)
+                Text(configuration.role)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

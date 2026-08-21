@@ -514,13 +514,15 @@ public partial class MainWindow : Window
             var identity = new StackPanel();
             identity.Children.Add(new TextBlock
             {
-                Text = configuration.Placeholder,
-                FontFamily = new FontFamily("Consolas"),
+                Text = string.IsNullOrWhiteSpace(configuration.Name) ? configuration.Placeholder : configuration.Name,
+                FontFamily = string.IsNullOrWhiteSpace(configuration.Name)
+                    ? new FontFamily("Consolas")
+                    : new FontFamily("Segoe UI"),
                 FontSize = 11,
             });
             identity.Children.Add(new TextBlock
             {
-                Text = string.IsNullOrWhiteSpace(configuration.Name) ? configuration.Role : configuration.Name,
+                Text = configuration.Role,
                 FontSize = 10,
                 Foreground = Brushes.Gray,
             });
