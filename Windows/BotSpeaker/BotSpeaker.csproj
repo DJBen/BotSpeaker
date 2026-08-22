@@ -11,7 +11,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\BotSpeaker.ico</ApplicationIcon>
-    <Version>0.1.4</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
