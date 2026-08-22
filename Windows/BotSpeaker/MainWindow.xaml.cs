@@ -494,7 +494,7 @@ public partial class MainWindow : Window
                     FontFamily = new FontFamily("Segoe MDL2 Assets"),
                     FontSize = 12,
                 },
-                Width = 24,
+                Width = 28,
                 Height = 24,
                 Padding = new Thickness(0),
                 ToolTip = "Edit speaker name",
@@ -518,12 +518,13 @@ public partial class MainWindow : Window
                 FontFamily = string.IsNullOrWhiteSpace(configuration.Name)
                     ? new FontFamily("Consolas")
                     : new FontFamily("Segoe UI"),
-                FontSize = 11,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
             });
             identity.Children.Add(new TextBlock
             {
                 Text = configuration.Role,
-                FontSize = 10,
+                FontSize = 11,
                 Foreground = Brushes.Gray,
             });
             Grid.SetColumn(identity, 1);

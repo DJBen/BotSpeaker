@@ -120,12 +120,14 @@ struct OrchestratedMeetingConfigurationView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.name.isEmpty ? configuration.placeholder : configuration.name)
-                    .font(configuration.name.isEmpty ? .caption.monospaced() : .caption)
+                    .font(configuration.name.isEmpty ? .body.monospaced() : .body.weight(.semibold))
                 Text(configuration.role)
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            .frame(minWidth: 130, idealWidth: 170, alignment: .leading)
+            .frame(minWidth: 160, idealWidth: 210, alignment: .leading)
+
+            Spacer(minLength: 24)
 
             Picker(
                 "Voice",
@@ -146,8 +148,9 @@ struct OrchestratedMeetingConfigurationView: View {
                 }
             }
             .labelsHidden()
-            .frame(minWidth: 170, idealWidth: 260, maxWidth: .infinity)
+            .frame(minWidth: 260, idealWidth: 480, maxWidth: 720, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var isEditingSpeakerName: Binding<Bool> {
