@@ -215,7 +215,7 @@ if [[ -z "$SIGN_UPDATE" ]]; then
     exit 1
 fi
 
-SPARKLE_SIGNATURE="$($SIGN_UPDATE --account ai.djben.BotSpeaker "$DMG_PATH")"
+SPARKLE_SIGNATURE="$("$SIGN_UPDATE" "$DMG_PATH")"
 ED_SIGNATURE="$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
 ED_LENGTH="$(sed -n 's/.*length="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
 if [[ -z "$ED_SIGNATURE" || -z "$ED_LENGTH" ]]; then
