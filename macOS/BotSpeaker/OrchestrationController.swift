@@ -89,6 +89,11 @@ final class OrchestrationController {
             FirebaseApp.configure()
         }
         database = Firestore.firestore()
+        // Meeting rooms are short-lived and need live connectivity anyway, so
+        // skip the on-disk LevelDB cache and its background index maintenance.
+        let settings = database.settings
+        settings.cacheSettings = MemoryCacheSettings()
+        database.settings = settings
 
         model.player.onPlaybackStarted = { [weak self] in
             self?.playbackDidStart()

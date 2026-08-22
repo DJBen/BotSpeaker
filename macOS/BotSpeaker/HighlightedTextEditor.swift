@@ -56,9 +56,21 @@ struct HighlightedTextEditor: NSViewRepresentable {
                 length: 0
             ))
             context.coordinator.isApplyingUpdate = false
+            context.coordinator.lastHighlightState = nil
         }
 
         let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+        let highlightState = HighlightState(
+            textLength: fullRange.length,
+            playedTextLength: playedTextLength,
+            playedTextRanges: playedTextRanges,
+            activeTextRange: activeTextRange
+        )
+        // Playback ticks ~10x per second; re-applying attributes over the whole
+        // text on every tick is wasted layout work when nothing changed.
+        guard context.coordinator.lastHighlightState != highlightState else { return }
+        context.coordinator.lastHighlightState = highlightState
+
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
         layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: fullRange)
@@ -96,7 +108,15 @@ struct HighlightedTextEditor: NSViewRepresentable {
         }
     }
 
+    struct HighlightState: Equatable {
+        var textLength: Int
+        var playedTextLength: Int
+        var playedTextRanges: [NSRange]?
+        var activeTextRange: NSRange?
+    }
+
     final class Coordinator: NSObject, NSTextViewDelegate {
+        var lastHighlightState: HighlightState?
         private var text: Binding<String>
         var isApplyingUpdate = false
         var lastActiveRange: NSRange?
