@@ -189,6 +189,56 @@ public sealed record OrchestratedMeetingTemplate(
         {{speaker_1}}: Perfect. The main lesson is that availability must be measured at the customer workflow, not inferred from healthy infrastructure. We recovered safely, but detection, rollback authority, and customer guidance were slower than they should have been. Thank you both. I’ll publish the review with these owners and dates today.
         """);
 
+    public static readonly OrchestratedMeetingTemplate PerformanceReviewOneOnOne = new(
+        "performance-review-one-on-one",
+        "Performance review 1:1",
+        "2 speakers · feedback and growth plan",
+        ["Engineering Manager", "Senior Software Engineer"],
+        ["female", "male"],
+        """
+        {{speaker_1}}: I am {{speaker_1}}, your Engineering Manager. Thanks for making time for this review, {{speaker_2}}. I want this to be a useful conversation, not a reading of a form you have already seen. I will summarize the year, explain the rating and the evidence behind it, hear where you agree or disagree, and then turn the discussion into a concrete growth plan. The short version is that you had a strong year. You improved the reliability of the billing platform, became the person teammates trust during ambiguous incidents, and raised the quality of design reviews. I rated your performance as exceeding expectations for your current level.
+
+        {{speaker_2}}: I am {{speaker_2}}, a Senior Software Engineer on the billing platform. I appreciate the direct summary. Exceeding expectations feels consistent with the impact I tried to have, especially on reliability and the ledger migration. I also know the migration took longer than our original estimate, so I am interested in how that affected the assessment. Before we get into the growth plan, could you walk me through the strongest evidence and the main reservation you heard during calibration?
+
+        {{speaker_1}}: Absolutely. The strongest evidence was not simply that you shipped projects. On the ledger migration, you identified that the proposed cutover could duplicate adjustments during retries, built a shadow comparison that exposed the problem, and changed the rollout plan before customers were affected. After launch, reconciliation errors fell by sixty percent and the support team recovered several hours each week. You also led three incident reviews where the action items were completed, not merely documented. The reservation was about visibility and leverage: people outside our immediate group sometimes learned about a risk or decision later than they needed to.
+
+        {{speaker_2}}: That is fair in part. I tend to wait until I understand a problem before sending a broad update because I do not want to create noise or circulate a theory that changes an hour later. During the database saturation issue, for example, I held the first update while I verified whether the traffic shift or the query plan was responsible. In hindsight, the payments team needed to know that we were investigating even before I had the cause. I do want to distinguish careful communication from avoiding communication, though.
+
+        {{speaker_1}}: I agree with that distinction. I am not asking you to broadcast every hypothesis. The growth edge is communicating the state of the decision: what we know, what remains uncertain, who may be affected, and when the next update will arrive. In that incident, your diagnosis was excellent, but two dependent teams continued deployments because they did not know the risk boundary. A four-line update would have helped without pretending the root cause was settled. This came up in two peer feedback notes, alongside a lot of praise for your judgment.
+
+        {{speaker_2}}: Understood. Can I push on the calibration point a little? I was the technical lead for a cross-team migration, I mentored two engineers through promotion packets, and I covered a staff-level gap for much of the second half. If the outcome is exceeding expectations at senior, what specifically kept the review from supporting promotion now?
+
+        {{speaker_1}}: That is a reasonable question. You demonstrated several staff-level behaviors, especially technical judgment and incident leadership. The missing evidence is sustained influence across team boundaries before execution begins. On the migration, you aligned the database and billing teams once the design was mature, but the product analytics and support constraints arrived late. At staff level, I would expect you to shape that system of stakeholders earlier, delegate more of the implementation, and make the decision process legible enough that other leads can carry it without you in every meeting. This is about repeated scope and leverage, not a hidden concern about code quality or delivery.
+
+        {{speaker_2}}: I can see that. I was still the person resolving too many implementation details, partly because the schedule felt fragile and partly because I did not want to hand an unclear problem to someone else. That protected the near-term delivery but limited the evidence that I could lead through other people. I would like the next cycle to test that directly rather than giving me another project where success means I personally close the hardest tickets.
+
+        {{speaker_1}}: Exactly. I have a candidate assignment: the account-event consolidation effort that starts next month. It spans Billing, Identity, Data Platform, and Customer Operations. The technical problem matters, but the real challenge is agreeing on ownership, migration sequencing, and customer-visible behavior. I would like you to lead the technical strategy, establish the decision forum, and delegate the service-level designs to engineers on each team. I will sponsor the charter with the directors so you are not relying on informal authority alone.
+
+        {{speaker_2}}: That sounds like the right kind of stretch. I want to make the success criteria explicit. If I deliver the architecture but end up writing half of the implementation again, we should treat that as a miss on leverage even if the launch succeeds. I would also like feedback before the project is over. Waiting until the next annual review would make it hard to correct course.
+
+        {{speaker_1}}: Agreed. Let us use three measures. First, stakeholder alignment: the four groups approve a written problem statement, decision model, and rollout boundary before implementation. Second, leverage: each workstream has a named technical owner who can explain and defend its design without you present. Third, operating clarity: risks, decisions, and changes are posted on a predictable cadence. We will review those measures monthly, and I will collect lightweight feedback from the workstream leads at the midpoint rather than only at the end.
+
+        {{speaker_2}}: Good. I would add an outcome measure for the system itself, perhaps reducing duplicate event processing and the number of customer cases caused by inconsistent account state. I do not want the project to become a leadership exercise detached from customer value. Also, I would like one person outside our organization to review the architecture so we know the approach generalizes beyond our current constraints.
+
+        {{speaker_1}}: Both additions make sense. We can use duplicate-processing rate, account-state support cases, and migration rollback frequency as outcome measures. I will ask the Commerce architecture lead to be the external reviewer. Your job will be to bring that person in early enough to influence the design, not at the end for ceremonial approval. That is another useful test of proactive alignment.
+
+        {{speaker_2}}: I am on board. On the communication feedback, I want a habit I can practice immediately. My proposal is a weekly decision note for the project, plus short event-driven updates when a risk changes scope or timing. I can ask the workstream leads whether the notes answer what they need instead of assuming more writing is automatically better.
+
+        {{speaker_1}}: That is the right approach. Keep the note concise: decision, evidence, impact, owner, and next checkpoint. I can review the first two with you, then step back. I also want to protect you from turning communication into administrative overhead, so if a report does not change a decision or help a stakeholder act, we should remove it.
+
+        {{speaker_2}}: Thank you. I also want to discuss compensation and timing. Since the rating is exceeding expectations but the promotion case needs another cycle of evidence, how will the rating affect compensation, and when is the earliest realistic point to revisit level rather than waiting automatically for the next annual review?
+
+        {{speaker_1}}: Your compensation recommendation reflects the exceeding rating, although I cannot share the final number until the company review is complete next week. On promotion, you do not need to wait a full year. If the account-event work shows sustained staff-level scope and leverage through the midpoint, I will prepare a case for the midyear promotion window. I cannot promise the outcome, because calibration compares evidence across the organization, but I can promise clarity: we will review the evidence in May, identify any remaining gap in writing, and decide whether to submit.
+
+        {{speaker_2}}: That is helpful. I would rather have a specific evidence review than an informal promise. For support, I need the charter you mentioned, access to the directors when ownership decisions stall, and room to delegate without the schedule being used as a reason to pull the work back onto me. I will own escalating early instead of silently absorbing the risk.
+
+        {{speaker_1}}: You have that support. I will secure the charter, attend the first stakeholder meeting, and handle organizational escalation when authority is the blocker. I will not take over the technical decisions. If schedule pressure appears, we will reduce scope or move the date before defaulting to you doing every workstream yourself. Your responsibility is to surface the tradeoff while there is still time to choose.
+
+        {{speaker_2}}: Let me summarize to make sure I have it. The review outcome is exceeding expectations at Senior Engineer. My strongest evidence is reliability impact, technical judgment, and incident leadership. The promotion gap is sustained cross-team influence, early stakeholder alignment, and delivery through other technical owners. I will lead account-event consolidation, publish concise decision updates, delegate the workstreams, and ask for midpoint feedback. We will review promotion evidence in May for the midyear window.
+
+        {{speaker_1}}: That captures it well. I will add the project charter, monthly checkpoints, system outcome measures, and my sponsorship commitments to the written review. I also want to say plainly that your work made the team and the product better this year. The growth feedback is about expanding the reach of strengths you already demonstrate, not correcting a lack of capability. Please add any disagreement or context to the review document after you read it, and we will treat that as part of the record. Thank you for the impact you had and for engaging honestly in this conversation.
+        """);
+
     public static IReadOnlyList<OrchestratedMeetingTemplate> All { get; } =
-        [LaunchReadiness, ApiIncidentReview];
+        [LaunchReadiness, ApiIncidentReview, PerformanceReviewOneOnOne];
 }

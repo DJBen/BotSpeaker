@@ -109,7 +109,8 @@ See [Windows/README.md](Windows/README.md) for monitoring and storage details.
 
 Choose a template under **Orchestrated meeting** in the script sidebar. The
 built-in scenarios include a four-person AI assistant launch review and a
-three-person API latency incident review. The main window first shows the shared
+three-person API latency incident review, plus a two-person performance-review
+1:1. The main window first shows the shared
 script preview plus a name and ElevenLabs voice picker for each speaker. Each
 template starts with distinct gender-matched voices when the ElevenLabs catalog
 provides them; the three-person incident review defaults to male, female, male.
