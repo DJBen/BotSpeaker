@@ -6,6 +6,7 @@ struct HighlightedTextEditor: NSViewRepresentable {
     let playedTextLength: Int
     let activeTextRange: NSRange?
     var isEditable = true
+    var playedTextRanges: [NSRange]? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -62,15 +63,18 @@ struct HighlightedTextEditor: NSViewRepresentable {
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
         layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: fullRange)
 
-        let playedRange = NSRange(
+        let defaultPlayedRange = NSRange(
             location: 0,
             length: min(max(playedTextLength, 0), fullRange.length)
         )
-        if playedRange.length > 0 {
+        let rangesToHighlight = playedTextRanges ?? [defaultPlayedRange]
+        for playedRange in rangesToHighlight {
+            let safeRange = NSIntersectionRange(playedRange, fullRange)
+            guard safeRange.length > 0 else { continue }
             layoutManager.addTemporaryAttributes([
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .backgroundColor: NSColor.systemGreen.withAlphaComponent(0.10)
-            ], forCharacterRange: playedRange)
+            ], forCharacterRange: safeRange)
         }
 
         if let activeTextRange {

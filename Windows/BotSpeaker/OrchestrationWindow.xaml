@@ -54,9 +54,19 @@
                         </DockPanel>
                         <TextBlock x:Name="SpeakerMappingText"
                                    FontSize="11" Foreground="Gray" Margin="0,0,0,6"/>
-                        <TextBox x:Name="MeetingScriptBox" AcceptsReturn="True" TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto" Height="110" Padding="6"
-                                 IsReadOnly="True"/>
+                        <RichTextBox x:Name="MeetingScriptBox" IsReadOnly="True" IsDocumentEnabled="True"
+                                     VerticalScrollBarVisibility="Auto" Height="110" Padding="6"
+                                     BorderBrush="#40808080" BorderThickness="1"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Rectangle Width="12" Height="8" Fill="#5934C759" RadiusX="2" RadiusY="2"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="Spoken" FontSize="11" Foreground="Gray" Margin="4,0,12,0"
+                                       VerticalAlignment="Center"/>
+                            <Rectangle Width="12" Height="8" Fill="#8C2E6BD6" RadiusX="2" RadiusY="2"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="Speaking" FontSize="11" Foreground="Gray" Margin="4,0,0,0"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

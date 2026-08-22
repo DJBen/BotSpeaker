@@ -689,7 +689,7 @@ private struct CustomScriptEditorSheet: View {
     }
 }
 
-private struct AnnotationKey: View {
+struct AnnotationKey: View {
     let color: Color
     let label: String
 

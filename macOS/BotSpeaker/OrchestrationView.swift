@@ -87,16 +87,21 @@ struct OrchestrationView: View {
                         .padding(.vertical, 3)
                         .background(.quaternary, in: Capsule())
                 }
-                ScrollView {
-                    Text(controller.configuredScriptPreview)
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(7)
-                }
+                HighlightedTextEditor(
+                    text: .constant(controller.configuredScriptPreview),
+                    playedTextLength: 0,
+                    activeTextRange: activeOrchestrationTextRange,
+                    isEditable: false,
+                    playedTextRanges: completedOrchestrationTextRanges
+                )
                 .frame(minHeight: 110, maxHeight: 150)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator, lineWidth: 1))
+
+                HStack(spacing: 12) {
+                    AnnotationKey(color: .green.opacity(0.35), label: "Spoken")
+                    AnnotationKey(color: .accentColor.opacity(0.55), label: "Speaking")
+                }
             }
             .padding(6)
         }
@@ -419,6 +424,41 @@ struct OrchestrationView: View {
             let name = configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? "Speaker \(configuration.slot)" : name
         }.joined(separator: ", ")
+    }
+
+    private var completedOrchestrationTextRanges: [NSRange] {
+        let ranges = orchestrationTurnTextRanges
+        return controller.turns.compactMap { turn in
+            guard turn.status == .completed, ranges.indices.contains(turn.index) else { return nil }
+            return ranges[turn.index]
+        }
+    }
+
+    private var activeOrchestrationTextRange: NSRange? {
+        guard let turn = controller.activeTurn else { return nil }
+        switch turn.status {
+        case .assigned, .preparing, .speaking, .paused:
+            let ranges = orchestrationTurnTextRanges
+            return ranges.indices.contains(turn.index) ? ranges[turn.index] : nil
+        default:
+            return nil
+        }
+    }
+
+    private var orchestrationTurnTextRanges: [NSRange] {
+        let text = controller.configuredScriptPreview
+        let paragraphs = text.components(separatedBy: "\n\n")
+        var location = 0
+        var ranges: [NSRange] = []
+        for (index, paragraph) in paragraphs.enumerated() {
+            let length = (paragraph as NSString).length
+            if !paragraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ranges.append(NSRange(location: location, length: length))
+            }
+            location += length
+            if index < paragraphs.count - 1 { location += 2 }
+        }
+        return ranges
     }
 
     private func participantPreparationText(_ participant: OrchestrationParticipant) -> String {

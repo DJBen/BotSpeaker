@@ -10,6 +10,10 @@ public partial class OrchestrationWindow : Window
 {
     private readonly AppModel _model;
     private readonly OrchestrationController _controller;
+    private string _renderedMeetingScript = "";
+    private string _renderedMeetingProgress = "";
+    private static readonly Brush SpokenBrush = new SolidColorBrush(Color.FromArgb(0x59, 0x34, 0xC7, 0x59));
+    private static readonly Brush SpeakingBrush = new SolidColorBrush(Color.FromArgb(0x8C, 0x2E, 0x6B, 0xD6));
 
     public OrchestrationWindow(AppModel model, OrchestrationController controller)
     {
@@ -85,11 +89,7 @@ public partial class OrchestrationWindow : Window
                     ? $"Speaker {configuration.Slot}"
                     : configuration.Name.Trim()))}.";
         PairingCodeText.Text = _controller.PairingCode;
-        if (MeetingScriptBox.Text != _controller.ConfiguredScriptPreview)
-        {
-            MeetingScriptBox.Text = _controller.ConfiguredScriptPreview;
-        }
-        MeetingScriptBox.IsReadOnly = true;
+        RenderMeetingScriptHighlight();
         PlanStateText.Text = _controller.Turns.Count == 0 ? "Draft" : "Prepared";
 
         RebuildSpeakersList();
@@ -120,6 +120,55 @@ public partial class OrchestrationWindow : Window
             ? Visibility.Visible
             : Visibility.Collapsed;
         LeaveButton.Visibility = DoneButton.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void RenderMeetingScriptHighlight()
+    {
+        var text = _controller.ConfiguredScriptPreview;
+        var progress = string.Join(",", _controller.Turns
+            .OrderBy(turn => turn.Index)
+            .Select(turn => $"{turn.Index}:{turn.Status.RawValue()}"));
+        if (text == _renderedMeetingScript && progress == _renderedMeetingProgress) return;
+        _renderedMeetingScript = text;
+        _renderedMeetingProgress = progress;
+
+        var turnsByIndex = _controller.Turns.ToDictionary(turn => turn.Index);
+        var paragraph = new Paragraph { Margin = new Thickness(0) };
+        Run? activeRun = null;
+        var scriptParagraphs = text.Split("\n\n", StringSplitOptions.None);
+        for (int index = 0; index < scriptParagraphs.Length; index++)
+        {
+            var run = new Run(scriptParagraphs[index]);
+            if (turnsByIndex.TryGetValue(index, out var turn))
+            {
+                if (turn.Status == OrchestrationTurnStatus.Completed)
+                {
+                    run.Background = SpokenBrush;
+                    run.Foreground = Brushes.Gray;
+                }
+                else if (turn.Status is OrchestrationTurnStatus.Assigned
+                    or OrchestrationTurnStatus.Preparing
+                    or OrchestrationTurnStatus.Speaking
+                    or OrchestrationTurnStatus.Paused)
+                {
+                    run.Background = SpeakingBrush;
+                    activeRun = run;
+                }
+            }
+            paragraph.Inlines.Add(run);
+            if (index < scriptParagraphs.Length - 1)
+            {
+                paragraph.Inlines.Add(new LineBreak());
+                paragraph.Inlines.Add(new LineBreak());
+            }
+        }
+        MeetingScriptBox.Document = new FlowDocument(paragraph)
+        {
+            FontFamily = FontFamily,
+            FontSize = 13,
+            PagePadding = new Thickness(0),
+        };
+        activeRun?.BringIntoView();
     }
 
     private void RebuildSpeakersList()
