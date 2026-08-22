@@ -139,7 +139,6 @@ xcodebuild archive \
     -authenticationKeyID "$ASC_KEY_ID" \
     -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
     DEVELOPMENT_TEAM="$TEAM_ID" \
-    CODE_SIGN_STYLE=Automatic \
     MARKETING_VERSION="$VERSION" \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     ARCHS='arm64 x86_64' \
