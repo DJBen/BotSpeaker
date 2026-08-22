@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private bool _suppressUiEvents;
     private ScriptEditorWindow? _scriptEditor;
     private SettingsWindow? _settingsWindow;
+    private readonly OrchestrationView _orchestrationView;
 
     private static readonly Brush SpokenBrush = new SolidColorBrush(Color.FromArgb(0x59, 0x34, 0xC7, 0x59));
     private static readonly Brush SpeakingBrush = new SolidColorBrush(Color.FromArgb(0x8C, 0x2E, 0x6B, 0xD6));
@@ -38,6 +39,13 @@ public partial class MainWindow : Window
 
         _model.PropertyChanged += OnModelChanged;
         _model.Player.PropertyChanged += OnPlayerChanged;
+        _orchestration.PropertyChanged += OnModelChanged;
+
+        // The meeting session lives in this window, replacing the detail pane
+        // rather than opening a second window.
+        _orchestrationView = new OrchestrationView(model, orchestration);
+        _orchestrationView.SettingsRequested += (_, _) => OnSettingsClick(this, new RoutedEventArgs());
+        OrchestrationSessionHost.Content = _orchestrationView;
 
         Loaded += async (_, _) =>
         {
@@ -53,6 +61,11 @@ public partial class MainWindow : Window
         // Space toggles play/pause while the window is foregrounded, unless the user
         // is typing in an editable field or operating a control that consumes space.
         if (e.Key != Key.Space || !_model.HasApiKey) return;
+        if (_orchestration.IsActive)
+        {
+            e.Handled = _orchestrationView.HandleSpaceShortcut();
+            return;
+        }
         if (_model.IsRemoteControlled) return;
         if (!_model.SelectedScript.IsCustom) return;
         var focused = Keyboard.FocusedElement;
@@ -86,10 +99,14 @@ public partial class MainWindow : Window
         try
         {
             FirstRunPanel.Visibility = _model.HasApiKey ? Visibility.Collapsed : Visibility.Visible;
-            ComposerPanel.Visibility = _showOrchestrationConfiguration ? Visibility.Collapsed : Visibility.Visible;
-            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration
+            bool inSession = _orchestration.IsActive;
+            ComposerPanel.Visibility = _showOrchestrationConfiguration || inSession
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && !inSession
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            OrchestrationSessionHost.Visibility = inSession ? Visibility.Visible : Visibility.Collapsed;
             UpdateCableStatus();
 
             var script = _model.SelectedScript;
@@ -97,7 +114,7 @@ public partial class MainWindow : Window
             ScriptDetail.Text = $"{script.Detail} · {script.WordCount} words";
 
             UpdateSidebar();
-            if (_showOrchestrationConfiguration) UpdateOrchestrationConfiguration();
+            if (_showOrchestrationConfiguration && !inSession) UpdateOrchestrationConfiguration();
 
             // Templates are not playable; they show the speaker-name entry instead.
             bool isCustom = script.IsCustom;
@@ -147,12 +164,15 @@ public partial class MainWindow : Window
             DeviceName.Text = _model.SelectedDeviceName;
 
             // Local controls lock while this PC is paired to a meeting orchestrator.
+            // The library also locks for a host, so the meeting page cannot be
+            // navigated away from while its session is live.
             bool remote = _model.IsRemoteControlled;
+            bool libraryLocked = remote || inSession;
             RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
             RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
-            TemplateList.IsEnabled = !remote;
-            CustomList.IsEnabled = !remote;
-            AddScriptButton.IsEnabled = !remote;
+            TemplateList.IsEnabled = !libraryLocked;
+            CustomList.IsEnabled = !libraryLocked;
+            AddScriptButton.IsEnabled = !libraryLocked;
             VoiceCombo.IsEnabled = VoiceCombo.IsEnabled && !remote;
             RefreshVoicesButton.IsEnabled = !remote && !_model.IsLoadingVoices;
             PlaybackOptionsButton.IsEnabled = !remote;
@@ -627,7 +647,7 @@ public partial class MainWindow : Window
         SetMeetingEntryButtonsEnabled(true);
         if (_orchestration.IsActive)
         {
-            ((App)Application.Current).ShowOrchestrationWindow();
+            UpdateAll();
         }
         else if (_orchestration.ErrorMessage is string error)
         {
@@ -647,7 +667,7 @@ public partial class MainWindow : Window
         SetMeetingEntryButtonsEnabled(true);
         if (_orchestration.IsActive)
         {
-            ((App)Application.Current).ShowOrchestrationWindow();
+            UpdateAll();
         }
         else if (_orchestration.ErrorMessage is string error)
         {

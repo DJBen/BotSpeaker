@@ -178,7 +178,7 @@
                                 Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
                                 Click="OnOpenMeetingSetupClick"/>
                     </StackPanel>
-                    <TextBlock Text="You’ll pair and assign the clients in the setup window."
+                    <TextBlock Text="You’ll pair and assign the clients on the next page."
                                FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
                 </DockPanel>
 
@@ -197,6 +197,10 @@
                              TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="8"/>
                 </GroupBox>
             </DockPanel>
+
+            <!-- Active meeting session, shown in place of the pages above -->
+            <ContentControl x:Name="OrchestrationSessionHost" Grid.Column="1" Margin="16"
+                            Visibility="Collapsed"/>
         </Grid>
 
         <!-- First-run overlay -->

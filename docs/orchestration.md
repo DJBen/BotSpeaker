@@ -18,9 +18,9 @@ selects the shared meeting script and the ElevenLabs voice for every speaker.
 2. Fill in every speaker name, review the distinct default voices (the
    three-person incident review starts male, female, male), and review the
    resolved script preview.
-3. Choose **Orchestrate Meeting**. BotSpeaker creates the room immediately. On
-   macOS, the lobby pushes into the main detail pane and temporarily disables
-   the script sidebar.
+3. Choose **Orchestrate Meeting**. BotSpeaker creates the room immediately. The
+   lobby replaces the configuration page in the main window and temporarily
+   disables the script sidebar.
 4. On every other machine, select the same orchestrated template and choose
    **Join Meeting** beside **Orchestrate Meeting**. Enter the host's pairing code in
    the compact prompt and confirm **Join**.

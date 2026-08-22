@@ -10,7 +10,6 @@ public partial class App : Application
     public AppModel Model { get; private set; } = null!;
     public OrchestrationController Orchestration { get; private set; } = null!;
     private MainWindow? _mainWindow;
-    private OrchestrationWindow? _orchestrationWindow;
     private Forms.NotifyIcon? _trayIcon;
     private Forms.ToolStripMenuItem? _playPauseItem;
     private Drawing.Icon? _appIcon;
@@ -70,21 +69,6 @@ public partial class App : Application
             _mainWindow.WindowState = WindowState.Normal;
         }
         _mainWindow.Activate();
-    }
-
-    public void ShowOrchestrationWindow()
-    {
-        if (!Orchestration.IsActive) return;
-        if (_orchestrationWindow is null || !_orchestrationWindow.IsLoaded)
-        {
-            _orchestrationWindow = new OrchestrationWindow(Model, Orchestration);
-        }
-        _orchestrationWindow.Show();
-        if (_orchestrationWindow.WindowState == WindowState.Minimized)
-        {
-            _orchestrationWindow.WindowState = WindowState.Normal;
-        }
-        _orchestrationWindow.Activate();
     }
 
     public void ExitApplication()

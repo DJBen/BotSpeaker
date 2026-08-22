@@ -1,12 +1,13 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 
 namespace BotSpeaker;
 
-public partial class OrchestrationWindow : Window
+public partial class OrchestrationView : UserControl
 {
     private readonly AppModel _model;
     private readonly OrchestrationController _controller;
@@ -15,7 +16,7 @@ public partial class OrchestrationWindow : Window
     private static readonly Brush SpokenBrush = new SolidColorBrush(Color.FromArgb(0x59, 0x34, 0xC7, 0x59));
     private static readonly Brush SpeakingBrush = new SolidColorBrush(Color.FromArgb(0x8C, 0x2E, 0x6B, 0xD6));
 
-    public OrchestrationWindow(AppModel model, OrchestrationController controller)
+    public OrchestrationView(AppModel model, OrchestrationController controller)
     {
         _model = model;
         _controller = controller;
@@ -30,36 +31,29 @@ public partial class OrchestrationWindow : Window
             UpdateAll();
             if (_model.HasApiKey) await _model.LoadVoicesIfNeededAsync();
         };
-        Closing += OnWindowClosing;
-        PreviewKeyDown += OnWindowPreviewKeyDown;
-    }
-
-    private async void OnWindowClosing(object? sender, CancelEventArgs e)
-    {
-        e.Cancel = true;
-        Hide();
-        if (_controller.IsActive)
-        {
-            await _controller.LeaveSessionAsync();
-        }
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e) =>
         Dispatcher.BeginInvoke(UpdateAll);
 
-    private async void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    /// <summary>
+    /// Space pauses and resumes the meeting for the host. The hosting window owns
+    /// the key handler, so it forwards the press here while this view is showing.
+    /// </summary>
+    public bool HandleSpaceShortcut()
     {
-        if (e.Key != Key.Space || !_controller.IsHost) return;
+        if (!_controller.IsHost) return false;
         if (_controller.SessionStatus == OrchestrationSessionStatus.Running)
         {
-            e.Handled = true;
-            await _controller.PauseMeetingAsync();
+            _ = _controller.PauseMeetingAsync();
+            return true;
         }
-        else if (_controller.SessionStatus == OrchestrationSessionStatus.Paused)
+        if (_controller.SessionStatus == OrchestrationSessionStatus.Paused)
         {
-            e.Handled = true;
-            await _controller.ResumeMeetingAsync();
+            _ = _controller.ResumeMeetingAsync();
+            return true;
         }
+        return false;
     }
 
     private void UpdateAll()
@@ -390,6 +384,12 @@ public partial class OrchestrationWindow : Window
         value.Length == 0 ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
     // Event handlers
+
+    /// <summary>Raised by the header gear; the hosting window owns the settings window.</summary>
+    public event EventHandler? SettingsRequested;
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e) =>
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnCopyPairingCodeClick(object sender, RoutedEventArgs e)
     {
