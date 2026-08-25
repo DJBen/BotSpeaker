@@ -155,20 +155,20 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 if orchestration.isHost {
                     if #available(macOS 26.0, *) {
-                        ToolbarItem(placement: .navigation) {
+                        ToolbarItem(placement: .primaryAction) {
                             hostedMeetingCodeBadge
                         }
                         .sharedBackgroundVisibility(.hidden)
                     } else {
-                        ToolbarItem(placement: .navigation) {
+                        ToolbarItem(placement: .primaryAction) {
                             hostedMeetingCodeBadge
                         }
                     }
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: .primaryAction) {
                         endHostedMeetingButton
                     }
                 } else if !orchestration.isActive {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: .primaryAction) {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
                                 ProgressView().controlSize(.small)
@@ -180,7 +180,10 @@ struct MainWindowView: View {
                         .help("Create a reusable pairing code for orchestrated scripts")
                     }
                 }
-                ToolbarItemGroup(placement: .primaryAction) {
+                if #available(macOS 26.0, *), orchestration.isHost || !orchestration.isActive {
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
+                }
+                ToolbarItem(placement: .primaryAction) {
                     SettingsLink {
                         Image(systemName: "gearshape")
                     }
