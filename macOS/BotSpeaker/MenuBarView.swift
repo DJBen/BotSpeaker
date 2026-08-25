@@ -154,30 +154,18 @@ struct MainWindowView: View {
         .toolbar {
             if model.hasAPIKey {
                 if orchestration.isHost {
-                    ToolbarItem(placement: .navigation) {
-                        Text(orchestration.pairingCode)
-                            .font(.headline.monospacedDigit().bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(
-                                Color.accentColor,
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            )
-                            .fixedSize()
-                            .help("Hosted meeting code \(orchestration.pairingCode)")
-                    }
                     if #available(macOS 26.0, *) {
-                        ToolbarSpacer(.fixed, placement: .navigation)
+                        ToolbarItem(placement: .navigation) {
+                            hostedMeetingCodeBadge
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .navigation) {
+                            hostedMeetingCodeBadge
+                        }
                     }
                     ToolbarItem(placement: .navigation) {
-                        Button(role: .destructive) {
-                            Task { await orchestration.leaveSession() }
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .disabled(orchestration.isBusy)
-                        .help("End hosted meeting")
+                        endHostedMeetingButton
                     }
                 } else if !orchestration.isActive {
                     ToolbarItem(placement: .navigation) {
@@ -255,6 +243,30 @@ struct MainWindowView: View {
             get: { hostMeetingError != nil },
             set: { if !$0 { hostMeetingError = nil } }
         )
+    }
+
+    private var hostedMeetingCodeBadge: some View {
+        Text(orchestration.pairingCode)
+            .font(.headline.monospacedDigit().bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                Color.accentColor,
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .fixedSize()
+            .help("Hosted meeting code \(orchestration.pairingCode)")
+    }
+
+    private var endHostedMeetingButton: some View {
+        Button(role: .destructive) {
+            Task { await orchestration.leaveSession() }
+        } label: {
+            Image(systemName: "xmark")
+        }
+        .disabled(orchestration.isBusy)
+        .help("End hosted meeting")
     }
 
 }
