@@ -114,18 +114,20 @@ three-person API latency incident review, plus a two-person performance-review
 script preview plus a name and ElevenLabs voice picker for each speaker. Each
 template starts with distinct gender-matched voices when the ElevenLabs catalog
 provides them; the three-person incident review defaults to male, female, male.
-On macOS, **Orchestrate Meeting** creates the remote group and goes directly to
-the lobby, preparation, and live controls in the same main-window detail pane.
-Remote participants choose **Remote Mode** at the top of the sidebar and enter
-the host's pairing code once; they do not need to select the same transcript.
+Choose **Host Meeting** in the main app title bar first. BotSpeaker creates one
+remote group and replaces that button with its stable six-character code. Remote
+participants choose **Remote Mode** at the top of the sidebar and enter that code
+once; they do not need to select the same transcript. The host then opens any
+entry under **Orchestrated meeting** and chooses **Use This Script**.
 Macs and Windows PCs interoperate freely in the same group — either platform can
 host. The host orders the paired devices and chooses **Prepare Speakers** to
 distribute the resolved script and voice assignments. Each client generates and
 caches all assigned paragraphs asynchronously; once every client is fully ready,
 the host starts the session and BotSpeaker hands turns between laptops
-automatically. When a run completes, clients remain paired while the host selects
-another orchestrated script; transient disconnects and app restarts restore the
-same membership. The host can export a JSON transcript with exact per-speaker
+automatically. The code is owned by the title bar, not a script, and is not shown
+inside individual meeting runs. When a run completes, clients remain paired while
+the host selects another orchestrated script; transient disconnects and app
+restarts restore the same membership. The host can export a JSON transcript with exact per-speaker
 playback and server-received timestamps, while **Leave** or **Disconnect** ends
 the durable group explicitly.
 

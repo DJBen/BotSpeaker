@@ -6,7 +6,29 @@
         Width="1000" Height="720"
         MinWidth="920" MinHeight="620">
     <Grid>
-        <Grid x:Name="ComposerLayout">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" BorderBrush="#20808080" BorderThickness="0,0,0,1" Padding="14,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="HostMeetingButton" Content="👥 Host Meeting" Padding="12,5"
+                            Click="OnHostMeetingClick"/>
+                    <Button x:Name="HostedMeetingCodeButton" Padding="12,5" Margin="0,0,6,0"
+                            FontFamily="Consolas" FontWeight="Bold" Visibility="Collapsed"
+                            ToolTip="Show hosted meeting" Click="OnShowHostedMeetingClick"/>
+                    <Button x:Name="CopyHostedMeetingCodeButton" Content="📋" Padding="8,5" Margin="0,0,6,0"
+                            Visibility="Collapsed" ToolTip="Copy pairing code" Click="OnCopyHostedMeetingCodeClick"/>
+                    <Button x:Name="EndHostedMeetingButton" Content="End" Padding="10,5"
+                            Visibility="Collapsed" ToolTip="End hosted meeting" Click="OnEndHostedMeetingClick"/>
+                </StackPanel>
+                <TextBlock Text="🔊 Bot Speaker" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <Grid x:Name="ComposerLayout" Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="290"/>
                 <ColumnDefinition Width="*"/>
@@ -179,11 +201,11 @@
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button x:Name="PrepareMeetingButton"
-                                Content="Orchestrate Meeting" Padding="16,6" FontWeight="Bold"
+                                Content="Use This Script" Padding="16,6" FontWeight="Bold"
                                 Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
                                 Click="OnOpenMeetingSetupClick"/>
                     </StackPanel>
-                    <TextBlock Text="You’ll pair and assign the clients on the next page."
+                    <TextBlock Text="This script will use the stable host code shown in the app bar."
                                FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
                 </DockPanel>
 
@@ -236,7 +258,7 @@
 
         <!-- First-run overlay -->
         <Grid x:Name="FirstRunPanel" Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
-              Visibility="Collapsed">
+              Grid.RowSpan="2" Visibility="Collapsed">
             <StackPanel Margin="28" MaxWidth="440" VerticalAlignment="Center">
                 <TextBlock Text="🔊" FontSize="38"/>
                 <TextBlock Text="Set up Bot Speaker" FontSize="20" FontWeight="Bold" Margin="0,8,0,0"/>

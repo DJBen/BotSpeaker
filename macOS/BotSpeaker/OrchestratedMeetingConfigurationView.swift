@@ -43,8 +43,8 @@ struct OrchestratedMeetingConfigurationView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(controller.isHost
-                        ? "Reuse the paired group with this \(controller.selectedTemplate.speakerCount)-speaker script."
-                        : "Continue to pair and assign \(controller.selectedTemplate.speakerCount) clients.")
+                        ? "Use the active host group with this \(controller.selectedTemplate.speakerCount)-speaker script."
+                        : "Start Host Meeting from the title bar before opening this script.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -57,21 +57,25 @@ struct OrchestratedMeetingConfigurationView: View {
                 }
                 Spacer()
                 Button {
-                    startHosting()
+                    openHostedMeeting()
                 } label: {
                     if controller.isBusy && controller.setupMode == .host {
                         ProgressView()
                             .controlSize(.small)
                     } else {
                         Label(
-                            controller.isHost ? "Use for Next Run" : "Orchestrate Meeting",
+                            controller.isHost
+                                ? controller.sessionStatus == .completed || controller.sessionStatus == .stopped
+                                    ? "Use for Next Run"
+                                    : "Use This Script"
+                                : "Start Host Meeting First",
                             systemImage: "arrow.right.circle.fill"
                         )
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .fixedSize()
-                .disabled(controller.isBusy)
+                .disabled(controller.isBusy || !controller.isHost)
             }
         }
         .padding(22)
@@ -156,10 +160,9 @@ struct OrchestratedMeetingConfigurationView: View {
         editingSpeakerSlot = nil
     }
 
-    private func startHosting() {
-        controller.prepareHostSetup()
+    private func openHostedMeeting() {
         Task {
-            await controller.startHosting()
+            await controller.useSelectedTemplateInHostedGroup()
             if controller.isActive { onPrepareMeeting() }
         }
     }

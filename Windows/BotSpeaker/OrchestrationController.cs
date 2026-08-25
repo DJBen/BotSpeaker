@@ -202,9 +202,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     public void SelectTemplate(OrchestratedMeetingTemplate template)
     {
-        bool canReplaceFinishedHostRun = IsHost
-            && SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped;
-        if ((IsActive && !canReplaceFinishedHostRun) || template.Id == SelectedTemplate.Id) return;
+        bool canChooseHostRun = IsHost
+            && ((SessionStatus == OrchestrationSessionStatus.Lobby && Turns.Count == 0)
+                || SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped);
+        if ((IsActive && !canChooseHostRun) || template.Id == SelectedTemplate.Id) return;
         SelectedTemplate = template;
         MeetingScriptText = template.Text;
         MeetingScriptTitle = template.Title;
@@ -433,6 +434,36 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             _model.UpdateRemoteControlStatus("Paired and waiting for the host");
             BeginOrchestrationActivity();
             await PollAsync();
+        });
+    }
+
+    public async Task UseSelectedTemplateInHostedGroupAsync()
+    {
+        if (!IsHost || SessionId is not string sessionId) return;
+        if (SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped)
+        {
+            await BeginNextMeetingAsync();
+            return;
+        }
+        if (SessionStatus != OrchestrationSessionStatus.Lobby || Turns.Count > 0) return;
+        await PerformBusyOperationAsync(async () =>
+        {
+            var revision = Guid.NewGuid().ToString();
+            await _database.CommitAsync(new FirestoreWrite
+            {
+                DocumentPath = RoomPath(sessionId),
+                Fields = new()
+                {
+                    ["scriptTemplateID"] = SelectedTemplate.Id,
+                    ["scriptTitle"] = SelectedTemplate.Title,
+                    ["scriptText"] = MeetingScriptText,
+                    ["planRevision"] = revision,
+                },
+                UpdateMask = ["scriptTemplateID", "scriptTitle", "scriptText", "planRevision"],
+                ServerTimestampFields = ["updatedAt", "activityAt"],
+                MustExist = true,
+            });
+            _planRevision = revision;
         });
     }
 

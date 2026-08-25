@@ -82,7 +82,6 @@ public partial class OrchestrationView : UserControl
                 configuration => string.IsNullOrWhiteSpace(configuration.Name)
                     ? $"Speaker {configuration.Slot}"
                     : configuration.Name.Trim()))}.";
-        PairingCodeText.Text = _controller.PairingCode;
         RenderMeetingScriptHighlight();
         PlanStateText.Text = _controller.Turns.Count == 0 ? "Draft" : "Prepared";
 
@@ -391,18 +390,6 @@ public partial class OrchestrationView : UserControl
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) =>
         SettingsRequested?.Invoke(this, EventArgs.Empty);
-
-    private void OnCopyPairingCodeClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Clipboard.SetText(_controller.PairingCode);
-        }
-        catch (System.Runtime.InteropServices.COMException)
-        {
-            // Another process briefly held the clipboard; the user can retry.
-        }
-    }
 
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _controller.StartMeetingAsync();
 

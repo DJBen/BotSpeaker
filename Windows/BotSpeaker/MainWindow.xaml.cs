@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly OrchestrationController _orchestration;
     private bool _showOrchestrationConfiguration;
     private bool _showRemoteMode;
+    private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
     private ScriptEditorWindow? _scriptEditor;
@@ -49,6 +50,7 @@ public partial class MainWindow : Window
         _orchestrationView.ChooseAnotherScriptRequested += (_, _) =>
         {
             _showRemoteMode = false;
+            _showOrchestrationSession = false;
             _showOrchestrationConfiguration = true;
             UpdateAll();
         };
@@ -59,7 +61,11 @@ public partial class MainWindow : Window
             UpdateAll();
             if (_model.HasApiKey) await _model.LoadVoicesIfNeededAsync();
             await _orchestration.RestorePersistedSessionIfNeededAsync();
-            if (_orchestration.ActiveMode == OrchestrationMode.Remote) _showRemoteMode = true;
+            if (_orchestration.ActiveMode == OrchestrationMode.Remote)
+            {
+                _showRemoteMode = true;
+                _showOrchestrationSession = true;
+            }
             UpdateAll();
         };
         Closing += OnWindowClosing;
@@ -110,10 +116,12 @@ public partial class MainWindow : Window
         {
             FirstRunPanel.Visibility = _model.HasApiKey ? Visibility.Collapsed : Visibility.Visible;
             bool inSession = _orchestration.IsActive;
+            bool hostCanChooseRun = _orchestration.IsHost
+                && ((_orchestration.SessionStatus == OrchestrationSessionStatus.Lobby && _orchestration.Turns.Count == 0)
+                    || _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped);
             bool choosingNextHostScript = _showOrchestrationConfiguration
-                && _orchestration.IsHost
-                && _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped;
-            bool showSession = inSession && !choosingNextHostScript;
+                && hostCanChooseRun;
+            bool showSession = inSession && _showOrchestrationSession && !choosingNextHostScript;
             ComposerPanel.Visibility = _showOrchestrationConfiguration || _showRemoteMode || showSession
                 ? Visibility.Collapsed
                 : Visibility.Visible;
@@ -125,6 +133,13 @@ public partial class MainWindow : Window
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             RemoteSpeakerNameBox.Text = _orchestration.SpeakerName;
+            HostMeetingButton.Visibility = inSession ? Visibility.Collapsed : Visibility.Visible;
+            HostMeetingButton.IsEnabled = !_orchestration.IsBusy;
+            bool isHosting = _orchestration.IsHost;
+            HostedMeetingCodeButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            CopyHostedMeetingCodeButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            EndHostedMeetingButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            HostedMeetingCodeButton.Content = $"Code {_orchestration.PairingCode}";
             UpdateCableStatus();
 
             var script = _model.SelectedScript;
@@ -189,7 +204,7 @@ public partial class MainWindow : Window
             // navigated away from while its session is live.
             bool remote = _model.IsRemoteControlled;
             bool remoteClient = _orchestration.ActiveMode == OrchestrationMode.Remote;
-            bool libraryLocked = remoteClient || (inSession && !choosingNextHostScript);
+            bool libraryLocked = remoteClient || (inSession && !hostCanChooseRun);
             RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
             RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
             TemplateList.IsEnabled = !libraryLocked;
@@ -415,7 +430,11 @@ public partial class MainWindow : Window
             Foreground = Brushes.Gray,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        return new ListBoxItem { Content = panel, Tag = "orchestrated:" + template.Id };
+        bool canChoose = !_orchestration.IsActive
+            || (_orchestration.IsHost
+                && ((_orchestration.SessionStatus == OrchestrationSessionStatus.Lobby && _orchestration.Turns.Count == 0)
+                    || _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped));
+        return new ListBoxItem { Content = panel, Tag = "orchestrated:" + template.Id, IsEnabled = canChoose };
     }
 
     private static ListBoxItem BuildSidebarHeader(string title, bool isFirstScenario)
@@ -453,7 +472,7 @@ public partial class MainWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
 
-        var item = new ListBoxItem { Content = panel, Tag = script.Id };
+        var item = new ListBoxItem { Content = panel, Tag = script.Id, IsEnabled = !_orchestration.IsActive };
         var menu = new ContextMenu();
         if (isTemplate)
         {
@@ -495,6 +514,7 @@ public partial class MainWindow : Window
                 if (template is null) return;
                 _orchestration.SelectTemplate(template);
                 _showRemoteMode = false;
+                _showOrchestrationSession = false;
                 _showOrchestrationConfiguration = true;
                 CustomList.SelectedItem = null;
                 UpdateAll();
@@ -602,7 +622,12 @@ public partial class MainWindow : Window
     {
         OrchestrationTemplateTitle.Text = _orchestration.SelectedTemplate.Title;
         OrchestrationScriptPreview.Text = _orchestration.ConfiguredScriptPreview;
-        PrepareMeetingButton.IsEnabled = true;
+        PrepareMeetingButton.Content = _orchestration.IsHost
+            ? _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped
+                ? "Use for Next Run"
+                : "Use This Script"
+            : "Host Meeting from the title bar first";
+        PrepareMeetingButton.IsEnabled = _orchestration.IsHost;
     }
 
     private string? ShowSpeakerNameDialog(string currentName)
@@ -668,12 +693,14 @@ public partial class MainWindow : Window
 
     private async void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
     {
-        _orchestration.PrepareHostSetup();
+        if (!_orchestration.IsHost) return;
         SetMeetingEntryButtonsEnabled(false);
-        await _orchestration.StartHostingAsync();
+        await _orchestration.UseSelectedTemplateInHostedGroupAsync();
         SetMeetingEntryButtonsEnabled(true);
         if (_orchestration.IsActive)
         {
+            _showOrchestrationConfiguration = false;
+            _showOrchestrationSession = true;
             UpdateAll();
         }
         else if (_orchestration.ErrorMessage is string error)
@@ -692,6 +719,7 @@ public partial class MainWindow : Window
         SetMeetingEntryButtonsEnabled(true);
         if (_orchestration.IsActive)
         {
+            _showOrchestrationSession = true;
             UpdateAll();
         }
         else if (_orchestration.ErrorMessage is string error)
@@ -715,6 +743,42 @@ public partial class MainWindow : Window
         CustomList.SelectedItem = null;
         UpdateAll();
         RemotePairingCodeBox.Focus();
+    }
+
+    private async void OnHostMeetingClick(object sender, RoutedEventArgs e)
+    {
+        _orchestration.PrepareHostSetup();
+        HostMeetingButton.IsEnabled = false;
+        await _orchestration.StartHostingAsync();
+        _showOrchestrationSession = false;
+        UpdateAll();
+        if (!_orchestration.IsHost && _orchestration.ErrorMessage is string error)
+        {
+            MessageBox.Show(this, error, "Couldn’t host meeting", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OnShowHostedMeetingClick(object sender, RoutedEventArgs e)
+    {
+        if (!_orchestration.IsHost) return;
+        _showRemoteMode = false;
+        _showOrchestrationConfiguration = false;
+        _showOrchestrationSession = true;
+        UpdateAll();
+    }
+
+    private void OnCopyHostedMeetingCodeClick(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(_orchestration.PairingCode); }
+        catch (System.Runtime.InteropServices.COMException) { }
+    }
+
+    private async void OnEndHostedMeetingClick(object sender, RoutedEventArgs e)
+    {
+        await _orchestration.LeaveSessionAsync();
+        _showOrchestrationSession = false;
+        _showOrchestrationConfiguration = false;
+        UpdateAll();
     }
 
     private void OnRemotePairingCodeKeyDown(object sender, KeyEventArgs e)

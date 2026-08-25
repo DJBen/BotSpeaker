@@ -31,6 +31,7 @@ struct MainWindowView: View {
     @State private var isShowingOrchestrationConfiguration = false
     @State private var isShowingRemoteMode = false
     @State private var detailPath: [DetailDestination] = []
+    @State private var hostMeetingError: String?
 
     var body: some View {
         Group {
@@ -130,8 +131,9 @@ struct MainWindowView: View {
             await orchestration.restorePersistedSessionIfNeeded()
             if orchestration.isActive {
                 if orchestration.isHost {
-                    isShowingOrchestrationConfiguration = true
-                    presentOrchestrationFlow()
+                    if orchestration.sessionStatus == .running || orchestration.sessionStatus == .paused {
+                        showHostedMeeting()
+                    }
                 } else {
                     isShowingRemoteMode = true
                     isShowingOrchestrationConfiguration = false
@@ -144,8 +146,44 @@ struct MainWindowView: View {
         .sheet(isPresented: $isShowingScriptEditor) {
             CustomScriptEditorSheet(model: model)
         }
+        .alert("Couldn’t host meeting", isPresented: hostMeetingErrorIsPresented) {
+            Button("OK", role: .cancel) { hostMeetingError = nil }
+        } message: {
+            Text(hostMeetingError ?? "Unknown error")
+        }
         .toolbar {
             if model.hasAPIKey {
+                ToolbarItemGroup(placement: .navigation) {
+                    if orchestration.isHost {
+                        Menu {
+                            Button("Show Meeting", systemImage: "rectangle.on.rectangle") {
+                                showHostedMeeting()
+                            }
+                            Button("Copy Pairing Code", systemImage: "doc.on.doc") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(orchestration.pairingCode, forType: .string)
+                            }
+                            Divider()
+                            Button("End Hosted Meeting", systemImage: "xmark.circle", role: .destructive) {
+                                Task { await orchestration.leaveSession() }
+                            }
+                        } label: {
+                            Label("Code \(orchestration.pairingCode)", systemImage: "person.3.fill")
+                                .font(.body.monospacedDigit())
+                        }
+                        .help("Hosted meeting code \(orchestration.pairingCode)")
+                    } else if !orchestration.isActive {
+                        Button(action: startHostGroup) {
+                            if orchestration.isBusy && orchestration.setupMode == .host {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Host Meeting", systemImage: "person.3.fill")
+                            }
+                        }
+                        .disabled(orchestration.isBusy)
+                        .help("Create a reusable pairing code for orchestrated scripts")
+                    }
+                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     SettingsLink {
                         Image(systemName: "gearshape")
@@ -185,6 +223,30 @@ struct MainWindowView: View {
 
     private func dismissOrchestrationFlow() {
         detailPath.removeAll()
+    }
+
+    private func startHostGroup() {
+        orchestration.prepareHostSetup()
+        Task {
+            await orchestration.startHosting()
+            if !orchestration.isHost {
+                hostMeetingError = orchestration.errorMessage ?? "The hosted meeting could not be created."
+            }
+        }
+    }
+
+    private func showHostedMeeting() {
+        guard orchestration.isHost else { return }
+        isShowingRemoteMode = false
+        isShowingOrchestrationConfiguration = true
+        presentOrchestrationFlow()
+    }
+
+    private var hostMeetingErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { hostMeetingError != nil },
+            set: { if !$0 { hostMeetingError = nil } }
+        )
     }
 
 }
@@ -324,7 +386,9 @@ private struct ScriptLibrarySidebar: View {
     private var canSelectOrchestratedTemplate: Bool {
         !orchestration.isActive
             || (orchestration.isHost
-                && (orchestration.sessionStatus == .completed || orchestration.sessionStatus == .stopped))
+                && ((orchestration.sessionStatus == .lobby && orchestration.turns.isEmpty)
+                    || orchestration.sessionStatus == .completed
+                    || orchestration.sessionStatus == .stopped))
     }
 
     private func orchestrationSelectionID(for template: OrchestratedMeetingTemplate) -> String {

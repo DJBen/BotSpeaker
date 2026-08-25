@@ -14,22 +14,24 @@ Every machine needs BotSpeaker, an ElevenLabs API key, and a virtual output
 device (BlackHole 2ch on macOS, VB-Audio Virtual Cable on Windows). The host
 selects the shared meeting script and the ElevenLabs voice for every speaker.
 
-1. On the host, choose an entry under **Orchestrated meeting** in the script
+1. On the host, choose **Host Meeting** in the main app title bar. BotSpeaker
+   creates the durable remote group once and replaces the button with its
+   six-character code.
+2. On every other machine, select **Remote Mode** at the top of the sidebar.
+   Enter that code and choose **Join Remote Group**. A remote does not select a
+   transcript; the host sends each run's script and assignment.
+3. On the host, choose an entry under **Orchestrated meeting** in the script
    sidebar. Templates may require different numbers of paired clients.
-2. Fill in every speaker name, review the distinct default voices (the
+4. Fill in every speaker name, review the distinct default voices (the
    three-person incident review starts male, female, male), and review the
    resolved script preview.
-3. Choose **Orchestrate Meeting**. BotSpeaker creates the room immediately. The
-   lobby replaces the configuration page in the main window and temporarily
-   disables the script sidebar.
-4. On every other machine, select **Remote Mode** at the top of the sidebar.
-   Enter the host's pairing code and choose **Join Remote Group**. A remote does
-   not select a transcript; the host sends each run's script and assignment.
-5. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
+5. Choose **Use This Script**. The meeting lobby opens inside the existing host
+   group without creating or displaying another pairing code.
+6. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
    `{{speaker_2}}`, and so on.
-6. Choose **Prepare Speakers** to distribute the resolved script and the host's
+7. Choose **Prepare Speakers** to distribute the resolved script and the host's
    per-speaker voice assignments.
-7. Wait for every assigned client to report all paragraphs ready, then choose
+8. Wait for every assigned client to report all paragraphs ready, then choose
    **Start Meeting**.
 
 Preparing the meeting writes the ordered, resolved turn plan to the room. Each
@@ -59,9 +61,9 @@ assigned audio, so slow ElevenLabs generation does not advance the next speaker
 early.
 
 When a run completes or stops, remote clients remain paired and wait for the
-next script. On macOS the host can choose **Choose Another Script**, select a
-different orchestrated template, and use it for the next run without issuing a
-new code. **Leave** (host) and **Disconnect** (remote) explicitly end membership;
+next script. The host can choose **Choose Another Script**, select a different
+orchestrated template, and use it for the next run; the title-bar code remains
+unchanged. **Leave** (host) and **Disconnect** (remote) explicitly end membership;
 closing and reopening the macOS window does not disconnect the group. The macOS
 client also restores its paired group after an app relaunch.
 

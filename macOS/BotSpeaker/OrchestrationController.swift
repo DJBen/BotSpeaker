@@ -173,8 +173,11 @@ final class OrchestrationController {
     }
 
     func selectTemplate(_ template: OrchestratedMeetingTemplate) {
-        let canReplaceFinishedHostRun = isHost && (sessionStatus == .completed || sessionStatus == .stopped)
-        guard (!isActive || canReplaceFinishedHostRun), template.id != selectedTemplate.id else { return }
+        let canChooseHostRun = isHost
+            && ((sessionStatus == .lobby && turns.isEmpty)
+                || sessionStatus == .completed
+                || sessionStatus == .stopped)
+        guard (!isActive || canChooseHostRun), template.id != selectedTemplate.id else { return }
         selectedTemplate = template
         meetingScriptText = template.text
         meetingScriptTitle = template.title
@@ -381,6 +384,29 @@ final class OrchestrationController {
             self.startedAt = nil
             self.endedAt = nil
             self.model?.updateRemoteControlStatus("Paired and waiting for the host")
+        }
+    }
+
+    /// Selects the script for the current durable host group. This never creates
+    /// a room or changes its pairing code.
+    func useSelectedTemplateInHostedGroup() async {
+        guard isHost, let sessionID else { return }
+        if sessionStatus == .completed || sessionStatus == .stopped {
+            await beginNextMeeting()
+            return
+        }
+        guard sessionStatus == .lobby, turns.isEmpty else { return }
+        await performBusyOperation {
+            let revision = UUID().uuidString
+            try await self.roomReference(sessionID).updateData([
+                "scriptTemplateID": self.selectedTemplate.id,
+                "scriptTitle": self.selectedTemplate.title,
+                "scriptText": self.meetingScriptText,
+                "planRevision": revision,
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
+            ])
+            self.planRevision = revision
         }
     }
 

@@ -17,23 +17,6 @@
         <Grid>
             <!-- Active host session -->
             <DockPanel x:Name="HostPanel" Visibility="Collapsed">
-                <!-- Pairing card -->
-                <Border DockPanel.Dock="Top" Background="#14808080" CornerRadius="9" Padding="14"
-                        Margin="0,0,0,12">
-                    <DockPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <StackPanel>
-                                <TextBlock Text="Pairing code" FontSize="11" Foreground="Gray"/>
-                                <TextBlock x:Name="PairingCodeText" FontSize="30" FontWeight="Bold"
-                                           FontFamily="Consolas"/>
-                            </StackPanel>
-                            <Button Content="📋" FontSize="14" Padding="8,4" Margin="12,0,0,0"
-                                    VerticalAlignment="Center" ToolTip="Copy pairing code"
-                                    Click="OnCopyPairingCodeClick"/>
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-
                 <Border DockPanel.Dock="Top" Background="#0D808080" CornerRadius="9" Padding="12"
                         Margin="0,0,0,12">
                     <StackPanel>

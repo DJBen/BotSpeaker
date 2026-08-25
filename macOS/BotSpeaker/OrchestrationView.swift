@@ -45,7 +45,6 @@ struct OrchestrationView: View {
 
     private var hostSession: some View {
         VStack(spacing: 16) {
-            pairingCard
             scriptPlanCard
 
             HSplitView {
@@ -101,30 +100,6 @@ struct OrchestrationView: View {
             }
             .padding(6)
         }
-    }
-
-    private var pairingCard: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Pairing code")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(controller.pairingCode)
-                    .font(.system(.largeTitle, design: .monospaced, weight: .bold))
-                    .textSelection(.enabled)
-            }
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(controller.pairingCode, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .help("Copy pairing code")
-            Spacer()
-            statusPill
-        }
-        .padding(14)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var participantsPanel: some View {
@@ -475,14 +450,6 @@ struct OrchestrationView: View {
         return participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount
             ? .green
             : .secondary
-    }
-
-    private var statusPill: some View {
-        Text(controller.sessionStatus.displayName)
-            .font(.caption.weight(.medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.quaternary, in: Capsule())
     }
 
     private var remoteStatusIcon: String {
