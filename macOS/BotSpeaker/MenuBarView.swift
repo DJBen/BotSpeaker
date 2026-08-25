@@ -155,23 +155,21 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 ToolbarItemGroup(placement: .navigation) {
                     if orchestration.isHost {
+                        Text("Code \(orchestration.pairingCode)")
+                            .font(.headline.monospacedDigit().bold())
+                            .help("Hosted meeting code \(orchestration.pairingCode)")
                         Menu {
                             Button("Show Meeting", systemImage: "rectangle.on.rectangle") {
                                 showHostedMeeting()
-                            }
-                            Button("Copy Pairing Code", systemImage: "doc.on.doc") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(orchestration.pairingCode, forType: .string)
                             }
                             Divider()
                             Button("End Hosted Meeting", systemImage: "xmark.circle", role: .destructive) {
                                 Task { await orchestration.leaveSession() }
                             }
                         } label: {
-                            Label("Code \(orchestration.pairingCode)", systemImage: "person.3.fill")
-                                .font(.body.monospacedDigit())
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .help("Hosted meeting code \(orchestration.pairingCode)")
+                        .help("Hosted meeting options")
                     } else if !orchestration.isActive {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
@@ -274,7 +272,7 @@ private struct ScriptLibrarySidebar: View {
                         Text("Remote Mode")
                         Text(orchestration.activeMode == .remote
                             ? "Paired · \(orchestration.pairingCode)"
-                            : "Pair once for every orchestrated script")
+                            : "Join with a host code")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

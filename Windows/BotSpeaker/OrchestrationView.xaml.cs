@@ -113,6 +113,7 @@ public partial class OrchestrationView : UserControl
             ? Visibility.Visible
             : Visibility.Collapsed;
         LeaveButton.Visibility = Visibility.Visible;
+        LeaveButton.Content = status == OrchestrationSessionStatus.Lobby ? "Quit" : "Leave";
     }
 
     private void RenderMeetingScriptHighlight()
@@ -386,6 +387,7 @@ public partial class OrchestrationView : UserControl
 
     /// <summary>Raised by the header gear; the hosting window owns the settings window.</summary>
     public event EventHandler? SettingsRequested;
+    public event EventHandler? MeetingViewDismissRequested;
     public event EventHandler? ChooseAnotherScriptRequested;
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) =>
@@ -403,7 +405,15 @@ public partial class OrchestrationView : UserControl
 
     private async void OnStopClick(object sender, RoutedEventArgs e) => await _controller.StopMeetingAsync();
 
-    private async void OnLeaveClick(object sender, RoutedEventArgs e) => await _controller.LeaveSessionAsync();
+    private async void OnLeaveClick(object sender, RoutedEventArgs e)
+    {
+        if (_controller.IsHost && _controller.SessionStatus == OrchestrationSessionStatus.Lobby)
+        {
+            MeetingViewDismissRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        await _controller.LeaveSessionAsync();
+    }
 
     private void OnChooseAnotherScriptClick(object sender, RoutedEventArgs e) =>
         ChooseAnotherScriptRequested?.Invoke(this, EventArgs.Empty);

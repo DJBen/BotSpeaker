@@ -250,7 +250,11 @@ struct OrchestrationView: View {
 
     private var hostControls: some View {
         HStack {
-            Button("Leave", action: leaveFlow)
+            if controller.sessionStatus == .lobby {
+                Button("Quit", action: onExit)
+            } else {
+                Button("Leave", action: leaveFlow)
+            }
             Spacer()
             if controller.canExportTranscript {
                 Button {

@@ -16,11 +16,11 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="HostMeetingButton" Content="👥 Host Meeting" Padding="12,5"
                             Click="OnHostMeetingClick"/>
-                    <Button x:Name="HostedMeetingCodeButton" Padding="12,5" Margin="0,0,6,0"
-                            FontFamily="Consolas" FontWeight="Bold" Visibility="Collapsed"
-                            ToolTip="Show hosted meeting" Click="OnShowHostedMeetingClick"/>
-                    <Button x:Name="CopyHostedMeetingCodeButton" Content="📋" Padding="8,5" Margin="0,0,6,0"
-                            Visibility="Collapsed" ToolTip="Copy pairing code" Click="OnCopyHostedMeetingCodeClick"/>
+                    <TextBlock x:Name="HostedMeetingCodeText" Margin="0,0,8,0"
+                               FontFamily="Consolas" FontSize="15" FontWeight="Bold"
+                               VerticalAlignment="Center" Visibility="Collapsed"/>
+                    <Button x:Name="ShowHostedMeetingButton" Content="Show" Padding="10,5" Margin="0,0,6,0"
+                            Visibility="Collapsed" ToolTip="Show hosted meeting" Click="OnShowHostedMeetingClick"/>
                     <Button x:Name="EndHostedMeetingButton" Content="End" Padding="10,5"
                             Visibility="Collapsed" ToolTip="End hosted meeting" Click="OnEndHostedMeetingClick"/>
                 </StackPanel>
@@ -48,7 +48,7 @@
                                     Padding="8,7" Margin="0,0,0,10" Click="OnRemoteModeClick">
                                 <StackPanel>
                                     <TextBlock Text="📡 Remote Mode" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Pair once for every orchestrated script" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock Text="Join with a host code" FontSize="10" Foreground="Gray"/>
                                 </StackPanel>
                             </Button>
                             <!-- Scenario section headers are generated alongside the template rows. -->

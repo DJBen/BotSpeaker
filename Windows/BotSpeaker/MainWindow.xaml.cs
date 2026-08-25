@@ -47,6 +47,13 @@ public partial class MainWindow : Window
         // rather than opening a second window.
         _orchestrationView = new OrchestrationView(model, orchestration);
         _orchestrationView.SettingsRequested += (_, _) => OnSettingsClick(this, new RoutedEventArgs());
+        _orchestrationView.MeetingViewDismissRequested += (_, _) =>
+        {
+            _showRemoteMode = false;
+            _showOrchestrationSession = false;
+            _showOrchestrationConfiguration = false;
+            UpdateAll();
+        };
         _orchestrationView.ChooseAnotherScriptRequested += (_, _) =>
         {
             _showRemoteMode = false;
@@ -136,10 +143,10 @@ public partial class MainWindow : Window
             HostMeetingButton.Visibility = inSession ? Visibility.Collapsed : Visibility.Visible;
             HostMeetingButton.IsEnabled = !_orchestration.IsBusy;
             bool isHosting = _orchestration.IsHost;
-            HostedMeetingCodeButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
-            CopyHostedMeetingCodeButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            HostedMeetingCodeText.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            ShowHostedMeetingButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
             EndHostedMeetingButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
-            HostedMeetingCodeButton.Content = $"Code {_orchestration.PairingCode}";
+            HostedMeetingCodeText.Text = $"Code {_orchestration.PairingCode}";
             UpdateCableStatus();
 
             var script = _model.SelectedScript;
@@ -765,12 +772,6 @@ public partial class MainWindow : Window
         _showOrchestrationConfiguration = false;
         _showOrchestrationSession = true;
         UpdateAll();
-    }
-
-    private void OnCopyHostedMeetingCodeClick(object sender, RoutedEventArgs e)
-    {
-        try { Clipboard.SetText(_orchestration.PairingCode); }
-        catch (System.Runtime.InteropServices.COMException) { }
     }
 
     private async void OnEndHostedMeetingClick(object sender, RoutedEventArgs e)
