@@ -46,11 +46,12 @@ struct RemoteModeView: View {
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 10) {
-                        TextField("Pairing code", text: $controller.pairingCodeInput)
-                            .font(.system(.title2, design: .monospaced, weight: .semibold))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 180)
-                            .onSubmit(join)
+                        UppercaseCodeField(
+                            text: $controller.pairingCodeInput,
+                            placeholder: "Pairing code",
+                            onSubmit: join
+                        )
+                        .frame(width: 180, height: 32)
                         Button(action: join) {
                             if controller.isBusy {
                                 ProgressView().controlSize(.small)
