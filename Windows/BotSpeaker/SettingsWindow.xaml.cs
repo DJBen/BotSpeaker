@@ -43,9 +43,6 @@ public partial class SettingsWindow : Window
             KeyPopupHeading.Text = _model.HasApiKey ? "Replace ElevenLabs API Key" : "Add ElevenLabs API Key";
             RemoveKeyButton.Visibility = _model.HasApiKey ? Visibility.Visible : Visibility.Collapsed;
 
-            if (!VoiceIdBox.IsFocused) VoiceIdBox.Text = _model.VoiceId;
-            if (!ModelIdBox.IsFocused) ModelIdBox.Text = _model.ModelId;
-
             var outputs = _model.Devices.OutputDevices;
             OutputCombo.ItemsSource = new[] { "Choose an output…" }
                 .Concat(outputs.Select(d => d.IsVirtualCable ? $"{d.Name} — recommended" : d.Name))
@@ -108,16 +105,6 @@ public partial class SettingsWindow : Window
     {
         KeyPopupError.Text = message ?? "";
         KeyPopupError.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void OnVoiceIdChanged(object sender, RoutedEventArgs e)
-    {
-        if (!_suppressUiEvents && VoiceIdBox.Text != _model.VoiceId) _model.VoiceId = VoiceIdBox.Text;
-    }
-
-    private void OnModelIdChanged(object sender, RoutedEventArgs e)
-    {
-        if (!_suppressUiEvents && ModelIdBox.Text != _model.ModelId) _model.ModelId = ModelIdBox.Text;
     }
 
     private void OnOutputSelected(object sender, SelectionChangedEventArgs e)

@@ -24,6 +24,8 @@ public sealed record ExampleScenario(string Id, string Title, IReadOnlyList<Exam
 /// A role-specific script from a coordinated meeting scenario. Built-in
 /// scripts are templates: {{name}} is resolved once when a user creates a
 /// named copy, so playback and caching never depend on mutable profile data.
+/// Scripts are written for ElevenLabs v3: bracketed audio tags such as
+/// [laughs] or [sighs] steer the expressive delivery.
 /// </summary>
 public sealed record ExampleExcerpt(string Id, string Role, string Meeting, string Text)
 {
@@ -31,17 +33,17 @@ public sealed record ExampleExcerpt(string Id, string Role, string Meeting, stri
 
     public SpeechScript SpeechScript => new($"example:{Id}", Role, Meeting, Text, CustomId: null);
 
-    public static readonly ExampleExcerpt IncidentManager = Load(
-        "incident-review-manager", "Engineering Manager", "Authentication incident review");
-    public static readonly ExampleExcerpt IncidentTechnicalLead = Load(
-        "incident-review-technical-lead", "Technical Lead", "Authentication incident review");
-    public static readonly ExampleExcerpt IncidentSupportLead = Load(
-        "incident-review-support-lead", "Customer Support Lead", "Authentication incident review");
+    public static readonly ExampleExcerpt LaunchRetroProductManager = Load(
+        "launch-retro-product-manager", "Product Manager", "Q3 launch retrospective");
+    public static readonly ExampleExcerpt LaunchRetroEngineeringLead = Load(
+        "launch-retro-engineering-lead", "Engineering Lead", "Q3 launch retrospective");
+    public static readonly ExampleExcerpt LaunchRetroSupportLead = Load(
+        "launch-retro-support-lead", "Customer Success Lead", "Q3 launch retrospective");
 
     public static readonly IReadOnlyList<ExampleScenario> Scenarios =
     [
-        new("authentication-incident-review", "Script templates",
-            [IncidentManager, IncidentTechnicalLead, IncidentSupportLead]),
+        new("q3-launch-retrospective", "Script templates",
+            [LaunchRetroProductManager, LaunchRetroEngineeringLead, LaunchRetroSupportLead]),
     ];
 
     public static readonly IReadOnlyList<ExampleExcerpt> All =

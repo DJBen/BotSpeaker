@@ -70,11 +70,8 @@ public sealed class AppModel : INotifyPropertyChanged
         set { Settings.VoiceId = value; Settings.Save(); Notify(); Notify(nameof(SelectedVoiceName)); }
     }
 
-    public string ModelId
-    {
-        get => Settings.ModelId;
-        set { Settings.ModelId = value; Settings.Save(); Notify(); }
-    }
+    /// <summary>Fixed to Eleven v3 so scripts can rely on its audio tags and expressive delivery.</summary>
+    public const string ModelId = "eleven_v3";
 
     public string SelectedDeviceId
     {
@@ -119,6 +116,13 @@ public sealed class AppModel : INotifyPropertyChanged
     public AppModel()
     {
         Settings = AppSettings.Load();
+
+        // Copies created from a built-in template carry its detail text; the
+        // templates were rewritten, so stale derived copies are dropped.
+        if (Settings.CustomScripts.RemoveAll(c => c.Detail is not null) > 0)
+        {
+            Settings.Save();
+        }
 
         var requestedId = string.IsNullOrEmpty(Settings.SelectedScriptId)
             ? BundledScripts[0].Id

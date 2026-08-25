@@ -4,8 +4,8 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
-    private(set) var text = ExampleExcerpt.incidentManager.text
-    private(set) var selectedScriptID = ExampleExcerpt.incidentManager.speechScript.id
+    private(set) var text = ExampleExcerpt.launchRetroProductManager.text
+    private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id
     private(set) var customScripts: [CustomSpeechScript] = []
     var templateSpeakerName = ""
     var scriptDraftTitle = ""
@@ -56,16 +56,15 @@ final class AppModel {
     }
 
     var selectedScript: SpeechScript {
-        availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.incidentManager.speechScript
+        availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.launchRetroProductManager.speechScript
     }
 
     var voiceID = UserDefaults.standard.string(forKey: Defaults.voiceID) ?? "JBFqnCBsd6RMkjVDRZzb" {
         didSet { UserDefaults.standard.set(voiceID, forKey: Defaults.voiceID) }
     }
 
-    var modelID = UserDefaults.standard.string(forKey: Defaults.modelID) ?? "eleven_flash_v2_5" {
-        didSet { UserDefaults.standard.set(modelID, forKey: Defaults.modelID) }
-    }
+    /// Fixed to Eleven v3 so scripts can rely on its audio tags and expressive delivery.
+    @ObservationIgnored let modelID = "eleven_v3"
 
     var selectedDeviceUID = UserDefaults.standard.string(forKey: Defaults.deviceUID) ?? "" {
         didSet {
@@ -94,13 +93,18 @@ final class AppModel {
     init() {
         if let data = UserDefaults.standard.data(forKey: Defaults.customScripts),
            let savedScripts = try? JSONDecoder().decode([CustomSpeechScript].self, from: data) {
-            customScripts = savedScripts
+            // Copies created from a built-in template carry its detail text; the
+            // templates were rewritten, so stale derived copies are dropped.
+            customScripts = savedScripts.filter { $0.detail == nil }
+            if customScripts.count != savedScripts.count {
+                persistCustomScripts()
+            }
         }
 
         let requestedID = UserDefaults.standard.string(forKey: Defaults.selectedScriptID)
-            ?? ExampleExcerpt.incidentManager.speechScript.id
+            ?? ExampleExcerpt.launchRetroProductManager.speechScript.id
         let initialScript = availableScripts.first(where: { $0.id == requestedID })
-            ?? ExampleExcerpt.incidentManager.speechScript
+            ?? ExampleExcerpt.launchRetroProductManager.speechScript
         selectedScriptID = initialScript.id
         text = initialScript.text
         if initialScript.isCustom {
@@ -271,7 +275,7 @@ final class AppModel {
 
         if wasSelected {
             let fallback = customScripts.first.map { "custom:\($0.id.uuidString)" }
-                ?? ExampleExcerpt.incidentManager.speechScript.id
+                ?? ExampleExcerpt.launchRetroProductManager.speechScript.id
             selectScript(id: fallback)
         }
     }
@@ -604,7 +608,6 @@ final class AppModel {
 
     private enum Defaults {
         static let voiceID = "voiceID"
-        static let modelID = "modelID"
         static let deviceUID = "deviceUID"
         static let loopEnabled = "loopEnabled"
         static let outputVolume = "outputVolume"

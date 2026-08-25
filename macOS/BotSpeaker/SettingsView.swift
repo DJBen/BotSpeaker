@@ -32,11 +32,6 @@ struct SettingsView: View {
                         apiKeyEditor
                     }
                 }
-                DisclosureGroup("Advanced voice settings") {
-                    TextField("Voice ID", text: Binding(get: { model.voiceID }, set: { model.voiceID = $0 }))
-                        .textFieldStyle(.roundedBorder)
-                }
-                TextField("Model ID", text: Binding(get: { model.modelID }, set: { model.modelID = $0 }))
             }
 
             Section("Audio routing") {

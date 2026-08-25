@@ -31,7 +31,7 @@ The repository and its release downloads are public.
 - Speech generated at a 1.1× default speed for a more natural meeting pace
 - Sequential, sentence-aware speech generation for long scripts
 - Persistent audio-chunk caching per script, voice, model, and surrounding context
-- Three incident-review role templates with one-time speaker-name substitution
+- Three launch-retrospective role templates written for Eleven v3 audio tags, with one-time speaker-name substitution
 - One host-controlled, four-speaker **AI meeting assistant launch readiness** conversation
 - Side-by-side script library and playback workspace, plus named custom scripts
 - Play, pause, stop, seek, and progress-aware text highlighting

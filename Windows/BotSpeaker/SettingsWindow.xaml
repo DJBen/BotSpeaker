@@ -41,15 +41,6 @@
                 </Border>
             </Popup>
 
-            <DockPanel Margin="0,14,0,0">
-                <TextBlock Text="Voice ID" Width="110" VerticalAlignment="Center"/>
-                <TextBox x:Name="VoiceIdBox" Padding="3" LostFocus="OnVoiceIdChanged"/>
-            </DockPanel>
-            <DockPanel Margin="0,8,0,0">
-                <TextBlock Text="Model ID" Width="110" VerticalAlignment="Center"/>
-                <TextBox x:Name="ModelIdBox" Padding="3" LostFocus="OnModelIdChanged"/>
-            </DockPanel>
-
             <Separator Margin="0,16,0,12"/>
             <TextBlock Text="Audio routing" FontSize="15" FontWeight="Bold"/>
 

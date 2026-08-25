@@ -25,9 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Examples\incident-review-manager.txt" />
-    <EmbeddedResource Include="Examples\incident-review-technical-lead.txt" />
-    <EmbeddedResource Include="Examples\incident-review-support-lead.txt" />
+    <EmbeddedResource Include="Examples\launch-retro-product-manager.txt" />
+    <EmbeddedResource Include="Examples\launch-retro-engineering-lead.txt" />
+    <EmbeddedResource Include="Examples\launch-retro-support-lead.txt" />
   </ItemGroup>
 
   <ItemGroup>

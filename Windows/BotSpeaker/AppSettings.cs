@@ -7,7 +7,6 @@ namespace BotSpeaker;
 public sealed class AppSettings
 {
     public string VoiceId { get; set; } = "JBFqnCBsd6RMkjVDRZzb";
-    public string ModelId { get; set; } = "eleven_flash_v2_5";
     public string OutputDeviceId { get; set; } = "";
     public bool LoopEnabled { get; set; }
     public double OutputVolume { get; set; } = 1;
