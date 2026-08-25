@@ -143,6 +143,15 @@ public partial class MainWindow : Window
             HostMeetingButton.Visibility = inSession ? Visibility.Collapsed : Visibility.Visible;
             HostMeetingButton.IsEnabled = !_orchestration.IsBusy;
             bool isHosting = _orchestration.IsHost;
+            AttendeeListButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
+            if (isHosting)
+            {
+                UpdateAttendeePopup();
+            }
+            else
+            {
+                AttendeeListButton.IsChecked = false;
+            }
             HostedMeetingCodeText.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
             ShowHostedMeetingButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
             EndHostedMeetingButton.Visibility = isHosting ? Visibility.Visible : Visibility.Collapsed;
@@ -211,12 +220,14 @@ public partial class MainWindow : Window
             // navigated away from while its session is live.
             bool remote = _model.IsRemoteControlled;
             bool remoteClient = _orchestration.ActiveMode == OrchestrationMode.Remote;
-            bool libraryLocked = remoteClient || (inSession && !hostCanChooseRun);
+            // A hosting machine keeps its library clickable; navigating away asks
+            // to exit the hosted meeting instead of blocking (matching macOS).
+            bool libraryLocked = remoteClient;
             RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
             RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
             TemplateList.IsEnabled = !libraryLocked;
-            CustomList.IsEnabled = !libraryLocked && !inSession;
-            AddScriptButton.IsEnabled = !libraryLocked && !inSession;
+            CustomList.IsEnabled = !libraryLocked;
+            AddScriptButton.IsEnabled = !libraryLocked;
             RemoteModeButton.IsEnabled = !_orchestration.IsBusy;
             RemoteModeDetailText.Text = _orchestration.IsHost
                 ? "Exit host meeting to be able to join remotely."
@@ -484,7 +495,12 @@ public partial class MainWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
 
-        var item = new ListBoxItem { Content = panel, Tag = script.Id, IsEnabled = !_orchestration.IsActive };
+        var item = new ListBoxItem
+        {
+            Content = panel,
+            Tag = script.Id,
+            IsEnabled = !_orchestration.IsActive || _orchestration.IsHost,
+        };
         var menu = new ContextMenu();
         if (isTemplate)
         {
@@ -514,7 +530,7 @@ public partial class MainWindow : Window
         return item;
     }
 
-    private void OnTemplateListSelected(object sender, SelectionChangedEventArgs e)
+    private async void OnTemplateListSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressUiEvents) return;
         if (TemplateList.SelectedItem is ListBoxItem { Tag: string id })
@@ -533,7 +549,8 @@ public partial class MainWindow : Window
             }
             else
             {
-                if (_orchestration.IsActive) return;
+                if (_orchestration.IsActive && !_orchestration.IsHost) return;
+                if (!await ConfirmExitHostedMeetingIfNeededAsync()) { UpdateAll(); return; }
                 _showOrchestrationConfiguration = false;
                 _showRemoteMode = false;
                 _model.SelectScript(id);
@@ -541,30 +558,60 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnCustomListSelected(object sender, SelectionChangedEventArgs e)
+    private async void OnCustomListSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressUiEvents) return;
         if (CustomList.SelectedItem is ListBoxItem { Tag: string id })
         {
+            if (_orchestration.IsActive && !_orchestration.IsHost) return;
+            if (!await ConfirmExitHostedMeetingIfNeededAsync()) { UpdateAll(); return; }
             _showOrchestrationConfiguration = false;
             _showRemoteMode = false;
             _model.SelectScript(id);
         }
     }
 
+    /// <summary>
+    /// Navigating the library away from a hosted meeting asks to exit it first.
+    /// Returns false when the user keeps hosting (the caller re-syncs the UI).
+    /// </summary>
+    private async Task<bool> ConfirmExitHostedMeetingIfNeededAsync()
+    {
+        if (!_orchestration.IsHost) return true;
+        var confirmation = MessageBox.Show(
+            this,
+            "This ends the hosted meeting and disconnects its paired speakers.",
+            "Exit hosted meeting?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes) return false;
+        await _orchestration.LeaveSessionAsync();
+        _showOrchestrationSession = false;
+        return true;
+    }
+
+    private const string AttendeeDragFormat = "BotSpeakerAttendeeId";
+
     private void UpdateOrchestrationConfiguration()
     {
         _orchestration.ApplyDefaultTemplateVoices();
         SpeakerConfigurationList.Children.Clear();
+        var participantsById = _orchestration.Participants.ToDictionary(p => p.Id);
+        bool canArrange = _orchestration.IsHost
+            && _orchestration.SessionStatus == OrchestrationSessionStatus.Lobby
+            && _orchestration.Turns.Count == 0;
         foreach (var configuration in _orchestration.SpeakerConfigurations)
         {
-            var row = new Grid { Margin = new Thickness(2, 5, 2, 5) };
+            var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(185) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 12 });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             int slot = configuration.Slot;
+            int seatIndex = slot - 1;
             var editNameButton = new Button
             {
                 Content = new TextBlock
@@ -612,10 +659,12 @@ public partial class MainWindow : Window
             var voiceCombo = new ComboBox
             {
                 ItemsSource = _model.Voices,
-                DisplayMemberPath = nameof(ElevenLabsVoice.DisplayName),
+                ItemTemplate = (DataTemplate)FindResource("CompactVoiceItemTemplate"),
                 SelectedValuePath = nameof(ElevenLabsVoice.Id),
                 SelectedValue = configuration.VoiceId,
                 IsEnabled = !_model.IsLoadingVoices,
+                MinWidth = 120,
+                VerticalAlignment = VerticalAlignment.Center,
             };
             voiceCombo.SelectionChanged += (_, _) =>
             {
@@ -623,11 +672,177 @@ public partial class MainWindow : Window
                 _orchestration.UpdateSpeakerVoice(slot, voiceId);
                 RefreshOrchestrationPreview();
             };
-            Grid.SetColumn(voiceCombo, 3);
+            Grid.SetColumn(voiceCombo, 2);
             row.Children.Add(voiceCombo);
-            SpeakerConfigurationList.Children.Add(row);
+
+            var occupantId = _orchestration.SeatAssignments
+                .Where(pair => pair.Value == seatIndex)
+                .Select(pair => pair.Key)
+                .FirstOrDefault();
+            FrameworkElement seatView = occupantId is not null && participantsById.TryGetValue(occupantId, out var occupant)
+                ? BuildAttendeeChip(occupant, canDrag: canArrange)
+                : BuildVacantSeatChip();
+            seatView.VerticalAlignment = VerticalAlignment.Center;
+            seatView.HorizontalAlignment = HorizontalAlignment.Right;
+            Grid.SetColumn(seatView, 4);
+            row.Children.Add(seatView);
+
+            SpeakerConfigurationList.Children.Add(MakeAttendeeDropTarget(
+                row, canArrange, attendeeId => _orchestration.AssignParticipant(attendeeId, seatIndex)));
+        }
+
+        var benched = _orchestration.ParticipantOrder
+            .Where(id => !_orchestration.SeatAssignments.ContainsKey(id) && participantsById.ContainsKey(id))
+            .Select(id => participantsById[id])
+            .ToList();
+        if (benched.Count > 0)
+        {
+            SpeakerConfigurationList.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 6) });
+            var benchPanel = new StackPanel();
+            benchPanel.Children.Add(new TextBlock
+            {
+                Text = "Not in this meeting",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.Gray,
+            });
+            benchPanel.Children.Add(new TextBlock
+            {
+                Text = "Drag an attendee onto a speaker row to seat them, or drop them here to bench them.",
+                FontSize = 10,
+                Foreground = Brushes.Gray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6),
+            });
+            var chips = new WrapPanel();
+            foreach (var attendee in benched)
+            {
+                var chip = BuildAttendeeChip(attendee, canDrag: canArrange);
+                chip.Margin = new Thickness(0, 0, 6, 6);
+                chips.Children.Add(chip);
+            }
+            benchPanel.Children.Add(chips);
+            SpeakerConfigurationList.Children.Add(MakeAttendeeDropTarget(
+                benchPanel, canArrange, attendeeId => _orchestration.BenchParticipant(attendeeId)));
         }
         RefreshOrchestrationPreview();
+    }
+
+    private Border BuildAttendeeChip(OrchestrationParticipant attendee, bool canDrag)
+    {
+        string label = attendee.Id == _orchestration.LocalParticipantId
+            ? $"{attendee.DisplayName} (this PC)"
+            : attendee.DisplayName;
+        var chip = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x22, 0x80, 0x80, 0x80)),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(9, 3, 9, 3),
+            Child = new TextBlock
+            {
+                Text = "👤 " + label,
+                FontSize = 12,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 180,
+            },
+        };
+        if (!canDrag) return chip;
+        chip.Cursor = Cursors.SizeAll;
+        chip.ToolTip = "Drag onto a speaker row or the bench";
+        string id = attendee.Id;
+        chip.MouseMove += (_, args) =>
+        {
+            if (args.LeftButton != MouseButtonState.Pressed) return;
+            DragDrop.DoDragDrop(chip, new DataObject(AttendeeDragFormat, id), DragDropEffects.Move);
+        };
+        return chip;
+    }
+
+    private static Border BuildVacantSeatChip() => new()
+    {
+        BorderBrush = Brushes.Gray,
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(9, 3, 9, 3),
+        Child = new TextBlock
+        {
+            Text = "Vacant seat",
+            FontSize = 12,
+            FontStyle = FontStyles.Italic,
+            Foreground = Brushes.Gray,
+        },
+    };
+
+    private static Border MakeAttendeeDropTarget(UIElement child, bool isEnabled, Action<string> onDrop)
+    {
+        var target = new Border
+        {
+            Child = child,
+            CornerRadius = new CornerRadius(6),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(4, 6, 4, 6),
+            AllowDrop = isEnabled,
+        };
+        if (!isEnabled) return target;
+        var highlight = new SolidColorBrush(Color.FromArgb(0x33, 0x2E, 0x6B, 0xD6));
+        void HandleDragOver(object _, DragEventArgs args)
+        {
+            bool hasAttendee = args.Data.GetDataPresent(AttendeeDragFormat);
+            args.Effects = hasAttendee ? DragDropEffects.Move : DragDropEffects.None;
+            args.Handled = true;
+            if (hasAttendee) target.Background = highlight;
+        }
+        target.DragEnter += HandleDragOver;
+        target.DragOver += HandleDragOver;
+        target.DragLeave += (_, _) => target.Background = Brushes.Transparent;
+        target.Drop += (_, args) =>
+        {
+            target.Background = Brushes.Transparent;
+            if (args.Data.GetData(AttendeeDragFormat) is string attendeeId) onDrop(attendeeId);
+            args.Handled = true;
+        };
+        return target;
+    }
+
+    private void UpdateAttendeePopup()
+    {
+        var attendees = _orchestration.Participants
+            .Where(p => p.Id != _orchestration.LocalParticipantId)
+            .ToList();
+        AttendeePopupList.Children.Clear();
+        AttendeePopupEmptyText.Visibility = attendees.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        AttendeePopupEmptyText.Text =
+            $"No remote speakers yet. Share code {_orchestration.PairingCode} to invite this meeting's speakers.";
+        foreach (var attendee in attendees)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = attendee.IsRecentlyConnected ? Brushes.LimeGreen : Brushes.Orange,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+            DockPanel.SetDock(dot, Dock.Left);
+            row.Children.Add(dot);
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock
+            {
+                Text = attendee.DisplayName,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            text.Children.Add(new TextBlock
+            {
+                Text = attendee.IsRecentlyConnected ? "Connected" : "Connection lost",
+                FontSize = 10,
+                Foreground = Brushes.Gray,
+            });
+            row.Children.Add(text);
+            AttendeePopupList.Children.Add(row);
+        }
     }
 
     private void RefreshOrchestrationPreview()
@@ -813,7 +1028,11 @@ public partial class MainWindow : Window
         OnJoinMeetingClick(sender, new RoutedEventArgs());
     }
 
-    private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);
+    private async void OnAddScriptClick(object sender, RoutedEventArgs e)
+    {
+        if (!await ConfirmExitHostedMeetingIfNeededAsync()) return;
+        OpenScriptEditor(forNewScript: true);
+    }
 
     private void OpenScriptEditor(bool forNewScript)
     {

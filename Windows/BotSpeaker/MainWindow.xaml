@@ -5,6 +5,24 @@
         Icon="Assets/BotSpeaker.png"
         Width="1000" Height="720"
         MinWidth="920" MinHeight="620">
+    <Window.Resources>
+        <!-- Speaker voice picker: the closed box shows just the given name, the
+             open dropdown shows the full name with descriptors. -->
+        <DataTemplate x:Key="CompactVoiceItemTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="VoiceGlyph" Text="🗣 " Visibility="Collapsed"/>
+                <TextBlock x:Name="VoiceLabel" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger
+                    Binding="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType=ComboBoxItem}}"
+                    Value="{x:Null}">
+                    <Setter TargetName="VoiceGlyph" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="VoiceLabel" Property="Text" Value="{Binding ShortName}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -19,6 +37,22 @@
                     <TextBlock x:Name="HostedMeetingCodeText" MinWidth="150" Margin="0,0,8,0"
                                FontFamily="Consolas" FontSize="15" FontWeight="Bold"
                                VerticalAlignment="Center" Visibility="Collapsed"/>
+                    <ToggleButton x:Name="AttendeeListButton" Content="👥" Padding="10,5" Margin="0,0,6,0"
+                                  Visibility="Collapsed" ToolTip="Remotely joined attendees"/>
+                    <Popup x:Name="AttendeePopup" PlacementTarget="{Binding ElementName=AttendeeListButton}"
+                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                           IsOpen="{Binding IsChecked, ElementName=AttendeeListButton, Mode=TwoWay}">
+                        <Border Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                BorderBrush="#40808080" BorderThickness="1" CornerRadius="8"
+                                Padding="12" Margin="0,4,0,0" MinWidth="240" MaxWidth="300">
+                            <StackPanel>
+                                <TextBlock Text="Attendees" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <StackPanel x:Name="AttendeePopupList"/>
+                                <TextBlock x:Name="AttendeePopupEmptyText" FontSize="11" Foreground="Gray"
+                                           TextWrapping="Wrap" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <Button x:Name="ShowHostedMeetingButton" Content="Show" Padding="10,5" Margin="0,0,6,0"
                             Visibility="Collapsed" ToolTip="Show hosted meeting" Click="OnShowHostedMeetingClick"/>
                     <Button x:Name="EndHostedMeetingButton" Content="End" Padding="10,5"

@@ -112,8 +112,10 @@ public partial class OrchestrationView : UserControl
         DoneButton.Visibility = status is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped
             ? Visibility.Visible
             : Visibility.Collapsed;
+        // In the lobby the button navigates back to the script configuration
+        // page (the meeting keeps hosting); once running it leaves the session.
         LeaveButton.Visibility = Visibility.Visible;
-        LeaveButton.Content = status == OrchestrationSessionStatus.Lobby ? "Quit" : "Leave";
+        LeaveButton.Content = status == OrchestrationSessionStatus.Lobby ? "‹ Back" : "Leave";
     }
 
     private void RenderMeetingScriptHighlight()
@@ -409,7 +411,7 @@ public partial class OrchestrationView : UserControl
     {
         if (_controller.IsHost && _controller.SessionStatus == OrchestrationSessionStatus.Lobby)
         {
-            MeetingViewDismissRequested?.Invoke(this, EventArgs.Empty);
+            ChooseAnotherScriptRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
         await _controller.LeaveSessionAsync();

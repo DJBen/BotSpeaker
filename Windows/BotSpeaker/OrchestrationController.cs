@@ -66,6 +66,13 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private List<string> _participantOrder = [];
     public List<string> ParticipantOrder { get => _participantOrder; private set => Set(ref _participantOrder, value); }
 
+    // Attendee → seat index. Seats without an entry render as vacant; attendees
+    // without an entry sit on the bench ("Not in this meeting"). Explicitly
+    // benched attendees are tracked so a poll doesn't auto-reseat them.
+    private Dictionary<string, int> _seatAssignments = [];
+    public IReadOnlyDictionary<string, int> SeatAssignments => _seatAssignments;
+    private readonly HashSet<string> _benchedParticipantIds = [];
+
     private List<OrchestrationTurn> _turns = [];
     public List<OrchestrationTurn> Turns { get => _turns; private set => Set(ref _turns, value); }
 
@@ -215,6 +222,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             ? template.Id
             : null;
         ApplyDefaultTemplateVoices();
+        SyncSeatAssignments();
         NotifySpeakerConfigurationChanged();
     }
 
@@ -575,7 +583,86 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         if (destination < 0 || destination >= order.Count) return;
         (order[source], order[destination]) = (order[destination], order[source]);
         ParticipantOrder = order;
+        AssignSeatsDenselyFromOrder();
     }
+
+    public void AssignParticipant(string id, int seat)
+    {
+        if (Turns.Count > 0
+            || !ParticipantOrder.Contains(id)
+            || seat < 0
+            || seat >= SelectedTemplate.SpeakerCount) return;
+        var occupant = _seatAssignments.FirstOrDefault(pair => pair.Value == seat).Key;
+        if (occupant == id) return;
+        if (occupant is not null)
+        {
+            // The displaced occupant takes the dragged attendee's old seat, or
+            // the bench when the attendee came from the bench.
+            if (_seatAssignments.TryGetValue(id, out int previousSeat))
+            {
+                _seatAssignments[occupant] = previousSeat;
+            }
+            else
+            {
+                _seatAssignments.Remove(occupant);
+                _benchedParticipantIds.Add(occupant);
+            }
+        }
+        _seatAssignments[id] = seat;
+        _benchedParticipantIds.Remove(id);
+        RebuildParticipantOrderFromSeats();
+    }
+
+    public void BenchParticipant(string id)
+    {
+        if (Turns.Count > 0 || !_seatAssignments.Remove(id)) return;
+        _benchedParticipantIds.Add(id);
+        RebuildParticipantOrderFromSeats();
+    }
+
+    private void RebuildParticipantOrderFromSeats()
+    {
+        var seated = _seatAssignments.OrderBy(pair => pair.Value).Select(pair => pair.Key);
+        var benched = ParticipantOrder.Where(id => !_seatAssignments.ContainsKey(id));
+        ParticipantOrder = seated.Concat(benched).ToList();
+        NotifySeatAssignmentsChanged();
+    }
+
+    private void SyncSeatAssignments()
+    {
+        var validIds = ParticipantOrder.ToHashSet();
+        int seatCount = SelectedTemplate.SpeakerCount;
+        _seatAssignments = _seatAssignments
+            .Where(pair => validIds.Contains(pair.Key) && pair.Value < seatCount)
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+        _benchedParticipantIds.IntersectWith(validIds);
+        foreach (var id in ParticipantOrder)
+        {
+            if (_seatAssignments.ContainsKey(id) || _benchedParticipantIds.Contains(id)) continue;
+            int? seat = Enumerable.Range(0, seatCount)
+                .Where(candidate => !_seatAssignments.ContainsValue(candidate))
+                .Select(candidate => (int?)candidate)
+                .FirstOrDefault();
+            if (seat is not int freeSeat) break;
+            _seatAssignments[id] = freeSeat;
+        }
+        RebuildParticipantOrderFromSeats();
+    }
+
+    private void AssignSeatsDenselyFromOrder()
+    {
+        int seatCount = SelectedTemplate.SpeakerCount;
+        _seatAssignments = ParticipantOrder
+            .Take(seatCount)
+            .Select((id, index) => (id, index))
+            .ToDictionary(pair => pair.id, pair => pair.index);
+        _benchedParticipantIds.Clear();
+        _benchedParticipantIds.UnionWith(ParticipantOrder.Skip(seatCount));
+        NotifySeatAssignmentsChanged();
+    }
+
+    private void NotifySeatAssignmentsChanged() =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SeatAssignments)));
 
     public async Task PrepareMeetingAsync()
     {
@@ -590,7 +677,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     $"This script has {parsedTurns.Count} turns. Shorten it to {MaximumTurnCount} turns or fewer.");
             }
             var connectedById = Participants.Where(p => p.IsRecentlyConnected).ToDictionary(p => p.Id);
-            var assigned = ParticipantOrder
+            var assigned = _seatAssignments
+                .OrderBy(pair => pair.Value)
+                .Select(pair => pair.Key)
                 .Where(connectedById.ContainsKey)
                 .Select(id => connectedById[id])
                 .Take(template.SpeakerCount)
@@ -1027,6 +1116,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         PreparationStatus = "Waiting for the host script";
         PreparationError = null;
         ParticipantOrder = [];
+        _seatAssignments = [];
+        _benchedParticipantIds.Clear();
         SessionStatus = OrchestrationSessionStatus.Lobby;
         _previousSessionStatus = OrchestrationSessionStatus.Lobby;
         PairingOpen = true;
@@ -1196,6 +1287,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             if (!order.Contains(participant.Id)) order.Add(participant.Id);
         }
         if (!order.SequenceEqual(ParticipantOrder)) ParticipantOrder = order;
+        SyncSeatAssignments();
     }
 
     private void ApplyTurns(List<FirestoreDocument> documents)
@@ -1902,6 +1994,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         PairingOpen = false;
         Participants = [];
         ParticipantOrder = [];
+        _seatAssignments = [];
+        _benchedParticipantIds.Clear();
         Turns = [];
         ActiveTurnIndex = -1;
         StartedAt = null;

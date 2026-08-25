@@ -204,6 +204,9 @@ public sealed record ElevenLabsVoice(
             .Where(v => !string.IsNullOrEmpty(v)));
 
     public string DisplayName => Detail.Length == 0 ? Name : $"{Name} — {Detail}";
+
+    /// <summary>ElevenLabs voice names often embed descriptors after " - "; keep just the given name.</summary>
+    public string ShortName => Name.Split(" — ")[0].Split(" - ")[0].Trim();
 }
 
 public sealed record TimedTextSpan(double StartTime, double EndTime, int Location, int Length);
