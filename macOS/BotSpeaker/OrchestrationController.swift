@@ -5,6 +5,7 @@ import FirebaseCore
 import FirebaseFirestore
 import Foundation
 import Observation
+import OSLog
 import UniformTypeIdentifiers
 
 private struct PersistedOrchestratedSpeakerConfiguration: Codable {
@@ -81,6 +82,14 @@ final class OrchestrationController {
     @ObservationIgnored private var prefetchTask: Task<Void, Error>?
     @ObservationIgnored private var prefetchObserverTask: Task<Void, Never>?
     @ObservationIgnored private var defaultVoicesAppliedForTemplateID: String?
+    // Notice-level so `log show` finds these without extra logging config.
+    @ObservationIgnored private let log = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "BotSpeaker",
+        category: "Orchestration"
+    )
+    @ObservationIgnored private var assignmentStallTicks = 0
+    @ObservationIgnored private var stallRecoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var lastServerHealAt: Date?
 
     init(model: AppModel) {
         self.model = model
@@ -338,7 +347,7 @@ final class OrchestrationController {
               let sessionID,
               sessionStatus == .completed || sessionStatus == .stopped else { return }
         await performBusyOperation {
-            self.stopRunLocally()
+            self.stopRunLocally(reason: "host began next meeting")
 
             if !self.turns.isEmpty {
                 let deletionBatch = self.database.batch()
@@ -939,11 +948,19 @@ final class OrchestrationController {
         hostUID: String,
         local: LocalSpeaker
     ) {
+        log.notice("Activating session for room \(roomID, privacy: .public) as \(mode == .host ? "host" : "remote", privacy: .public)")
         activeMode = mode
         sessionID = roomID
         pairingCode = code
         pairingCodeInput = code
         self.hostUID = hostUID
+        // A stale revision from a prior session would make the next room's
+        // first prepare look like a replan and wipe fresh assignments.
+        planRevision = nil
+        stallRecoveryTask?.cancel()
+        stallRecoveryTask = nil
+        assignmentStallTicks = 0
+        lastServerHealAt = nil
         localSegments = []
         localScriptTitle = meetingScriptTitle
         localVoiceName = local.voiceName
@@ -968,11 +985,19 @@ final class OrchestrationController {
 
     private func attachListeners(roomID: String) {
         removeListeners()
+        log.notice("Attaching listeners for room \(roomID, privacy: .public)")
         roomListener = roomReference(roomID).addSnapshotListener { [weak self] snapshot, error in
             Task { @MainActor in
                 guard let self else { return }
-                if let error { self.errorMessage = error.localizedDescription; return }
-                guard let data = snapshot?.data() else { return }
+                if let error {
+                    self.log.error("Room listener error: \(error.localizedDescription, privacy: .public)")
+                    self.errorMessage = error.localizedDescription
+                    return
+                }
+                guard let data = snapshot?.data() else {
+                    self.log.notice("Room listener delivered no data (fromCache: \(snapshot?.metadata.isFromCache == true, privacy: .public))")
+                    return
+                }
                 self.applyRoom(data)
             }
         }
@@ -982,7 +1007,11 @@ final class OrchestrationController {
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
                     guard let self else { return }
-                    if let error { self.errorMessage = error.localizedDescription; return }
+                    if let error {
+                        self.log.error("Participants listener error: \(error.localizedDescription, privacy: .public)")
+                        self.errorMessage = error.localizedDescription
+                        return
+                    }
                     self.applyParticipants(snapshot?.documents ?? [])
                 }
             }
@@ -992,25 +1021,35 @@ final class OrchestrationController {
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
                     guard let self else { return }
-                    if let error { self.errorMessage = error.localizedDescription; return }
-                    self.applyTurns(snapshot?.documents ?? [])
+                    if let error {
+                        self.log.error("Turns listener error: \(error.localizedDescription, privacy: .public)")
+                        self.errorMessage = error.localizedDescription
+                        return
+                    }
+                    let documents = snapshot?.documents ?? []
+                    self.log.notice("Turns listener delivered \(documents.count) docs (fromCache: \(snapshot?.metadata.isFromCache == true, privacy: .public), pendingWrites: \(snapshot?.metadata.hasPendingWrites == true, privacy: .public))")
+                    self.applyTurns(documents)
                 }
             }
     }
 
     private func applyRoom(_ data: [String: Any]) {
         if data["groupClosed"] as? Bool == true {
+            log.notice("Room reports groupClosed; resetting local session")
             clearPersistedSession()
             resetLocalSession()
             return
         }
         let incomingPlanRevision = data["planRevision"] as? String
         if let planRevision, let incomingPlanRevision, planRevision != incomingPlanRevision {
-            stopRunLocally()
+            stopRunLocally(reason: "plan revision changed \(planRevision) -> \(incomingPlanRevision)")
         }
         planRevision = incomingPlanRevision
         previousSessionStatus = sessionStatus
         sessionStatus = OrchestrationSessionStatus(rawValue: data["status"] as? String ?? "") ?? .lobby
+        if sessionStatus != previousSessionStatus {
+            log.notice("Session status \(self.previousSessionStatus.rawValue, privacy: .public) -> \(self.sessionStatus.rawValue, privacy: .public)")
+        }
         pairingOpen = data["pairingOpen"] as? Bool ?? false
         activeTurnIndex = data["activeTurnIndex"] as? Int ?? -1
         startedAt = Self.date(from: data["startedAt"])
@@ -1076,6 +1115,7 @@ final class OrchestrationController {
     }
 
     private func applyTurns(_ documents: [QueryDocumentSnapshot]) {
+        let rawCount = documents.count
         turns = documents.compactMap { document in
             let data = document.data()
             guard let participantUID = data["participantUID"] as? String,
@@ -1100,6 +1140,9 @@ final class OrchestrationController {
                 error: data["error"] as? String
             )
         }
+        if turns.count != rawCount {
+            log.error("applyTurns dropped \(rawCount - self.turns.count) of \(rawCount) docs that failed to parse")
+        }
         configureLocalSegmentsFromTurns()
         if let executionTurnID = activeExecutionTurnID,
            let executionTurn = turns.first(where: { $0.id == executionTurnID }),
@@ -1123,19 +1166,28 @@ final class OrchestrationController {
     }
 
     private func configureLocalSegmentsFromTurns() {
-        guard let uid = userID else { return }
+        guard let uid = userID else {
+            log.error("configureLocalSegments: no signed-in userID")
+            return
+        }
         let assignedTurns = turns
             .filter { $0.participantUID == uid }
             .sorted { $0.segmentIndex < $1.segmentIndex }
         guard !assignedTurns.isEmpty else {
-            if !localSegments.isEmpty { stopRunLocally() }
+            if !localSegments.isEmpty {
+                stopRunLocally(reason: "turns update (\(turns.count) docs) has no turns for this participant")
+            }
             return
         }
         guard
-              assignedTurns.allSatisfy({ $0.text?.isEmpty == false }) else { return }
+              assignedTurns.allSatisfy({ $0.text?.isEmpty == false }) else {
+            log.notice("configureLocalSegments: waiting, \(assignedTurns.filter { $0.text?.isEmpty != false }.count) of \(assignedTurns.count) assigned turns still lack text")
+            return
+        }
         let newSegments = assignedTurns.compactMap(\.text)
         guard newSegments != localSegments else { return }
 
+        log.notice("configureLocalSegments: applying \(newSegments.count) segments (was \(self.localSegments.count)) for script \(assignedTurns[0].scriptTitle, privacy: .public)")
         cancelPrefetch()
         localSegments = newSegments
         localScriptTitle = assignedTurns[0].scriptTitle
@@ -1163,6 +1215,7 @@ final class OrchestrationController {
         activeExecutionTurnID = turn.id
         hasReportedPlaybackStart = false
         let text = localSegments[turn.segmentIndex]
+        log.notice("Executing turn \(turn.index + 1) of \(self.turns.count) (segment \(turn.segmentIndex + 1))")
         model?.updateRemoteControlStatus("Preparing turn \(turn.index + 1) of \(turns.count)")
 
         turnExecutionTask?.cancel()
@@ -1213,6 +1266,7 @@ final class OrchestrationController {
 
     private func startBackgroundPrefetch(_ segmentIndex: Int) {
         guard localSegments.indices.contains(segmentIndex), prefetchTask == nil else { return }
+        log.notice("Prefetch starting for segment \(segmentIndex + 1) of \(self.localSegments.count)")
         preparationError = nil
         preparationStatus = segmentIndex == 0
             ? "Preparing paragraph 1 of \(localSegments.count)…"
@@ -1232,11 +1286,13 @@ final class OrchestrationController {
                 self.clearPrefetchTask()
                 self.scheduleNextPrefetch()
             } catch is CancellationError {
+                self.log.notice("Prefetch cancelled at segment \(segmentIndex + 1)")
                 if self.prefetchSegmentIndex == segmentIndex {
                     self.clearPrefetchTask()
                 }
             } catch {
                 guard self.prefetchSegmentIndex == segmentIndex else { return }
+                self.log.error("Prefetch failed at segment \(segmentIndex + 1): \(error.localizedDescription, privacy: .public); retrying in 12s")
                 self.clearPrefetchTask()
                 self.preparationError = error.localizedDescription
                 self.preparationStatus = "Preparation failed; retrying…"
@@ -1292,6 +1348,7 @@ final class OrchestrationController {
             contiguousCount += 1
         }
         preparedLocalSegmentCount = contiguousCount
+        log.notice("Prefetch prepared segment \(segmentIndex + 1); \(contiguousCount) of \(self.localSegments.count) ready")
         preparationError = nil
         preparationStatus = contiguousCount == localSegments.count
             ? "All paragraphs prepared"
@@ -1326,6 +1383,7 @@ final class OrchestrationController {
         } catch {
             // A denied write here races a host-side replan; the heartbeat
             // republishes the same state within 30 seconds, so stay quiet.
+            log.error("publishPreparationState write failed: \(error.localizedDescription, privacy: .public)")
             if !isStaleTurnWrite(error) {
                 errorMessage = error.localizedDescription
             }
@@ -1608,12 +1666,65 @@ final class OrchestrationController {
                 guard let self else { return }
                 self.maybeExecuteActiveTurn()
                 self.scheduleNextPrefetch()
+                self.healAssignmentStallIfNeeded()
             }
     }
 
     private func stopExecutionWatchdog() {
         executionWatchdogTimer?.cancel()
         executionWatchdogTimer = nil
+    }
+
+    /// Snapshot listeners are the only source of turn assignments on macOS, and
+    /// a missed or transiently-empty delivery otherwise strands the client at
+    /// zero prepared paragraphs forever: turn documents never change again
+    /// after the host prepares, so no later event re-populates the local
+    /// segments. Detect the stall (the host's prepare stamped our participant
+    /// document with a segment count that local state never matched) and
+    /// re-converge from whatever survives locally, or from the server.
+    private func healAssignmentStallIfNeeded() {
+        guard isActive, localSegments.isEmpty, stallRecoveryTask == nil else {
+            assignmentStallTicks = 0
+            return
+        }
+        let uid = userID
+        let assignedByHost = participants.contains { $0.id == uid && $0.segmentCount > 0 }
+        let assignedInTurns = turns.contains { $0.participantUID == uid && $0.text?.isEmpty == false }
+        guard assignedByHost || assignedInTurns else {
+            assignmentStallTicks = 0
+            return
+        }
+        assignmentStallTicks += 1
+        guard assignmentStallTicks >= 5 else { return }
+        assignmentStallTicks = 0
+
+        if assignedInTurns {
+            log.notice("Self-heal: local segments empty but \(self.turns.count) held turns include this participant; reapplying")
+            configureLocalSegmentsFromTurns()
+            return
+        }
+        // A benched participant keeps a stale segmentCount on its document, so
+        // space out server fetches instead of retrying every five seconds.
+        if let lastServerHealAt, Date().timeIntervalSince(lastServerHealAt) < 30 { return }
+        guard let sessionID else { return }
+        lastServerHealAt = Date()
+        log.notice("Self-heal: participant document reports assigned segments but no turns arrived; re-attaching listeners and fetching turns for room \(sessionID, privacy: .public)")
+        attachListeners(roomID: sessionID)
+        stallRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.stallRecoveryTask = nil }
+            do {
+                let snapshot = try await self.roomReference(sessionID)
+                    .collection("turns")
+                    .order(by: "index")
+                    .getDocuments(source: .server)
+                guard self.sessionID == sessionID else { return }
+                self.log.notice("Self-heal: fetched \(snapshot.documents.count) turn docs from server")
+                self.applyTurns(snapshot.documents)
+            } catch {
+                self.log.error("Self-heal turns fetch failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func performBusyOperation(_ operation: @escaping () async throws -> Void) async {
@@ -1660,9 +1771,14 @@ final class OrchestrationController {
         activeExecutionTurnID = nil
         hasReportedPlaybackStart = false
         planRevision = nil
+        stallRecoveryTask?.cancel()
+        stallRecoveryTask = nil
+        assignmentStallTicks = 0
+        lastServerHealAt = nil
     }
 
-    private func stopRunLocally() {
+    private func stopRunLocally(reason: String) {
+        log.notice("stopRunLocally (\(reason, privacy: .public)): dropping \(self.localSegments.count) local segments, \(self.preparedLocalSegmentCount) prepared")
         cancelPrefetch()
         turnExecutionTask?.cancel()
         turnExecutionTask = nil
