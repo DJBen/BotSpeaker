@@ -49,10 +49,11 @@ struct OrchestrationView: View {
 
             HSplitView {
                 participantsPanel
-                    .frame(minWidth: 260, idealWidth: 300)
+                    .frame(minWidth: 260, idealWidth: 300, maxHeight: .infinity, alignment: .top)
                 timelinePanel
-                    .frame(minWidth: 290, idealWidth: 360)
+                    .frame(minWidth: 290, idealWidth: 360, maxHeight: .infinity, alignment: .top)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
 
             if let error = controller.errorMessage ?? exportError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
