@@ -323,8 +323,10 @@ struct OrchestrationView: View {
             VStack(spacing: 6) {
                 Text(controller.sessionStatus.displayName)
                     .font(.title.bold())
-                Text(model.remoteControlStatus)
-                    .foregroundStyle(.secondary)
+                if !model.remoteControlStatus.isEmpty {
+                    Text(model.remoteControlStatus)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             GroupBox {

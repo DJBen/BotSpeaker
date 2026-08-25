@@ -383,7 +383,7 @@ final class OrchestrationController {
             self.activeTurnIndex = -1
             self.startedAt = nil
             self.endedAt = nil
-            self.model?.updateRemoteControlStatus("Paired and waiting for the host")
+            self.model?.updateRemoteControlStatus("")
         }
     }
 
@@ -886,7 +886,7 @@ final class OrchestrationController {
         pairingOpen = true
         errorMessage = nil
         persistSession(roomID: roomID, code: code, mode: mode)
-        model?.activateRemoteControl(status: "Paired and waiting for the host")
+        model?.activateRemoteControl(status: "")
         beginOrchestrationActivity()
         attachListeners(roomID: roomID)
         startHeartbeat(roomID: roomID)
@@ -949,7 +949,7 @@ final class OrchestrationController {
 
         switch sessionStatus {
         case .lobby:
-            model?.updateRemoteControlStatus("Paired and waiting for the host")
+            model?.updateRemoteControlStatus("")
         case .running:
             model?.updateRemoteControlStatus("Remote control active")
             if previousSessionStatus == .paused,
