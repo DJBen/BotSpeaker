@@ -155,22 +155,17 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 ToolbarItem(placement: .navigation) {
                     if orchestration.isHost {
-                        HStack(spacing: 7) {
-                            Text("Parent code")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(.secondary)
-                            Text(orchestration.pairingCode)
-                                .font(.headline.monospacedDigit().bold())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Color.accentColor,
-                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                )
-                        }
-                        .fixedSize()
-                        .help("Hosted meeting code \(orchestration.pairingCode)")
+                        Text(orchestration.pairingCode)
+                            .font(.headline.monospacedDigit().bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(
+                                Color.accentColor,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                            .fixedSize()
+                            .help("Hosted meeting code \(orchestration.pairingCode)")
                     } else if !orchestration.isActive {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
