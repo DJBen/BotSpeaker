@@ -170,11 +170,15 @@ struct MainWindowView: View {
                 } else if !orchestration.isActive {
                     ToolbarItem(placement: .primaryAction) {
                         Button(action: startHostGroup) {
-                            if orchestration.isBusy && orchestration.setupMode == .host {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Host Meeting", systemImage: "person.3.fill")
+                            HStack(spacing: 6) {
+                                if orchestration.isBusy && orchestration.setupMode == .host {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "person.3.fill")
+                                }
+                                Text("Host Meeting")
                             }
+                            .fixedSize()
                         }
                         .disabled(orchestration.isBusy)
                         .help("Create a reusable pairing code for orchestrated scripts")
