@@ -32,7 +32,8 @@ struct MainWindowView: View {
     @State private var isShowingRemoteMode = false
     @State private var detailPath: [DetailDestination] = []
     @State private var hostMeetingError: String?
-    @State private var isConfirmingExitHostForRemoteMode = false
+    @State private var pendingHostExitNavigation: (() -> Void)?
+    @State private var isShowingAttendeeList = false
 
     var body: some View {
         Group {
@@ -41,32 +42,35 @@ struct MainWindowView: View {
                     ScriptLibrarySidebar(
                         model: model,
                         onAdd: {
-                            guard !isOrchestrationFlowPresented else { return }
+                            guard !orchestration.isActive else { return }
                             isShowingRemoteMode = false
                             isShowingOrchestrationConfiguration = false
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
                         onEdit: { scriptID in
-                            guard !isOrchestrationFlowPresented else { return }
-                            isShowingRemoteMode = false
-                            isShowingOrchestrationConfiguration = false
-                            model.selectScript(id: scriptID)
-                            model.prepareScriptEditor()
-                            isShowingScriptEditor = true
+                            navigateExitingHostIfNeeded {
+                                isShowingRemoteMode = false
+                                isShowingOrchestrationConfiguration = false
+                                model.selectScript(id: scriptID)
+                                model.prepareScriptEditor()
+                                isShowingScriptEditor = true
+                            }
                         },
                         onDelete: { model.deleteCustomScript(id: $0) },
-                        onReplicate: {
-                            guard !isOrchestrationFlowPresented else { return }
-                            isShowingRemoteMode = false
-                            isShowingOrchestrationConfiguration = false
-                            model.selectScript(id: $0)
+                        onReplicate: { scriptID in
+                            navigateExitingHostIfNeeded {
+                                isShowingRemoteMode = false
+                                isShowingOrchestrationConfiguration = false
+                                model.selectScript(id: scriptID)
+                            }
                         },
-                        onSelectScript: {
-                            guard !isOrchestrationFlowPresented else { return }
-                            isShowingRemoteMode = false
-                            isShowingOrchestrationConfiguration = false
-                            model.selectScript(id: $0)
+                        onSelectScript: { scriptID in
+                            navigateExitingHostIfNeeded {
+                                isShowingRemoteMode = false
+                                isShowingOrchestrationConfiguration = false
+                                model.selectScript(id: scriptID)
+                            }
                         },
                         selectedOrchestrationTemplateID: isShowingOrchestrationConfiguration
                             ? orchestration.selectedTemplate.id
@@ -74,12 +78,19 @@ struct MainWindowView: View {
                         isRemoteModeSelected: isShowingRemoteMode,
                         onOpenRemoteMode: requestOpenRemoteMode,
                         onOpenOrchestratedMeeting: { template in
-                            guard !isOrchestrationFlowPresented else { return }
-                            isShowingRemoteMode = false
-                            orchestration.selectTemplate(template)
-                            isShowingOrchestrationConfiguration = true
+                            if orchestration.isHost, canSwitchTemplateWhileHosting {
+                                isShowingRemoteMode = false
+                                dismissOrchestrationFlow()
+                                orchestration.selectTemplate(template)
+                                isShowingOrchestrationConfiguration = true
+                            } else {
+                                navigateExitingHostIfNeeded {
+                                    isShowingRemoteMode = false
+                                    orchestration.selectTemplate(template)
+                                    isShowingOrchestrationConfiguration = true
+                                }
+                            }
                         },
-                        isInteractionDisabled: isOrchestrationFlowPresented,
                         orchestration: orchestration
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
@@ -112,7 +123,10 @@ struct MainWindowView: View {
                                     onExit: dismissOrchestrationFlow
                                 )
                                 .navigationTitle("Orchestrated meeting")
-                                .navigationBarBackButtonHidden(orchestration.isActive)
+                                .navigationBarBackButtonHidden(
+                                    orchestration.sessionStatus == .running
+                                        || orchestration.sessionStatus == .paused
+                                )
                             }
                         }
                     }
@@ -147,11 +161,11 @@ struct MainWindowView: View {
         } message: {
             Text(hostMeetingError ?? "Unknown error")
         }
-        .alert("Exit hosted meeting?", isPresented: $isConfirmingExitHostForRemoteMode) {
-            Button("Cancel", role: .cancel) {}
-            Button("Exit Hosted Meeting", role: .destructive, action: exitHostAndOpenRemoteMode)
+        .alert("Exit hosted meeting?", isPresented: hostExitNavigationIsPresented) {
+            Button("Cancel", role: .cancel) { pendingHostExitNavigation = nil }
+            Button("Exit Hosted Meeting", role: .destructive, action: confirmHostExitNavigation)
         } message: {
-            Text("This ends the hosted meeting and disconnects its paired speakers. You can then join another meeting in Remote Mode.")
+            Text("This ends the hosted meeting and disconnects its paired attendees.")
         }
         .toolbar {
             if model.hasAPIKey {
@@ -165,6 +179,9 @@ struct MainWindowView: View {
                         ToolbarItem(placement: .primaryAction) {
                             hostedMeetingCodeBadge
                         }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        attendeeListButton
                     }
                     ToolbarItem(placement: .primaryAction) {
                         endHostedMeetingButton
@@ -232,7 +249,7 @@ struct MainWindowView: View {
 
     private func requestOpenRemoteMode() {
         if orchestration.isHost {
-            isConfirmingExitHostForRemoteMode = true
+            pendingHostExitNavigation = openRemoteMode
         } else {
             openRemoteMode()
         }
@@ -244,11 +261,37 @@ struct MainWindowView: View {
         isShowingRemoteMode = true
     }
 
-    private func exitHostAndOpenRemoteMode() {
+    /// Runs a sidebar navigation directly when nothing is paired, or after a
+    /// confirmed exit from the hosted meeting. Remote clients keep their
+    /// navigation locked until they disconnect.
+    private func navigateExitingHostIfNeeded(_ navigate: @escaping () -> Void) {
+        if orchestration.isHost {
+            pendingHostExitNavigation = navigate
+        } else if !orchestration.isActive {
+            navigate()
+        }
+    }
+
+    private func confirmHostExitNavigation() {
+        let navigate = pendingHostExitNavigation
+        pendingHostExitNavigation = nil
         Task {
             await orchestration.leaveSession()
-            openRemoteMode()
+            navigate?()
         }
+    }
+
+    private var hostExitNavigationIsPresented: Binding<Bool> {
+        Binding(
+            get: { pendingHostExitNavigation != nil },
+            set: { if !$0 { pendingHostExitNavigation = nil } }
+        )
+    }
+
+    private var canSwitchTemplateWhileHosting: Bool {
+        (orchestration.sessionStatus == .lobby && orchestration.turns.isEmpty)
+            || orchestration.sessionStatus == .completed
+            || orchestration.sessionStatus == .stopped
     }
 
     private func startHostGroup() {
@@ -289,6 +332,18 @@ struct MainWindowView: View {
             .help("Hosted meeting code \(orchestration.pairingCode)")
     }
 
+    private var attendeeListButton: some View {
+        Button {
+            isShowingAttendeeList.toggle()
+        } label: {
+            Image(systemName: "person.3")
+        }
+        .help("Show remotely joined attendees")
+        .popover(isPresented: $isShowingAttendeeList, arrowEdge: .bottom) {
+            AttendeeListPopover(orchestration: orchestration)
+        }
+    }
+
     private var endHostedMeetingButton: some View {
         Button(role: .destructive) {
             Task { await orchestration.leaveSession() }
@@ -299,6 +354,46 @@ struct MainWindowView: View {
         .help("End hosted meeting")
     }
 
+}
+
+private struct AttendeeListPopover: View {
+    let orchestration: OrchestrationController
+
+    private var attendees: [OrchestrationParticipant] {
+        orchestration.participants.filter { $0.id != orchestration.localParticipantID }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Remote attendees")
+                .font(.headline)
+            if attendees.isEmpty {
+                Text("No attendees have joined yet. Share code \(orchestration.pairingCode) to pair a Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 220, alignment: .leading)
+            } else {
+                ForEach(attendees) { attendee in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(attendee.isRecentlyConnected ? .green : .orange)
+                            .frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(attendee.displayName)
+                                .fontWeight(.medium)
+                            Text(attendee.isRecentlyConnected ? "Connected" : "Connection lost")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 230, alignment: .leading)
+    }
 }
 
 private struct ScriptLibrarySidebar: View {
@@ -312,7 +407,6 @@ private struct ScriptLibrarySidebar: View {
     let isRemoteModeSelected: Bool
     let onOpenRemoteMode: () -> Void
     let onOpenOrchestratedMeeting: (OrchestratedMeetingTemplate) -> Void
-    let isInteractionDisabled: Bool
     let orchestration: OrchestrationController
     @State private var scriptPendingDeletion: SpeechScript?
 
@@ -343,7 +437,7 @@ private struct ScriptLibrarySidebar: View {
                     ForEach(scenario.excerpts.map(\.speechScript)) { script in
                         ScriptRow(script: script, icon: "person.text.rectangle")
                             .tag(script.id)
-                            .disabled(orchestration.isActive || isInteractionDisabled)
+                            .disabled(isRemoteClientActive)
                             .contextMenu {
                                 Button("Replicate…") {
                                     onReplicate(script.id)
@@ -357,7 +451,7 @@ private struct ScriptLibrarySidebar: View {
                 ForEach(OrchestratedMeetingTemplate.all) { template in
                     OrchestratedMeetingRow(template: template)
                         .tag(orchestrationSelectionID(for: template))
-                        .disabled(!canSelectOrchestratedTemplate || isInteractionDisabled)
+                        .disabled(isRemoteClientActive)
                 }
             }
 
@@ -371,7 +465,7 @@ private struct ScriptLibrarySidebar: View {
                     ForEach(model.playableScripts) { script in
                         ScriptRow(script: script, icon: "waveform")
                             .tag(script.id)
-                            .disabled(orchestration.isActive || isInteractionDisabled)
+                            .disabled(isRemoteClientActive)
                             .contextMenu {
                                 Button("Edit…") {
                                     onEdit(script.id)
@@ -392,7 +486,7 @@ private struct ScriptLibrarySidebar: View {
                     Label("Add Script", systemImage: "plus")
                 }
                 .help("Add a custom script")
-                .disabled(orchestration.isActive || isInteractionDisabled)
+                .disabled(orchestration.isActive)
             }
         }
         .alert(
@@ -435,12 +529,8 @@ private struct ScriptLibrarySidebar: View {
         )
     }
 
-    private var canSelectOrchestratedTemplate: Bool {
-        !orchestration.isActive
-            || (orchestration.isHost
-                && ((orchestration.sessionStatus == .lobby && orchestration.turns.isEmpty)
-                    || orchestration.sessionStatus == .completed
-                    || orchestration.sessionStatus == .stopped))
+    private var isRemoteClientActive: Bool {
+        orchestration.isActive && !orchestration.isHost
     }
 
     private func orchestrationSelectionID(for template: OrchestratedMeetingTemplate) -> String {

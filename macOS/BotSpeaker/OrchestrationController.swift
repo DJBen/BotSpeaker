@@ -43,6 +43,9 @@ final class OrchestrationController {
     private(set) var pairingOpen = false
     private(set) var participants: [OrchestrationParticipant] = []
     private(set) var participantOrder: [String] = []
+    /// Seat index (0-based, below the template's speaker count) for each seated attendee.
+    private(set) var seatAssignments: [String: Int] = [:]
+    @ObservationIgnored private var benchedParticipantIDs: Set<String> = []
     private(set) var turns: [OrchestrationTurn] = []
     private(set) var activeTurnIndex = -1
     private(set) var startedAt: Date?
@@ -94,6 +97,7 @@ final class OrchestrationController {
             ?? "Speaker"
 
         if FirebaseApp.app() == nil {
+            FirebaseConfiguration.shared.setLoggerLevel(.warning)
             FirebaseApp.configure()
         }
         database = Firestore.firestore()
@@ -185,6 +189,7 @@ final class OrchestrationController {
         speakerConfigurations = restoredConfiguration.configurations
         defaultVoicesAppliedForTemplateID = restoredConfiguration.wasRestored ? template.id : nil
         applyDefaultTemplateVoices()
+        syncSeatAssignments()
     }
 
     func applyDefaultTemplateVoices() {
@@ -515,6 +520,62 @@ final class OrchestrationController {
         let destination = source + offset
         guard participantOrder.indices.contains(destination) else { return }
         participantOrder.swapAt(source, destination)
+        assignSeatsDenselyFromOrder()
+    }
+
+    /// Places a paired attendee in a specific seat, swapping with any current occupant.
+    func assignParticipant(id: String, toSeat seat: Int) {
+        guard turns.isEmpty,
+              participantOrder.contains(id),
+              (0..<selectedTemplate.speakerCount).contains(seat) else { return }
+        if let occupant = seatAssignments.first(where: { $0.value == seat })?.key {
+            guard occupant != id else { return }
+            seatAssignments[occupant] = seatAssignments[id]
+            if seatAssignments[occupant] == nil { benchedParticipantIDs.insert(occupant) }
+        }
+        seatAssignments[id] = seat
+        benchedParticipantIDs.remove(id)
+        rebuildParticipantOrderFromSeats()
+    }
+
+    /// Removes a paired attendee from the next meeting without unpairing it.
+    func benchParticipant(id: String) {
+        guard turns.isEmpty, seatAssignments[id] != nil else { return }
+        seatAssignments[id] = nil
+        benchedParticipantIDs.insert(id)
+        rebuildParticipantOrderFromSeats()
+    }
+
+    private func rebuildParticipantOrderFromSeats() {
+        let seated = seatAssignments.sorted { $0.value < $1.value }.map(\.key)
+        let benched = participantOrder.filter { seatAssignments[$0] == nil }
+        participantOrder = seated + benched
+    }
+
+    /// Reconciles seat assignments with the paired participants: drops departed
+    /// attendees, clamps to the current template, and fills vacant seats with
+    /// attendees that were not explicitly benched.
+    private func syncSeatAssignments() {
+        let validIDs = Set(participantOrder)
+        let seatCount = selectedTemplate.speakerCount
+        seatAssignments = seatAssignments.filter { validIDs.contains($0.key) && $0.value < seatCount }
+        benchedParticipantIDs.formIntersection(validIDs)
+        for id in participantOrder where seatAssignments[id] == nil && !benchedParticipantIDs.contains(id) {
+            guard let seat = (0..<seatCount).first(where: { candidate in
+                !seatAssignments.values.contains(candidate)
+            }) else { break }
+            seatAssignments[id] = seat
+        }
+        rebuildParticipantOrderFromSeats()
+    }
+
+    /// Re-derives seats from the dense order after a lobby reorder.
+    private func assignSeatsDenselyFromOrder() {
+        seatAssignments = [:]
+        for (index, id) in participantOrder.prefix(selectedTemplate.speakerCount).enumerated() {
+            seatAssignments[id] = index
+        }
+        benchedParticipantIDs = Set(participantOrder.dropFirst(selectedTemplate.speakerCount))
     }
 
     func moveParticipant(id: String, relativeTo destinationID: String, insertAfter: Bool) {
@@ -526,6 +587,7 @@ final class OrchestrationController {
         let participantID = participantOrder.remove(at: source)
         if source < insertionIndex { insertionIndex -= 1 }
         participantOrder.insert(participantID, at: min(insertionIndex, participantOrder.endIndex))
+        assignSeatsDenselyFromOrder()
     }
 
     func prepareMeeting() async {
@@ -544,7 +606,8 @@ final class OrchestrationController {
                     .filter(\.isRecentlyConnected)
                     .map { ($0.id, $0) }
             )
-            let ordered = self.participantOrder.compactMap { connectedByID[$0] }
+            let seatedIDs = self.seatAssignments.sorted { $0.value < $1.value }.map(\.key)
+            let ordered = seatedIDs.compactMap { connectedByID[$0] }
             guard ordered.count >= template.speakerCount else {
                 throw AppError("Pair \(template.speakerCount) speakers before preparing this meeting.")
             }
@@ -881,6 +944,8 @@ final class OrchestrationController {
         preparationStatus = "Waiting for the host script"
         preparationError = nil
         participantOrder = []
+        seatAssignments = [:]
+        benchedParticipantIDs = []
         sessionStatus = .lobby
         previousSessionStatus = .lobby
         pairingOpen = true
@@ -999,6 +1064,7 @@ final class OrchestrationController {
         for participant in participants where !participantOrder.contains(participant.id) {
             participantOrder.append(participant.id)
         }
+        syncSeatAssignments()
     }
 
     private func applyTurns(_ documents: [QueryDocumentSnapshot]) {
@@ -1546,6 +1612,8 @@ final class OrchestrationController {
         pairingOpen = false
         participants = []
         participantOrder = []
+        seatAssignments = [:]
+        benchedParticipantIDs = []
         turns = []
         activeTurnIndex = -1
         startedAt = nil

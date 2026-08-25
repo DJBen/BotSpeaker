@@ -67,7 +67,7 @@ struct OrchestrationView: View {
     }
 
     private var scriptPlanCard: some View {
-        GroupBox("Orchestrated meeting") {
+        GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -251,9 +251,7 @@ struct OrchestrationView: View {
 
     private var hostControls: some View {
         HStack {
-            if controller.sessionStatus == .lobby {
-                Button("Quit", action: onExit)
-            } else {
+            if controller.sessionStatus != .lobby {
                 Button("Leave", action: leaveFlow)
             }
             Spacer()
