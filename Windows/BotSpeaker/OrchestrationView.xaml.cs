@@ -113,7 +113,7 @@ public partial class OrchestrationView : UserControl
         DoneButton.Visibility = status is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped
             ? Visibility.Visible
             : Visibility.Collapsed;
-        LeaveButton.Visibility = DoneButton.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        LeaveButton.Visibility = Visibility.Visible;
     }
 
     private void RenderMeetingScriptHighlight()
@@ -387,6 +387,7 @@ public partial class OrchestrationView : UserControl
 
     /// <summary>Raised by the header gear; the hosting window owns the settings window.</summary>
     public event EventHandler? SettingsRequested;
+    public event EventHandler? ChooseAnotherScriptRequested;
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) =>
         SettingsRequested?.Invoke(this, EventArgs.Empty);
@@ -416,6 +417,9 @@ public partial class OrchestrationView : UserControl
     private async void OnStopClick(object sender, RoutedEventArgs e) => await _controller.StopMeetingAsync();
 
     private async void OnLeaveClick(object sender, RoutedEventArgs e) => await _controller.LeaveSessionAsync();
+
+    private void OnChooseAnotherScriptClick(object sender, RoutedEventArgs e) =>
+        ChooseAnotherScriptRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnExportClick(object sender, RoutedEventArgs e)
     {

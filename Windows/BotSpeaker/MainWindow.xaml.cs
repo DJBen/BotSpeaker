@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly AppModel _model;
     private readonly OrchestrationController _orchestration;
     private bool _showOrchestrationConfiguration;
+    private bool _showRemoteMode;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
     private ScriptEditorWindow? _scriptEditor;
@@ -45,12 +46,21 @@ public partial class MainWindow : Window
         // rather than opening a second window.
         _orchestrationView = new OrchestrationView(model, orchestration);
         _orchestrationView.SettingsRequested += (_, _) => OnSettingsClick(this, new RoutedEventArgs());
+        _orchestrationView.ChooseAnotherScriptRequested += (_, _) =>
+        {
+            _showRemoteMode = false;
+            _showOrchestrationConfiguration = true;
+            UpdateAll();
+        };
         OrchestrationSessionHost.Content = _orchestrationView;
 
         Loaded += async (_, _) =>
         {
             UpdateAll();
             if (_model.HasApiKey) await _model.LoadVoicesIfNeededAsync();
+            await _orchestration.RestorePersistedSessionIfNeededAsync();
+            if (_orchestration.ActiveMode == OrchestrationMode.Remote) _showRemoteMode = true;
+            UpdateAll();
         };
         Closing += OnWindowClosing;
         PreviewKeyDown += OnWindowPreviewKeyDown;
@@ -100,13 +110,21 @@ public partial class MainWindow : Window
         {
             FirstRunPanel.Visibility = _model.HasApiKey ? Visibility.Collapsed : Visibility.Visible;
             bool inSession = _orchestration.IsActive;
-            ComposerPanel.Visibility = _showOrchestrationConfiguration || inSession
+            bool choosingNextHostScript = _showOrchestrationConfiguration
+                && _orchestration.IsHost
+                && _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped;
+            bool showSession = inSession && !choosingNextHostScript;
+            ComposerPanel.Visibility = _showOrchestrationConfiguration || _showRemoteMode || showSession
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && !inSession
+            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && (!inSession || choosingNextHostScript)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            OrchestrationSessionHost.Visibility = inSession ? Visibility.Visible : Visibility.Collapsed;
+            OrchestrationSessionHost.Visibility = showSession ? Visibility.Visible : Visibility.Collapsed;
+            RemoteModePanel.Visibility = _showRemoteMode && !inSession
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            RemoteSpeakerNameBox.Text = _orchestration.SpeakerName;
             UpdateCableStatus();
 
             var script = _model.SelectedScript;
@@ -114,7 +132,10 @@ public partial class MainWindow : Window
             ScriptDetail.Text = $"{script.Detail} · {script.WordCount} words";
 
             UpdateSidebar();
-            if (_showOrchestrationConfiguration && !inSession) UpdateOrchestrationConfiguration();
+            if (_showOrchestrationConfiguration && (!inSession || choosingNextHostScript))
+            {
+                UpdateOrchestrationConfiguration();
+            }
 
             // Templates are not playable; they show the speaker-name entry instead.
             bool isCustom = script.IsCustom;
@@ -167,12 +188,14 @@ public partial class MainWindow : Window
             // The library also locks for a host, so the meeting page cannot be
             // navigated away from while its session is live.
             bool remote = _model.IsRemoteControlled;
-            bool libraryLocked = remote || inSession;
+            bool remoteClient = _orchestration.ActiveMode == OrchestrationMode.Remote;
+            bool libraryLocked = remoteClient || (inSession && !choosingNextHostScript);
             RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
             RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
             TemplateList.IsEnabled = !libraryLocked;
-            CustomList.IsEnabled = !libraryLocked;
-            AddScriptButton.IsEnabled = !libraryLocked;
+            CustomList.IsEnabled = !libraryLocked && !inSession;
+            AddScriptButton.IsEnabled = !libraryLocked && !inSession;
+            RemoteModeButton.IsEnabled = !_orchestration.IsHost;
             VoiceCombo.IsEnabled = VoiceCombo.IsEnabled && !remote;
             RefreshVoicesButton.IsEnabled = !remote && !_model.IsLoadingVoices;
             PlaybackOptionsButton.IsEnabled = !remote;
@@ -471,13 +494,16 @@ public partial class MainWindow : Window
                 var template = OrchestratedMeetingTemplate.All.FirstOrDefault(item => item.Id == templateId);
                 if (template is null) return;
                 _orchestration.SelectTemplate(template);
+                _showRemoteMode = false;
                 _showOrchestrationConfiguration = true;
                 CustomList.SelectedItem = null;
                 UpdateAll();
             }
             else
             {
+                if (_orchestration.IsActive) return;
                 _showOrchestrationConfiguration = false;
+                _showRemoteMode = false;
                 _model.SelectScript(id);
             }
         }
@@ -489,6 +515,7 @@ public partial class MainWindow : Window
         if (CustomList.SelectedItem is ListBoxItem { Tag: string id })
         {
             _showOrchestrationConfiguration = false;
+            _showRemoteMode = false;
             _model.SelectScript(id);
         }
     }
@@ -657,11 +684,9 @@ public partial class MainWindow : Window
 
     private async void OnJoinMeetingClick(object sender, RoutedEventArgs e)
     {
+        _orchestration.SpeakerName = RemoteSpeakerNameBox.Text;
         _orchestration.PrepareRemoteSetup();
-        var pairingCode = ShowPairingCodeDialog();
-        if (pairingCode is null) return;
-
-        _orchestration.PairingCodeInput = pairingCode;
+        _orchestration.PairingCodeInput = RemotePairingCodeBox.Text;
         SetMeetingEntryButtonsEnabled(false);
         await _orchestration.JoinMeetingAsync();
         SetMeetingEntryButtonsEnabled(true);
@@ -677,77 +702,26 @@ public partial class MainWindow : Window
 
     private void SetMeetingEntryButtonsEnabled(bool isEnabled)
     {
-        JoinMeetingButton.IsEnabled = isEnabled;
         PrepareMeetingButton.IsEnabled = isEnabled;
+        RemoteJoinButton.IsEnabled = isEnabled;
     }
 
-    private string? ShowPairingCodeDialog()
+    private void OnRemoteModeClick(object sender, RoutedEventArgs e)
     {
-        string? result = null;
-        var dialog = new Window
-        {
-            Title = "Join Meeting",
-            Owner = this,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.NoResize,
-            SizeToContent = SizeToContent.Height,
-            Width = 370,
-            ShowInTaskbar = false,
-        };
-        var content = new StackPanel { Margin = new Thickness(22) };
-        content.Children.Add(new TextBlock
-        {
-            Text = "Enter the six-character code shown by the host.",
-            Foreground = Brushes.Gray,
-            Margin = new Thickness(0, 0, 0, 12),
-        });
-        var codeBox = new TextBox
-        {
-            CharacterCasing = CharacterCasing.Upper,
-            MaxLength = 6,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 22,
-            Padding = new Thickness(6),
-            Margin = new Thickness(0, 0, 0, 16),
-        };
-        content.Children.Add(codeBox);
+        if (_orchestration.IsHost) return;
+        _showOrchestrationConfiguration = false;
+        _showRemoteMode = true;
+        TemplateList.SelectedItem = null;
+        CustomList.SelectedItem = null;
+        UpdateAll();
+        RemotePairingCodeBox.Focus();
+    }
 
-        var buttons = new Grid();
-        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var cancelButton = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(10, 5, 10, 5) };
-        var joinButton = new Button
-        {
-            Content = "Join",
-            IsDefault = true,
-            IsEnabled = false,
-            Padding = new Thickness(10, 5, 10, 5),
-        };
-        codeBox.TextChanged += (_, _) =>
-        {
-            var normalized = new string(codeBox.Text.Where(char.IsLetterOrDigit).ToArray());
-            if (!string.Equals(codeBox.Text, normalized, StringComparison.Ordinal))
-            {
-                codeBox.Text = normalized;
-                codeBox.CaretIndex = normalized.Length;
-            }
-            joinButton.IsEnabled = normalized.Length == 6;
-        };
-        joinButton.Click += (_, _) =>
-        {
-            result = codeBox.Text.ToUpperInvariant();
-            dialog.DialogResult = true;
-        };
-        Grid.SetColumn(cancelButton, 0);
-        Grid.SetColumn(joinButton, 2);
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(joinButton);
-        content.Children.Add(buttons);
-        dialog.Content = content;
-        dialog.Loaded += (_, _) => codeBox.Focus();
-        dialog.ShowDialog();
-        return result;
+    private void OnRemotePairingCodeKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        OnJoinMeetingClick(sender, new RoutedEventArgs());
     }
 
     private void OnAddScriptClick(object sender, RoutedEventArgs e) => OpenScriptEditor(forNewScript: true);
@@ -755,6 +729,7 @@ public partial class MainWindow : Window
     private void OpenScriptEditor(bool forNewScript)
     {
         _showOrchestrationConfiguration = false;
+        _showRemoteMode = false;
         if (_scriptEditor is null || !_scriptEditor.IsLoaded)
         {
             _scriptEditor = new ScriptEditorWindow(_model) { Owner = this };

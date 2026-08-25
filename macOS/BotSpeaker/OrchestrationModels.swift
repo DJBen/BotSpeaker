@@ -1,6 +1,6 @@
 import Foundation
 
-enum OrchestrationMode: String, CaseIterable, Identifiable {
+enum OrchestrationMode: String, CaseIterable, Identifiable, Codable {
     case host
     case remote
 

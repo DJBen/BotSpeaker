@@ -29,6 +29,7 @@ struct MainWindowView: View {
     let orchestration: OrchestrationController
     @State private var isShowingScriptEditor = false
     @State private var isShowingOrchestrationConfiguration = false
+    @State private var isShowingRemoteMode = false
     @State private var detailPath: [DetailDestination] = []
 
     var body: some View {
@@ -39,12 +40,14 @@ struct MainWindowView: View {
                         model: model,
                         onAdd: {
                             guard !isOrchestrationFlowPresented else { return }
+                            isShowingRemoteMode = false
                             isShowingOrchestrationConfiguration = false
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
                         onEdit: { scriptID in
                             guard !isOrchestrationFlowPresented else { return }
+                            isShowingRemoteMode = false
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: scriptID)
                             model.prepareScriptEditor()
@@ -53,34 +56,46 @@ struct MainWindowView: View {
                         onDelete: { model.deleteCustomScript(id: $0) },
                         onReplicate: {
                             guard !isOrchestrationFlowPresented else { return }
+                            isShowingRemoteMode = false
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: $0)
                         },
                         onSelectScript: {
                             guard !isOrchestrationFlowPresented else { return }
+                            isShowingRemoteMode = false
                             isShowingOrchestrationConfiguration = false
                             model.selectScript(id: $0)
                         },
                         selectedOrchestrationTemplateID: isShowingOrchestrationConfiguration
                             ? orchestration.selectedTemplate.id
                             : nil,
+                        isRemoteModeSelected: isShowingRemoteMode,
+                        onOpenRemoteMode: {
+                            guard !orchestration.isHost else { return }
+                            detailPath.removeAll()
+                            isShowingOrchestrationConfiguration = false
+                            isShowingRemoteMode = true
+                        },
                         onOpenOrchestratedMeeting: { template in
                             guard !isOrchestrationFlowPresented else { return }
+                            isShowingRemoteMode = false
                             orchestration.selectTemplate(template)
                             isShowingOrchestrationConfiguration = true
                         },
-                        isInteractionDisabled: isOrchestrationFlowPresented
+                        isInteractionDisabled: isOrchestrationFlowPresented,
+                        orchestration: orchestration
                     )
                     .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 380)
                 } detail: {
                     NavigationStack(path: $detailPath) {
                         Group {
-                            if isShowingOrchestrationConfiguration {
+                            if isShowingRemoteMode {
+                                RemoteModeView(model: model, controller: orchestration)
+                            } else if isShowingOrchestrationConfiguration {
                                 OrchestratedMeetingConfigurationView(
                                     model: model,
                                     controller: orchestration,
-                                    onPrepareMeeting: presentOrchestrationFlow,
-                                    onJoinMeeting: presentOrchestrationFlow
+                                    onPrepareMeeting: presentOrchestrationFlow
                                 )
                             } else {
                                 ComposerView(
@@ -110,7 +125,22 @@ struct MainWindowView: View {
             }
         }
         .frame(minWidth: 920, minHeight: 620)
-        .task { await model.loadVoicesIfNeeded() }
+        .task {
+            await model.loadVoicesIfNeeded()
+            await orchestration.restorePersistedSessionIfNeeded()
+            if orchestration.isActive {
+                if orchestration.isHost {
+                    isShowingOrchestrationConfiguration = true
+                    presentOrchestrationFlow()
+                } else {
+                    isShowingRemoteMode = true
+                    isShowingOrchestrationConfiguration = false
+                }
+            }
+        }
+        .onChange(of: orchestration.isActive) { _, isActive in
+            if !isActive, isOrchestrationFlowPresented { dismissOrchestrationFlow() }
+        }
         .sheet(isPresented: $isShowingScriptEditor) {
             CustomScriptEditorSheet(model: model)
         }
@@ -139,6 +169,7 @@ struct MainWindowView: View {
     }
 
     private var selectedSectionTitle: String {
+        if isShowingRemoteMode { return "Remote Mode" }
         if isShowingOrchestrationConfiguration { return "Orchestrated meeting" }
         return model.selectedScript.isCustom ? "My scripts" : "Script templates"
     }
@@ -166,17 +197,39 @@ private struct ScriptLibrarySidebar: View {
     let onReplicate: (String) -> Void
     let onSelectScript: (String) -> Void
     let selectedOrchestrationTemplateID: String?
+    let isRemoteModeSelected: Bool
+    let onOpenRemoteMode: () -> Void
     let onOpenOrchestratedMeeting: (OrchestratedMeetingTemplate) -> Void
     let isInteractionDisabled: Bool
+    let orchestration: OrchestrationController
     @State private var scriptPendingDeletion: SpeechScript?
 
     var body: some View {
         List(selection: scriptSelection) {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Remote Mode")
+                        Text(orchestration.activeMode == .remote
+                            ? "Paired · \(orchestration.pairingCode)"
+                            : "Pair once for every orchestrated script")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                }
+                .padding(.vertical, 3)
+                .tag("remote-mode")
+                .disabled(orchestration.isHost)
+            }
+
             ForEach(model.bundledScriptGroups) { scenario in
                 Section(scenario.title) {
                     ForEach(scenario.excerpts.map(\.speechScript)) { script in
                         ScriptRow(script: script, icon: "person.text.rectangle")
                             .tag(script.id)
+                            .disabled(orchestration.isActive || isInteractionDisabled)
                             .contextMenu {
                                 Button("Replicate…") {
                                     onReplicate(script.id)
@@ -190,6 +243,7 @@ private struct ScriptLibrarySidebar: View {
                 ForEach(OrchestratedMeetingTemplate.all) { template in
                     OrchestratedMeetingRow(template: template)
                         .tag(orchestrationSelectionID(for: template))
+                        .disabled(!canSelectOrchestratedTemplate || isInteractionDisabled)
                 }
             }
 
@@ -203,6 +257,7 @@ private struct ScriptLibrarySidebar: View {
                     ForEach(model.playableScripts) { script in
                         ScriptRow(script: script, icon: "waveform")
                             .tag(script.id)
+                            .disabled(orchestration.isActive || isInteractionDisabled)
                             .contextMenu {
                                 Button("Edit…") {
                                     onEdit(script.id)
@@ -217,14 +272,13 @@ private struct ScriptLibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .disabled(model.isRemoteControlled || isInteractionDisabled)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onAdd) {
                     Label("Add Script", systemImage: "plus")
                 }
                 .help("Add a custom script")
-                .disabled(model.isRemoteControlled || isInteractionDisabled)
+                .disabled(orchestration.isActive || isInteractionDisabled)
             }
         }
         .alert(
@@ -248,11 +302,14 @@ private struct ScriptLibrarySidebar: View {
     private var scriptSelection: Binding<String?> {
         Binding(
             get: {
-                selectedOrchestrationTemplateID.map { "orchestrated:\($0)" } ?? model.selectedScriptID
+                if isRemoteModeSelected { return "remote-mode" }
+                return selectedOrchestrationTemplateID.map { "orchestrated:\($0)" } ?? model.selectedScriptID
             },
             set: { id in
                 guard let id else { return }
-                if id.hasPrefix("orchestrated:"),
+                if id == "remote-mode" {
+                    onOpenRemoteMode()
+                } else if id.hasPrefix("orchestrated:"),
                    let template = OrchestratedMeetingTemplate.all.first(where: {
                        orchestrationSelectionID(for: $0) == id
                    }) {
@@ -262,6 +319,12 @@ private struct ScriptLibrarySidebar: View {
                 }
             }
         )
+    }
+
+    private var canSelectOrchestratedTemplate: Bool {
+        !orchestration.isActive
+            || (orchestration.isHost
+                && (orchestration.sessionStatus == .completed || orchestration.sessionStatus == .stopped))
     }
 
     private func orchestrationSelectionID(for template: OrchestratedMeetingTemplate) -> String {

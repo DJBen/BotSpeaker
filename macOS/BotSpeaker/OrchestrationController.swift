@@ -14,10 +14,17 @@ private struct PersistedOrchestratedSpeakerConfiguration: Codable {
     let voiceName: String
 }
 
+private struct PersistedOrchestrationSession: Codable {
+    let roomID: String
+    let pairingCode: String
+    let mode: OrchestrationMode
+}
+
 @MainActor
 @Observable
 final class OrchestrationController {
     private static let speakerConfigurationDefaultsKey = "orchestratedMeetingSpeakerConfigurations"
+    private static let sessionDefaultsKey = "activeOrchestrationSession"
     var setupMode: OrchestrationMode = .host
     var speakerName: String
     var pairingCodeInput = "" {
@@ -58,6 +65,7 @@ final class OrchestrationController {
     @ObservationIgnored private var hasReportedPlaybackStart = false
     @ObservationIgnored private var isAdvancing = false
     @ObservationIgnored private var previousSessionStatus: OrchestrationSessionStatus = .lobby
+    @ObservationIgnored private var planRevision: String?
     @ObservationIgnored private var roomListener: ListenerRegistration?
     @ObservationIgnored private var participantsListener: ListenerRegistration?
     @ObservationIgnored private var turnsListener: ListenerRegistration?
@@ -89,7 +97,7 @@ final class OrchestrationController {
             FirebaseApp.configure()
         }
         database = Firestore.firestore()
-        // Meeting rooms are short-lived and need live connectivity anyway, so
+        // Orchestration rooms need live connectivity, so
         // skip the on-disk LevelDB cache and its background index maintenance.
         let settings = database.settings
         settings.cacheSettings = MemoryCacheSettings()
@@ -158,14 +166,15 @@ final class OrchestrationController {
         errorMessage = nil
     }
 
-    func prepareRemoteSetup() {
+    func prepareRemoteSetup(preservePairingCode: Bool = false) {
         setupMode = .remote
-        pairingCodeInput = ""
+        if !preservePairingCode { pairingCodeInput = "" }
         errorMessage = nil
     }
 
     func selectTemplate(_ template: OrchestratedMeetingTemplate) {
-        guard !isActive, template.id != selectedTemplate.id else { return }
+        let canReplaceFinishedHostRun = isHost && (sessionStatus == .completed || sessionStatus == .stopped)
+        guard (!isActive || canReplaceFinishedHostRun), template.id != selectedTemplate.id else { return }
         selectedTemplate = template
         meetingScriptText = template.text
         meetingScriptTitle = template.title
@@ -265,6 +274,11 @@ final class OrchestrationController {
     }
 
     func startHosting() async {
+        if isHost, sessionStatus == .completed || sessionStatus == .stopped {
+            await beginNextMeeting()
+            return
+        }
+        guard !isActive else { return }
         await performBusyOperation {
             let local = try self.prepareLocalSpeaker()
             let uid = try await self.ensureSignedIn()
@@ -282,6 +296,8 @@ final class OrchestrationController {
                 "scriptTemplateID": self.selectedTemplate.id,
                 "scriptTitle": self.selectedTemplate.title,
                 "scriptText": self.meetingScriptText,
+                "groupClosed": false,
+                "planRevision": UUID().uuidString,
                 "createdAt": FieldValue.serverTimestamp(),
                 "updatedAt": FieldValue.serverTimestamp(),
                 "activityAt": FieldValue.serverTimestamp()
@@ -303,6 +319,117 @@ final class OrchestrationController {
                 local: local
             )
             self.activateSession(roomID: roomID, code: code, mode: .host, hostUID: uid, local: local)
+        }
+    }
+
+    /// Reuses the paired room for another script. Membership and the pairing
+    /// code stay stable; only the completed run's plan and preparation state
+    /// are replaced.
+    func beginNextMeeting() async {
+        guard isHost,
+              let sessionID,
+              sessionStatus == .completed || sessionStatus == .stopped else { return }
+        await performBusyOperation {
+            self.stopRunLocally()
+
+            if !self.turns.isEmpty {
+                let deletionBatch = self.database.batch()
+                for turn in self.turns {
+                    deletionBatch.deleteDocument(self.turnReference(roomID: sessionID, turnID: turn.id))
+                }
+                try await deletionBatch.commit()
+            }
+
+            let revision = UUID().uuidString
+            let batch = self.database.batch()
+            for participant in self.participants {
+                batch.updateData([
+                    "scriptTitle": "Waiting for host script",
+                    "segmentCount": 0,
+                    "preparedSegmentCount": 0,
+                    "preparationError": "",
+                    "status": "waiting"
+                ], forDocument: self.participantReference(roomID: sessionID, uid: participant.id))
+            }
+            batch.updateData([
+                "status": OrchestrationSessionStatus.lobby.rawValue,
+                "pairingOpen": true,
+                "activeTurnIndex": -1,
+                "totalTurns": 0,
+                "scriptTemplateID": self.selectedTemplate.id,
+                "scriptTitle": self.selectedTemplate.title,
+                "scriptText": self.meetingScriptText,
+                "orderedParticipantIDs": FieldValue.delete(),
+                "startedAt": FieldValue.delete(),
+                "endedAt": FieldValue.delete(),
+                "groupClosed": false,
+                "planRevision": revision,
+                "updatedAt": FieldValue.serverTimestamp(),
+                "activityAt": FieldValue.serverTimestamp()
+            ], forDocument: self.roomReference(sessionID))
+            batch.updateData([
+                "isOpen": true,
+                "expiresAt": Timestamp(date: Date().addingTimeInterval(4 * 60 * 60))
+            ], forDocument: self.pairingReference(self.pairingCode))
+            try await batch.commit()
+
+            self.planRevision = revision
+            self.sessionStatus = .lobby
+            self.pairingOpen = true
+            self.turns = []
+            self.activeTurnIndex = -1
+            self.startedAt = nil
+            self.endedAt = nil
+            self.model?.updateRemoteControlStatus("Paired and waiting for the host")
+        }
+    }
+
+    /// Restores a durable group after app relaunch. Firestore's snapshot
+    /// listeners handle ordinary network loss; this restores local process loss.
+    func restorePersistedSessionIfNeeded() async {
+        guard !isActive,
+              model?.hasAPIKey == true,
+              let data = UserDefaults.standard.data(forKey: Self.sessionDefaultsKey),
+              let persisted = try? JSONDecoder().decode(PersistedOrchestrationSession.self, from: data) else { return }
+
+        do {
+            let local = try prepareLocalSpeaker()
+            let uid = try await ensureSignedIn()
+            let roomSnapshot = try await roomReference(persisted.roomID).getDocument()
+            guard let room = roomSnapshot.data(),
+                  room["groupClosed"] as? Bool != true,
+                  let hostUID = room["hostUID"] as? String else {
+                clearPersistedSession()
+                return
+            }
+            if let templateID = room["scriptTemplateID"] as? String,
+               let template = OrchestratedMeetingTemplate.all.first(where: { $0.id == templateID }) {
+                selectTemplate(template)
+            }
+            if let scriptText = room["scriptText"] as? String { meetingScriptText = scriptText }
+            meetingScriptTitle = room["scriptTitle"] as? String ?? meetingScriptTitle
+            let participantSnapshot = try await participantReference(roomID: persisted.roomID, uid: uid).getDocument()
+            guard participantSnapshot.exists else {
+                clearPersistedSession()
+                return
+            }
+            try await writeLocalParticipant(
+                roomID: persisted.roomID,
+                code: persisted.pairingCode,
+                uid: uid,
+                local: local
+            )
+            activateSession(
+                roomID: persisted.roomID,
+                code: persisted.pairingCode,
+                mode: persisted.mode,
+                hostUID: hostUID,
+                local: local
+            )
+        } catch {
+            // Keep the durable record after transient network failures so a
+            // later launch can retry. An explicit Disconnect always clears it.
+            errorMessage = "Couldn’t restore Remote Mode: \(error.localizedDescription)"
         }
     }
 
@@ -563,7 +690,16 @@ final class OrchestrationController {
                 "isConnected": false,
                 "lastSeenAt": FieldValue.serverTimestamp()
             ], forDocument: participantReference(roomID: sessionID, uid: uid))
-            addRoomActivityBump(to: batch, roomID: sessionID)
+            if isHost {
+                batch.updateData([
+                    "groupClosed": true,
+                    "pairingOpen": false,
+                    "updatedAt": FieldValue.serverTimestamp(),
+                    "activityAt": FieldValue.serverTimestamp()
+                ], forDocument: roomReference(sessionID))
+            } else {
+                addRoomActivityBump(to: batch, roomID: sessionID)
+            }
             try await batch.commit()
             if isHost {
                 try await pairingReference(pairingCode).updateData(["isOpen": false])
@@ -571,6 +707,7 @@ final class OrchestrationController {
         } catch {
             errorMessage = error.localizedDescription
         }
+        clearPersistedSession()
         resetLocalSession()
     }
 
@@ -660,8 +797,7 @@ final class OrchestrationController {
         uid: String,
         local: LocalSpeaker
     ) async throws {
-        let batch = database.batch()
-        batch.setData([
+        let fields: [String: Any] = [
             "uid": uid,
             "roomID": roomID,
             "pairingCode": code,
@@ -672,12 +808,31 @@ final class OrchestrationController {
             "preparedSegmentCount": 0,
             "preparationError": "",
             "status": "waiting",
-            "isConnected": true,
-            "joinedAt": FieldValue.serverTimestamp(),
-            "lastSeenAt": FieldValue.serverTimestamp()
-        ], forDocument: participantReference(roomID: roomID, uid: uid))
-        addRoomActivityBump(to: batch, roomID: roomID)
-        try await batch.commit()
+            "isConnected": true
+        ]
+        let reference = participantReference(roomID: roomID, uid: uid)
+        do {
+            let batch = database.batch()
+            var createFields = fields
+            createFields["joinedAt"] = FieldValue.serverTimestamp()
+            createFields["lastSeenAt"] = FieldValue.serverTimestamp()
+            batch.setData(createFields, forDocument: reference)
+            addRoomActivityBump(to: batch, roomID: roomID)
+            try await batch.commit()
+        } catch {
+            // An existing anonymous identity is already a member of this room.
+            // Refresh only participant-owned fields so the immutable join data
+            // continues to satisfy the Firestore update rule.
+            let batch = database.batch()
+            var updateFields = fields
+            updateFields.removeValue(forKey: "uid")
+            updateFields.removeValue(forKey: "roomID")
+            updateFields.removeValue(forKey: "pairingCode")
+            updateFields["lastSeenAt"] = FieldValue.serverTimestamp()
+            batch.updateData(updateFields, forDocument: reference)
+            addRoomActivityBump(to: batch, roomID: roomID)
+            try await batch.commit()
+        }
     }
 
     private func activateSession(
@@ -704,6 +859,7 @@ final class OrchestrationController {
         previousSessionStatus = .lobby
         pairingOpen = true
         errorMessage = nil
+        persistSession(roomID: roomID, code: code, mode: mode)
         model?.activateRemoteControl(status: "Paired and waiting for the host")
         beginOrchestrationActivity()
         attachListeners(roomID: roomID)
@@ -744,6 +900,16 @@ final class OrchestrationController {
     }
 
     private func applyRoom(_ data: [String: Any]) {
+        if data["groupClosed"] as? Bool == true {
+            clearPersistedSession()
+            resetLocalSession()
+            return
+        }
+        let incomingPlanRevision = data["planRevision"] as? String
+        if let planRevision, let incomingPlanRevision, planRevision != incomingPlanRevision {
+            stopRunLocally()
+        }
+        planRevision = incomingPlanRevision
         previousSessionStatus = sessionStatus
         sessionStatus = OrchestrationSessionStatus(rawValue: data["status"] as? String ?? "") ?? .lobby
         pairingOpen = data["pairingOpen"] as? Bool ?? false
@@ -771,14 +937,10 @@ final class OrchestrationController {
             }
         case .completed:
             cancelPrefetch()
-            stopExecutionWatchdog()
-            endOrchestrationActivity()
-            model?.updateRemoteControlStatus("Meeting completed")
+            model?.updateRemoteControlStatus("Run completed; paired for the next script")
         case .stopped:
             cancelPrefetch()
-            stopExecutionWatchdog()
-            endOrchestrationActivity()
-            model?.updateRemoteControlStatus("Meeting stopped by the host")
+            model?.updateRemoteControlStatus("Run stopped; paired for the next script")
             turnExecutionTask?.cancel()
             turnExecutionTask = nil
             activeExecutionTurnID = nil
@@ -865,7 +1027,11 @@ final class OrchestrationController {
         let assignedTurns = turns
             .filter { $0.participantUID == uid }
             .sorted { $0.segmentIndex < $1.segmentIndex }
-        guard !assignedTurns.isEmpty,
+        guard !assignedTurns.isEmpty else {
+            if !localSegments.isEmpty { stopRunLocally() }
+            return
+        }
+        guard
               assignedTurns.allSatisfy({ $0.text?.isEmpty == false }) else { return }
         let newSegments = assignedTurns.compactMap(\.text)
         guard newSegments != localSegments else { return }
@@ -1273,7 +1439,8 @@ final class OrchestrationController {
             .sink { [weak self] _ in
                 guard let self, let uid = self.userID else { return }
                 Task {
-                    try? await self.participantReference(roomID: roomID, uid: uid).updateData([
+                    let batch = self.database.batch()
+                    batch.updateData([
                         "status": self.localSegments.isEmpty
                             ? "waiting"
                             : self.preparedLocalSegmentCount == self.localSegments.count ? "ready" : "preparing",
@@ -1281,7 +1448,11 @@ final class OrchestrationController {
                         "preparationError": self.preparationError ?? "",
                         "isConnected": true,
                         "lastSeenAt": FieldValue.serverTimestamp()
-                    ])
+                    ], forDocument: self.participantReference(roomID: roomID, uid: uid))
+                    if self.isHost {
+                        self.addRoomActivityBump(to: batch, roomID: roomID)
+                    }
+                    try? await batch.commit()
                 }
             }
     }
@@ -1363,6 +1534,31 @@ final class OrchestrationController {
         turnExecutionTask = nil
         activeExecutionTurnID = nil
         hasReportedPlaybackStart = false
+        planRevision = nil
+    }
+
+    private func stopRunLocally() {
+        cancelPrefetch()
+        turnExecutionTask?.cancel()
+        turnExecutionTask = nil
+        activeExecutionTurnID = nil
+        hasReportedPlaybackStart = false
+        model?.stopOrchestratedTurn()
+        localSegments = []
+        preparedLocalSegments = []
+        preparedLocalSegmentCount = 0
+        preparationStatus = "Waiting for the host script"
+        preparationError = nil
+    }
+
+    private func persistSession(roomID: String, code: String, mode: OrchestrationMode) {
+        let session = PersistedOrchestrationSession(roomID: roomID, pairingCode: code, mode: mode)
+        guard let data = try? JSONEncoder().encode(session) else { return }
+        UserDefaults.standard.set(data, forKey: Self.sessionDefaultsKey)
+    }
+
+    private func clearPersistedSession() {
+        UserDefaults.standard.removeObject(forKey: Self.sessionDefaultsKey)
     }
 
     private func removeListeners() {

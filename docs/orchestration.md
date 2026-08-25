@@ -3,9 +3,10 @@
 BotSpeaker's meeting orchestrator coordinates multiple laptops so their
 virtual microphones speak one at a time without someone pressing Space on every
 machine. The first machine is the host and the remaining machines join as remote
-speakers with a short-lived six-character code. macOS and Windows clients speak
-the same protocol and interoperate freely in one session — either platform can
-host.
+speakers with a six-character code. Pairing creates a durable remote group:
+the host can run several different scripts with the same clients, and clients
+stay available across transient network loss. macOS and Windows clients speak
+the same protocol and interoperate freely in one group — either platform can host.
 
 ## Run a coordinated meeting
 
@@ -21,9 +22,9 @@ selects the shared meeting script and the ElevenLabs voice for every speaker.
 3. Choose **Orchestrate Meeting**. BotSpeaker creates the room immediately. The
    lobby replaces the configuration page in the main window and temporarily
    disables the script sidebar.
-4. On every other machine, select the same orchestrated template and choose
-   **Join Meeting** beside **Orchestrate Meeting**. Enter the host's pairing code in
-   the compact prompt and confirm **Join**.
+4. On every other machine, select **Remote Mode** at the top of the sidebar.
+   Enter the host's pairing code and choose **Join Remote Group**. A remote does
+   not select a transcript; the host sends each run's script and assignment.
 5. On the host, arrange the devices. Their order maps to `{{speaker_1}}`,
    `{{speaker_2}}`, and so on.
 6. Choose **Prepare Speakers** to distribute the resolved script and the host's
@@ -57,9 +58,12 @@ reports completion only after its local audio player reaches the end of the
 assigned audio, so slow ElevenLabs generation does not advance the next speaker
 early.
 
-On macOS, **Leave**, **Disconnect**, or **Done** returns to the selected
-orchestrated-meeting configuration in the main detail pane and unlocks the
-sidebar. Closing the main window performs the same session cleanup first.
+When a run completes or stops, remote clients remain paired and wait for the
+next script. On macOS the host can choose **Choose Another Script**, select a
+different orchestrated template, and use it for the next run without issuing a
+new code. **Leave** (host) and **Disconnect** (remote) explicitly end membership;
+closing and reopening the macOS window does not disconnect the group. The macOS
+client also restores its paired group after an app relaunch.
 
 ## Timestamped transcript
 
@@ -94,7 +98,9 @@ either platform also touches an `activityAt` server-timestamp marker on the
 room document — the one room field the rules allow a non-host participant to
 update. Each poll tick then costs a single room read, and the collections are
 re-listed only when the marker moves, plus a 30-second full resync that keeps
-heartbeat freshness visible. Heartbeats deliberately do not move the marker.
+heartbeat freshness visible. The host heartbeat also refreshes the room marker,
+which keeps an idle-but-paired group out of the retention sweep; remote
+heartbeats update only their participant record.
 Audio and ElevenLabs keys never leave the local client. The host's shared script
 and resolved turn text are stored in the Firestore session room so remote
 clients can prepare before their turn; do not place secrets in an orchestrated
@@ -103,8 +109,10 @@ script.
 The host is authoritative for room state and turn advancement. Security rules
 limit room reads to paired participants, prohibit pairing-code enumeration, let
 only the host change the queue, and let a client update only the turn assigned
-to its anonymous identity. Pairing expires after four hours and is closed when
-the meeting starts.
+to its anonymous identity. The discovery code expires after four hours and is
+closed while a run is active; existing members keep access through their
+participant identity. Starting the next run reopens and refreshes the same code
+so another client can be added without replacing the paired group.
 
 Relevant deployment files are:
 

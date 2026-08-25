@@ -107,6 +107,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private string? _lastRoomActivityMarker;
     private DateTime _lastCollectionSyncUtc = DateTime.MinValue;
     private OrchestrationSessionStatus _previousSessionStatus = OrchestrationSessionStatus.Lobby;
+    private string? _planRevision;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _heartbeatTimer;
     private CancellationTokenSource? _turnExecutionCancellation;
@@ -201,7 +202,9 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     public void SelectTemplate(OrchestratedMeetingTemplate template)
     {
-        if (IsActive || template.Id == SelectedTemplate.Id) return;
+        bool canReplaceFinishedHostRun = IsHost
+            && SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped;
+        if ((IsActive && !canReplaceFinishedHostRun) || template.Id == SelectedTemplate.Id) return;
         SelectedTemplate = template;
         MeetingScriptText = template.Text;
         MeetingScriptTitle = template.Title;
@@ -307,6 +310,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     public async Task StartHostingAsync()
     {
+        if (IsHost && SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped)
+        {
+            await BeginNextMeetingAsync();
+            return;
+        }
+        if (IsActive) return;
         await PerformBusyOperationAsync(async () =>
         {
             var local = PrepareLocalSpeaker();
@@ -329,6 +338,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ["scriptTemplateID"] = SelectedTemplate.Id,
                     ["scriptTitle"] = SelectedTemplate.Title,
                     ["scriptText"] = MeetingScriptText,
+                    ["groupClosed"] = false,
+                    ["planRevision"] = Guid.NewGuid().ToString(),
                 },
                 ServerTimestampFields = ["createdAt", "updatedAt", "activityAt"],
                 MustExist = false,
@@ -351,6 +362,77 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
             await WriteLocalParticipantAsync(roomId, code, uid, local);
             ActivateSession(roomId, code, OrchestrationMode.Host, uid, local);
+        });
+    }
+
+    public async Task BeginNextMeetingAsync()
+    {
+        if (!IsHost || SessionId is not string sessionId
+            || SessionStatus is not (OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped)) return;
+        await PerformBusyOperationAsync(async () =>
+        {
+            StopRunLocally();
+            if (Turns.Count > 0)
+            {
+                await _database.CommitAsync(Turns.Select(turn => new FirestoreWrite
+                {
+                    DocumentPath = TurnPath(sessionId, turn.Id),
+                    IsDelete = true,
+                }).ToList());
+            }
+
+            var revision = Guid.NewGuid().ToString();
+            var writes = Participants.Select(participant => new FirestoreWrite
+            {
+                DocumentPath = ParticipantPath(sessionId, participant.Id),
+                Fields = new()
+                {
+                    ["scriptTitle"] = "Waiting for host script",
+                    ["segmentCount"] = 0,
+                    ["preparedSegmentCount"] = 0,
+                    ["preparationError"] = "",
+                    ["status"] = "waiting",
+                },
+                UpdateMask = ["scriptTitle", "segmentCount", "preparedSegmentCount", "preparationError", "status"],
+                MustExist = true,
+            }).ToList();
+            writes.Add(new FirestoreWrite
+            {
+                DocumentPath = RoomPath(sessionId),
+                Fields = new()
+                {
+                    ["status"] = OrchestrationSessionStatus.Lobby.RawValue(),
+                    ["pairingOpen"] = true,
+                    ["activeTurnIndex"] = -1,
+                    ["totalTurns"] = 0,
+                    ["scriptTemplateID"] = SelectedTemplate.Id,
+                    ["scriptTitle"] = SelectedTemplate.Title,
+                    ["scriptText"] = MeetingScriptText,
+                    ["groupClosed"] = false,
+                    ["planRevision"] = revision,
+                },
+                UpdateMask = ["status", "pairingOpen", "activeTurnIndex", "totalTurns", "scriptTemplateID", "scriptTitle", "scriptText", "groupClosed", "planRevision"],
+                ServerTimestampFields = ["updatedAt", "activityAt"],
+                MustExist = true,
+            });
+            writes.Add(new FirestoreWrite
+            {
+                DocumentPath = PairingPath(PairingCode),
+                Fields = new() { ["isOpen"] = true, ["expiresAt"] = DateTime.UtcNow + PairingLifetime },
+                UpdateMask = ["isOpen", "expiresAt"],
+                MustExist = true,
+            });
+            await _database.CommitAsync(writes);
+            _planRevision = revision;
+            SessionStatus = OrchestrationSessionStatus.Lobby;
+            PairingOpen = true;
+            Turns = [];
+            ActiveTurnIndex = -1;
+            StartedAt = null;
+            EndedAt = null;
+            _model.UpdateRemoteControlStatus("Paired and waiting for the host");
+            BeginOrchestrationActivity();
+            await PollAsync();
         });
     }
 
@@ -386,6 +468,46 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
             await WriteLocalParticipantAsync(roomId, code, uid, local);
             ActivateSession(roomId, code, OrchestrationMode.Remote, hostUid, local);
+        });
+    }
+
+    public async Task RestorePersistedSessionIfNeededAsync()
+    {
+        if (IsActive
+            || string.IsNullOrWhiteSpace(_model.Settings.OrchestrationSessionRoomId)
+            || string.IsNullOrWhiteSpace(_model.Settings.OrchestrationSessionPairingCode)
+            || !_model.HasApiKey) return;
+
+        await PerformBusyOperationAsync(async () =>
+        {
+            var local = PrepareLocalSpeaker();
+            var uid = await _database.EnsureSignedInAsync();
+            _userId = uid;
+            var roomId = _model.Settings.OrchestrationSessionRoomId;
+            var room = await _database.GetDocumentAsync(RoomPath(roomId));
+            if (room is null || room.Bool("groupClosed") || room.String("hostUID") is not string hostUid)
+            {
+                ClearPersistedSession();
+                return;
+            }
+            var participant = await _database.GetDocumentAsync(ParticipantPath(roomId, uid));
+            if (participant is null)
+            {
+                ClearPersistedSession();
+                return;
+            }
+            if (room.String("scriptTemplateID") is string templateId
+                && OrchestratedMeetingTemplate.All.FirstOrDefault(template => template.Id == templateId) is { } template)
+            {
+                SelectTemplate(template);
+            }
+            MeetingScriptText = room.String("scriptText") ?? MeetingScriptText;
+            var mode = _model.Settings.OrchestrationSessionMode == "host"
+                ? OrchestrationMode.Host
+                : OrchestrationMode.Remote;
+            var code = _model.Settings.OrchestrationSessionPairingCode;
+            await WriteLocalParticipantAsync(roomId, code, uid, local);
+            ActivateSession(roomId, code, mode, hostUid, local);
         });
     }
 
@@ -670,8 +792,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         }
         try
         {
-            await _database.CommitAsync(
-            [
+            var writes = new List<FirestoreWrite>
+            {
                 new FirestoreWrite
                 {
                     DocumentPath = ParticipantPath(sessionId, uid),
@@ -684,8 +806,23 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     ServerTimestampFields = ["lastSeenAt"],
                     MustExist = true,
                 },
-                RoomActivityBump(sessionId),
-            ]);
+            };
+            if (IsHost)
+            {
+                writes.Add(new FirestoreWrite
+                {
+                    DocumentPath = RoomPath(sessionId),
+                    Fields = new() { ["groupClosed"] = true, ["pairingOpen"] = false },
+                    UpdateMask = ["groupClosed", "pairingOpen"],
+                    ServerTimestampFields = ["updatedAt", "activityAt"],
+                    MustExist = true,
+                });
+            }
+            else
+            {
+                writes.Add(RoomActivityBump(sessionId));
+            }
+            await _database.CommitAsync(writes);
             if (IsHost)
             {
                 await _database.CommitAsync(new FirestoreWrite
@@ -701,6 +838,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         {
             ErrorMessage = error.Message;
         }
+        ClearPersistedSession();
         ResetLocalSession();
     }
 
@@ -862,6 +1000,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _previousSessionStatus = OrchestrationSessionStatus.Lobby;
         PairingOpen = true;
         ErrorMessage = null;
+        _model.Settings.OrchestrationSessionRoomId = roomId;
+        _model.Settings.OrchestrationSessionPairingCode = code;
+        _model.Settings.OrchestrationSessionMode = mode == OrchestrationMode.Host ? "host" : "remote";
+        _model.Settings.Save();
         _model.ActivateRemoteControl("Paired and waiting for the host");
         _lastRoomActivityMarker = null;
         _lastCollectionSyncUtc = DateTime.MinValue;
@@ -933,6 +1075,18 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     private void ApplyRoom(FirestoreDocument room)
     {
+        if (room.Bool("groupClosed"))
+        {
+            ClearPersistedSession();
+            ResetLocalSession();
+            return;
+        }
+        var incomingPlanRevision = room.String("planRevision");
+        if (_planRevision is not null && incomingPlanRevision is not null && _planRevision != incomingPlanRevision)
+        {
+            StopRunLocally();
+        }
+        _planRevision = incomingPlanRevision;
         _previousSessionStatus = SessionStatus;
         SessionStatus = OrchestrationSessionStatusExtensions.SessionStatusFromRaw(room.String("status"));
         PairingOpen = room.Bool("pairingOpen");
@@ -945,6 +1099,10 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         switch (SessionStatus)
         {
             case OrchestrationSessionStatus.Lobby:
+                if (_previousSessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped)
+                {
+                    BeginOrchestrationActivity();
+                }
                 _model.UpdateRemoteControlStatus("Paired and waiting for the host");
                 break;
             case OrchestrationSessionStatus.Running:
@@ -964,13 +1122,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 break;
             case OrchestrationSessionStatus.Completed:
                 CancelPrefetch();
-                EndOrchestrationActivity();
-                _model.UpdateRemoteControlStatus("Meeting completed");
+                _model.UpdateRemoteControlStatus("Run completed; paired for the next script");
                 break;
             case OrchestrationSessionStatus.Stopped:
                 CancelPrefetch();
-                EndOrchestrationActivity();
-                _model.UpdateRemoteControlStatus("Meeting stopped by the host");
+                _model.UpdateRemoteControlStatus("Run stopped; paired for the next script");
                 _turnExecutionCancellation?.Cancel();
                 _turnExecutionCancellation = null;
                 _activeExecutionTurnId = null;
@@ -1071,7 +1227,12 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             .Where(turn => turn.ParticipantUid == uid)
             .OrderBy(turn => turn.SegmentIndex)
             .ToList();
-        if (assignedTurns.Count == 0 || assignedTurns.Any(turn => string.IsNullOrEmpty(turn.Text))) return;
+        if (assignedTurns.Count == 0)
+        {
+            if (_localSegments.Count > 0) StopRunLocally();
+            return;
+        }
+        if (assignedTurns.Any(turn => string.IsNullOrEmpty(turn.Text))) return;
         var segments = assignedTurns.Select(turn => turn.Text!).ToList();
         if (segments.SequenceEqual(_localSegments)) return;
 
@@ -1594,22 +1755,27 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         if (SessionId is not string sessionId || _userId is not string uid) return;
         try
         {
-            await _database.CommitAsync(new FirestoreWrite
+            var writes = new List<FirestoreWrite>
             {
-                DocumentPath = ParticipantPath(sessionId, uid),
-                Fields = new()
+                new()
                 {
-                    ["status"] = _localSegments.Count > 0 && PreparedLocalSegmentCount == _localSegments.Count
-                        ? "ready"
-                        : "preparing",
-                    ["preparedSegmentCount"] = PreparedLocalSegmentCount,
-                    ["preparationError"] = PreparationError ?? "",
-                    ["isConnected"] = true,
+                    DocumentPath = ParticipantPath(sessionId, uid),
+                    Fields = new()
+                    {
+                        ["status"] = _localSegments.Count == 0
+                            ? "waiting"
+                            : PreparedLocalSegmentCount == _localSegments.Count ? "ready" : "preparing",
+                        ["preparedSegmentCount"] = PreparedLocalSegmentCount,
+                        ["preparationError"] = PreparationError ?? "",
+                        ["isConnected"] = true,
+                    },
+                    UpdateMask = ["status", "preparedSegmentCount", "preparationError", "isConnected"],
+                    ServerTimestampFields = ["lastSeenAt"],
+                    MustExist = true,
                 },
-                UpdateMask = ["status", "preparedSegmentCount", "preparationError", "isConnected"],
-                ServerTimestampFields = ["lastSeenAt"],
-                MustExist = true,
-            });
+            };
+            if (IsHost) writes.Add(RoomActivityBump(sessionId));
+            await _database.CommitAsync(writes);
         }
         catch (Exception)
         {
@@ -1721,6 +1887,31 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _hasReportedPlaybackStart = false;
         _lastRoomActivityMarker = null;
         _lastCollectionSyncUtc = DateTime.MinValue;
+        _planRevision = null;
+    }
+
+    private void StopRunLocally()
+    {
+        CancelPrefetch();
+        _turnExecutionCancellation?.Cancel();
+        _turnExecutionCancellation = null;
+        _activeExecutionTurnId = null;
+        _hasReportedPlaybackStart = false;
+        _model.StopOrchestratedTurn();
+        _localSegments = [];
+        _preparedLocalSegments.Clear();
+        PreparedLocalSegmentCount = 0;
+        PreparationStatus = "Waiting for the host script";
+        PreparationError = null;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalAssignedSegmentCount)));
+    }
+
+    private void ClearPersistedSession()
+    {
+        _model.Settings.OrchestrationSessionRoomId = "";
+        _model.Settings.OrchestrationSessionPairingCode = "";
+        _model.Settings.OrchestrationSessionMode = "";
+        _model.Settings.Save();
     }
 
     private static string RoomPath(string roomId) => $"orchestrationRooms/{roomId}";

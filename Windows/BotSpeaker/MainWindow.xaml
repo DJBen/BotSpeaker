@@ -22,6 +22,13 @@
                 <Border Background="#0D808080" CornerRadius="8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="6">
+                            <Button x:Name="RemoteModeButton" HorizontalContentAlignment="Left"
+                                    Padding="8,7" Margin="0,0,0,10" Click="OnRemoteModeClick">
+                                <StackPanel>
+                                    <TextBlock Text="📡 Remote Mode" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Pair once for every orchestrated script" FontSize="10" Foreground="Gray"/>
+                                </StackPanel>
+                            </Button>
                             <!-- Scenario section headers are generated alongside the template rows. -->
                             <ListBox x:Name="TemplateList" BorderThickness="0" Background="Transparent"
                                      SelectionChanged="OnTemplateListSelected"/>
@@ -171,8 +178,6 @@
 
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <Button x:Name="JoinMeetingButton" Content="Join Meeting" Padding="14,6" Margin="0,0,8,0"
-                                Click="OnJoinMeetingClick"/>
                         <Button x:Name="PrepareMeetingButton"
                                 Content="Orchestrate Meeting" Padding="16,6" FontWeight="Bold"
                                 Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
@@ -197,6 +202,32 @@
                              TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="8"/>
                 </GroupBox>
             </DockPanel>
+
+            <!-- Durable remote pairing is a top-level sidebar destination. -->
+            <StackPanel x:Name="RemoteModePanel" Grid.Column="1" Margin="24" Visibility="Collapsed">
+                <TextBlock Text="📡 Remote Mode" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="Pair this PC once, then leave it available while the host runs different meeting scripts."
+                           Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,22"/>
+                <GroupBox Header="This speaker" Padding="12" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Speaker name" FontSize="11" Foreground="Gray"/>
+                        <TextBox x:Name="RemoteSpeakerNameBox" Padding="5" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Pair with a host" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="Enter the six-character code once. BotSpeaker keeps this remote group through network interruptions until you disconnect."
+                                   Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <DockPanel>
+                            <Button x:Name="RemoteJoinButton" Content="Join Remote Group" DockPanel.Dock="Right" Padding="14,6" Margin="10,0,0,0"
+                                    FontWeight="Bold" Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                                    Click="OnJoinMeetingClick"/>
+                            <TextBox x:Name="RemotePairingCodeBox" CharacterCasing="Upper" MaxLength="6"
+                                     FontFamily="Consolas" FontSize="22" Padding="5" KeyDown="OnRemotePairingCodeKeyDown"/>
+                        </DockPanel>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
 
             <!-- Active meeting session, shown in place of the pages above -->
             <ContentControl x:Name="OrchestrationSessionHost" Grid.Column="1" Margin="16"

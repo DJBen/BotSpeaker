@@ -1,6 +1,9 @@
 using System.Globalization;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -39,6 +42,7 @@ public sealed record FirestoreDocument(string Id, Dictionary<string, object?> Fi
 public sealed class FirestoreWrite
 {
     public required string DocumentPath { get; init; }
+    public bool IsDelete { get; init; }
     public Dictionary<string, object?> Fields { get; init; } = [];
     /// <summary>Field paths to replace. Null merges nothing selectively — the whole document is set.</summary>
     public List<string>? UpdateMask { get; init; }
@@ -63,12 +67,35 @@ public sealed class FirestoreClient
 
     public string? UserId { get; private set; }
 
+    private static string AuthFilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BotSpeaker", "firebase-auth.bin");
+
+    public FirestoreClient()
+    {
+        try
+        {
+            if (!File.Exists(AuthFilePath)) return;
+            var bytes = ProtectedData.Unprotect(
+                File.ReadAllBytes(AuthFilePath), optionalEntropy: null, DataProtectionScope.CurrentUser);
+            var parts = Encoding.UTF8.GetString(bytes).Split('\n', 2);
+            if (parts.Length == 2)
+            {
+                UserId = parts[0];
+                _refreshToken = parts[1];
+            }
+        }
+        catch (CryptographicException)
+        {
+        }
+    }
+
     /// <summary>Signs in anonymously (or refreshes the cached token) and returns the stable UID.</summary>
     public async Task<string> EnsureSignedInAsync(CancellationToken cancellation = default)
     {
-        if (UserId is string uid && _idToken is not null)
+        if (UserId is string uid)
         {
-            if (DateTime.UtcNow < _tokenExpiry - TimeSpan.FromMinutes(5)) return uid;
+            if (_idToken is not null && DateTime.UtcNow < _tokenExpiry - TimeSpan.FromMinutes(5)) return uid;
             if (_refreshToken is not null)
             {
                 await RefreshTokenAsync(cancellation);
@@ -87,6 +114,7 @@ public sealed class FirestoreClient
         UserId = body["localId"]?.GetValue<string>()
             ?? throw new AppException("Anonymous sign-in returned no user ID.");
         _tokenExpiry = DateTime.UtcNow + ParseExpiry(body["expiresIn"]?.GetValue<string>());
+        PersistAuthIdentity();
         return UserId;
     }
 
@@ -105,6 +133,18 @@ public sealed class FirestoreClient
         _refreshToken = body["refresh_token"]?.GetValue<string>() ?? _refreshToken;
         UserId = body["user_id"]?.GetValue<string>() ?? UserId;
         _tokenExpiry = DateTime.UtcNow + ParseExpiry(body["expires_in"]?.GetValue<string>());
+        PersistAuthIdentity();
+    }
+
+    private void PersistAuthIdentity()
+    {
+        if (UserId is null || _refreshToken is null) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(AuthFilePath)!);
+        var encrypted = ProtectedData.Protect(
+            Encoding.UTF8.GetBytes($"{UserId}\n{_refreshToken}"),
+            optionalEntropy: null,
+            DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(AuthFilePath, encrypted);
     }
 
     private static TimeSpan ParseExpiry(string? seconds) =>
@@ -150,6 +190,14 @@ public sealed class FirestoreClient
         var writeNodes = new JsonArray();
         foreach (var write in writes)
         {
+            if (write.IsDelete)
+            {
+                writeNodes.Add(new JsonObject
+                {
+                    ["delete"] = $"{FirebaseConfig.DocumentResourcePrefix}/{write.DocumentPath}",
+                });
+                continue;
+            }
             var update = new JsonObject
             {
                 ["name"] = $"{FirebaseConfig.DocumentResourcePrefix}/{write.DocumentPath}",

@@ -19,10 +19,6 @@ struct OrchestrationView: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await model.loadVoicesIfNeeded() }
-        .onDisappear {
-            guard controller.isActive else { return }
-            Task { await controller.leaveSession() }
-        }
         .onKeyPress(.space) {
             guard controller.isHost else { return .ignored }
             switch controller.sessionStatus {
@@ -332,7 +328,7 @@ struct OrchestrationView: View {
                     .buttonStyle(.borderedProminent)
                 Button("Stop", role: .destructive) { Task { await controller.stopMeeting() } }
             case .completed, .stopped:
-                Button("Done", action: leaveFlow)
+                Button("Choose Another Script", action: onExit)
                     .buttonStyle(.borderedProminent)
             }
         }

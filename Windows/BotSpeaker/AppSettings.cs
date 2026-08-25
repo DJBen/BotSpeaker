@@ -13,6 +13,9 @@ public sealed class AppSettings
     public double OutputVolume { get; set; } = 1;
     public string SelectedScriptId { get; set; } = "";
     public string OrchestrationSpeakerName { get; set; } = "";
+    public string OrchestrationSessionRoomId { get; set; } = "";
+    public string OrchestrationSessionPairingCode { get; set; } = "";
+    public string OrchestrationSessionMode { get; set; } = "";
     public Dictionary<string, List<OrchestratedSpeakerPreference>> OrchestratedMeetingSpeakers { get; set; } = [];
     public string LastPlayableScriptId { get; set; } = "";
     public List<CustomSpeechScript> CustomScripts { get; set; } = [];
