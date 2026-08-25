@@ -9,6 +9,7 @@ struct OrchestrationView: View {
     @State private var exportError: String?
     @State private var draggedParticipantID: String?
     @State private var participantDropTarget: ParticipantDropTarget?
+    @FocusState private var isKeyboardFocused: Bool
 
     var body: some View {
         Group {
@@ -19,9 +20,17 @@ struct OrchestrationView: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await model.loadVoicesIfNeeded() }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isKeyboardFocused)
+        .onAppear { isKeyboardFocused = true }
         .onKeyPress(.space) {
             guard controller.isHost else { return .ignored }
             switch controller.sessionStatus {
+            case .lobby:
+                guard !controller.turns.isEmpty, controller.canStartMeeting else { return .ignored }
+                Task { await controller.startMeeting() }
+                return .handled
             case .running:
                 Task { await controller.pauseMeeting() }
                 return .handled
@@ -126,8 +135,7 @@ struct OrchestrationView: View {
                                     .lineLimit(1)
                             }
                             Spacer()
-                            Image(systemName: participantPreparationIcon(participant))
-                                .foregroundStyle(participantPreparationColor(participant))
+                            participantPreparationIndicator(participant)
                                 .help(participantPreparationText(participant))
                         }
                         .padding(.horizontal, 7)
@@ -443,18 +451,26 @@ struct OrchestrationView: View {
         return "\(participant.preparedSegmentCount) of \(participant.segmentCount) prepared"
     }
 
-    private func participantPreparationIcon(_ participant: OrchestrationParticipant) -> String {
-        if participant.preparationError != nil { return "exclamationmark.triangle.fill" }
-        return participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount
-            ? "checkmark.circle.fill"
-            : "arrow.down.circle"
-    }
-
-    private func participantPreparationColor(_ participant: OrchestrationParticipant) -> Color {
-        if participant.preparationError != nil { return .red }
-        return participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount
-            ? .green
-            : .secondary
+    @ViewBuilder
+    private func participantPreparationIndicator(_ participant: OrchestrationParticipant) -> some View {
+        if participant.preparationError != nil {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        } else if participant.segmentCount > 0 && participant.preparedSegmentCount == participant.segmentCount {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        } else if participant.segmentCount > 0 {
+            ProgressView(
+                value: Double(participant.preparedSegmentCount),
+                total: Double(participant.segmentCount)
+            )
+            .progressViewStyle(.circular)
+            .controlSize(.small)
+            .tint(.accentColor)
+        } else {
+            Image(systemName: "hourglass")
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var remoteStatusIcon: String {
