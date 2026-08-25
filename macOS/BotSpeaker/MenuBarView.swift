@@ -155,17 +155,31 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 ToolbarItem(placement: .navigation) {
                     if orchestration.isHost {
-                        Text(orchestration.pairingCode)
-                            .font(.headline.monospacedDigit().bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(
-                                Color.accentColor,
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            )
-                            .fixedSize()
-                            .help("Hosted meeting code \(orchestration.pairingCode)")
+                        HStack(spacing: 8) {
+                            Text(orchestration.pairingCode)
+                                .font(.headline.monospacedDigit().bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Color.accentColor,
+                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                )
+                                .fixedSize()
+                                .help("Hosted meeting code \(orchestration.pairingCode)")
+
+                            Button(role: .destructive) {
+                                Task { await orchestration.leaveSession() }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.body.weight(.semibold))
+                                    .frame(width: 24, height: 24)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(orchestration.isBusy)
+                            .help("End hosted meeting")
+                        }
                     } else if !orchestration.isActive {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
@@ -176,17 +190,6 @@ struct MainWindowView: View {
                         }
                         .disabled(orchestration.isBusy)
                         .help("Create a reusable pairing code for orchestrated scripts")
-                    }
-                }
-                if orchestration.isHost {
-                    ToolbarItem(placement: .navigation) {
-                        Button(role: .destructive) {
-                            Task { await orchestration.leaveSession() }
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .disabled(orchestration.isBusy)
-                        .help("End hosted meeting")
                     }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
