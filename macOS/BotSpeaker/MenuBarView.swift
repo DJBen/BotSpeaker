@@ -495,13 +495,6 @@ struct ComposerView: View {
                 }
             }
 
-            if model.isRemoteControlled {
-                Label(model.remoteControlStatus, systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.caption)
-                    .foregroundStyle(.tint)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             VoicePicker(model: model)
 
             HighlightedTextEditor(
