@@ -498,11 +498,21 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                     "No open meeting matches that code. Check the six characters on the host machine and make sure pairing is still open.");
             }
             if (pairing is null
-                || !pairing.Bool("isOpen")
                 || pairing.String("roomID") is not string roomId
                 || pairing.String("hostUID") is not string hostUid)
             {
                 throw new AppException("That pairing code is not active.");
+            }
+            if (!pairing.Bool("isOpen"))
+            {
+                // Pairing closes once the meeting starts. The read still
+                // succeeded, so this identity is already a participant of the
+                // room — allow the rejoin unless the host closed the group.
+                var room = await _database.GetDocumentAsync(RoomPath(roomId));
+                if (room is null || room.Bool("groupClosed"))
+                {
+                    throw new AppException("The host has closed this meeting group.");
+                }
             }
 
             await WriteLocalParticipantAsync(roomId, code, uid, local);

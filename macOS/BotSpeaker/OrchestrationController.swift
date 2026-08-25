@@ -484,10 +484,18 @@ final class OrchestrationController {
                 throw AppError("No open meeting matches that code. Check the six characters on the host machine and make sure pairing is still open.")
             }
             guard let pairing = pairingSnapshot.data(),
-                  pairing["isOpen"] as? Bool == true,
                   let roomID = pairing["roomID"] as? String,
                   let hostUID = pairing["hostUID"] as? String else {
                 throw AppError("That pairing code is not active.")
+            }
+            if pairing["isOpen"] as? Bool != true {
+                // Pairing closes once the meeting starts. The read still
+                // succeeded, so this identity is already a participant of the
+                // room — allow the rejoin unless the host closed the group.
+                let room = try await self.roomReference(roomID).getDocument().data()
+                guard room?["groupClosed"] as? Bool != true else {
+                    throw AppError("The host has closed this meeting group.")
+                }
             }
 
             try await self.writeLocalParticipant(

@@ -46,9 +46,14 @@ service cloud.firestore {
     }
 
     match /orchestrationPairings/{code} {
+      // Open codes are readable by anyone signed in; a closed or expired
+      // code stays readable only to identities already in its room, so a
+      // former participant can rejoin after the meeting has started.
       allow get: if signedIn()
-        && resource.data.isOpen == true
-        && resource.data.expiresAt > request.time;
+        && (
+          (resource.data.isOpen == true && resource.data.expiresAt > request.time)
+          || isParticipant(resource.data.roomID)
+        );
       allow list: if false;
       allow create: if signedIn()
         && request.resource.data.hostUID == request.auth.uid
