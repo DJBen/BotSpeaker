@@ -153,34 +153,34 @@ struct MainWindowView: View {
         }
         .toolbar {
             if model.hasAPIKey {
-                ToolbarItem(placement: .navigation) {
-                    if orchestration.isHost {
-                        HStack(spacing: 8) {
-                            Text(orchestration.pairingCode)
-                                .font(.headline.monospacedDigit().bold())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Color.accentColor,
-                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                )
-                                .fixedSize()
-                                .help("Hosted meeting code \(orchestration.pairingCode)")
-
-                            Button(role: .destructive) {
-                                Task { await orchestration.leaveSession() }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.body.weight(.semibold))
-                                    .frame(width: 24, height: 24)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(orchestration.isBusy)
-                            .help("End hosted meeting")
+                if orchestration.isHost {
+                    ToolbarItem(placement: .navigation) {
+                        Text(orchestration.pairingCode)
+                            .font(.headline.monospacedDigit().bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(
+                                Color.accentColor,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                            .fixedSize()
+                            .help("Hosted meeting code \(orchestration.pairingCode)")
+                    }
+                    if #available(macOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .navigation)
+                    }
+                    ToolbarItem(placement: .navigation) {
+                        Button(role: .destructive) {
+                            Task { await orchestration.leaveSession() }
+                        } label: {
+                            Image(systemName: "xmark")
                         }
-                    } else if !orchestration.isActive {
+                        .disabled(orchestration.isBusy)
+                        .help("End hosted meeting")
+                    }
+                } else if !orchestration.isActive {
+                    ToolbarItem(placement: .navigation) {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
                                 ProgressView().controlSize(.small)
