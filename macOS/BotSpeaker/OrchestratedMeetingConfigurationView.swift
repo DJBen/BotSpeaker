@@ -44,7 +44,7 @@ struct OrchestratedMeetingConfigurationView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(controller.isHost
                         ? "Use the active host group with this \(controller.selectedTemplate.speakerCount)-speaker script."
-                        : "Start Host Meeting from the title bar before opening this script.")
+                        : "A reusable host code will be created before opening this \(controller.selectedTemplate.speakerCount)-speaker script.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -68,14 +68,14 @@ struct OrchestratedMeetingConfigurationView: View {
                                 ? controller.sessionStatus == .completed || controller.sessionStatus == .stopped
                                     ? "Use for Next Run"
                                     : "Use This Script"
-                                : "Start Host Meeting First",
+                                : "Host & Use This Script",
                             systemImage: "arrow.right.circle.fill"
                         )
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .fixedSize()
-                .disabled(controller.isBusy || !controller.isHost)
+                .disabled(controller.isBusy)
             }
         }
         .padding(22)
@@ -162,8 +162,13 @@ struct OrchestratedMeetingConfigurationView: View {
 
     private func openHostedMeeting() {
         Task {
-            await controller.useSelectedTemplateInHostedGroup()
-            if controller.isActive { onPrepareMeeting() }
+            if controller.isHost {
+                await controller.useSelectedTemplateInHostedGroup()
+            } else {
+                controller.prepareHostSetup()
+                await controller.startHosting()
+            }
+            if controller.isHost { onPrepareMeeting() }
         }
     }
 }

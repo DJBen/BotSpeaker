@@ -633,8 +633,8 @@ public partial class MainWindow : Window
             ? _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped
                 ? "Use for Next Run"
                 : "Use This Script"
-            : "Host Meeting from the title bar first";
-        PrepareMeetingButton.IsEnabled = _orchestration.IsHost;
+            : "Host & Use This Script";
+        PrepareMeetingButton.IsEnabled = !_orchestration.IsBusy;
     }
 
     private string? ShowSpeakerNameDialog(string currentName)
@@ -700,11 +700,18 @@ public partial class MainWindow : Window
 
     private async void OnOpenMeetingSetupClick(object sender, RoutedEventArgs e)
     {
-        if (!_orchestration.IsHost) return;
         SetMeetingEntryButtonsEnabled(false);
-        await _orchestration.UseSelectedTemplateInHostedGroupAsync();
+        if (_orchestration.IsHost)
+        {
+            await _orchestration.UseSelectedTemplateInHostedGroupAsync();
+        }
+        else
+        {
+            _orchestration.PrepareHostSetup();
+            await _orchestration.StartHostingAsync();
+        }
         SetMeetingEntryButtonsEnabled(true);
-        if (_orchestration.IsActive)
+        if (_orchestration.IsHost)
         {
             _showOrchestrationConfiguration = false;
             _showOrchestrationSession = true;

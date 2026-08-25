@@ -16,7 +16,7 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="HostMeetingButton" Content="👥 Host Meeting" Padding="12,5"
                             Click="OnHostMeetingClick"/>
-                    <TextBlock x:Name="HostedMeetingCodeText" Margin="0,0,8,0"
+                    <TextBlock x:Name="HostedMeetingCodeText" MinWidth="150" Margin="0,0,8,0"
                                FontFamily="Consolas" FontSize="15" FontWeight="Bold"
                                VerticalAlignment="Center" Visibility="Collapsed"/>
                     <Button x:Name="ShowHostedMeetingButton" Content="Show" Padding="10,5" Margin="0,0,6,0"
@@ -205,7 +205,7 @@
                                 Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
                                 Click="OnOpenMeetingSetupClick"/>
                     </StackPanel>
-                    <TextBlock Text="This script will use the stable host code shown in the app bar."
+                    <TextBlock Text="A stable host code will be created automatically when needed."
                                FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
                 </DockPanel>
 

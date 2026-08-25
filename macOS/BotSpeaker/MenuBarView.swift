@@ -157,6 +157,7 @@ struct MainWindowView: View {
                     if orchestration.isHost {
                         Text("Code \(orchestration.pairingCode)")
                             .font(.headline.monospacedDigit().bold())
+                            .frame(minWidth: 150, alignment: .leading)
                             .help("Hosted meeting code \(orchestration.pairingCode)")
                         Menu {
                             Button("Show Meeting", systemImage: "rectangle.on.rectangle") {
