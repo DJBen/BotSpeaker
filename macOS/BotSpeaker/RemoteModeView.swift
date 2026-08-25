@@ -49,9 +49,10 @@ struct RemoteModeView: View {
                         UppercaseCodeField(
                             text: $controller.pairingCodeInput,
                             placeholder: "Pairing code",
+                            fontSize: 28,
                             onSubmit: join
                         )
-                        .frame(width: 180, height: 32)
+                        .frame(width: 280, height: 48)
                         Button(action: join) {
                             if controller.isBusy {
                                 ProgressView().controlSize(.small)

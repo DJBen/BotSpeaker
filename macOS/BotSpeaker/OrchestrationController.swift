@@ -1324,7 +1324,11 @@ final class OrchestrationController {
             addRoomActivityBump(to: batch, roomID: sessionID)
             try await batch.commit()
         } catch {
-            errorMessage = error.localizedDescription
+            // A denied write here races a host-side replan; the heartbeat
+            // republishes the same state within 30 seconds, so stay quiet.
+            if !isStaleTurnWrite(error) {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -1428,9 +1432,24 @@ final class OrchestrationController {
                 addRoomActivityBump(to: batch, roomID: sessionID)
                 try await batch.commit()
             } catch {
-                errorMessage = error.localizedDescription
+                if self.isStaleTurnWrite(error) {
+                    self.model?.updateRemoteControlStatus("Turn ended by the host")
+                } else {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
+    }
+
+    /// Whether a turn-report write failed because the host already finalized
+    /// the turn (skip, stop, or replan). The security rules reject writes to
+    /// terminal turns, so the denial is expected coordination noise rather
+    /// than a broken session.
+    private func isStaleTurnWrite(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == FirestoreErrorDomain
+            && (nsError.code == FirestoreErrorCode.permissionDenied.rawValue
+                || nsError.code == FirestoreErrorCode.notFound.rawValue)
     }
 
     private func reportTurnFailure(turnID: String, message: String) async {
@@ -1451,7 +1470,11 @@ final class OrchestrationController {
             )
             try await writeEvent(roomID: sessionID, turnID: turnID, type: "failed", error: message)
         } catch {
-            errorMessage = error.localizedDescription
+            if isStaleTurnWrite(error) {
+                model?.updateRemoteControlStatus("Turn ended by the host")
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

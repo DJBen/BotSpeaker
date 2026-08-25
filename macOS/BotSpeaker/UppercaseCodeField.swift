@@ -11,17 +11,20 @@ struct UppercaseCodeField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var characterLimit: Int
+    var fontSize: CGFloat
     var onSubmit: () -> Void
 
     init(
         text: Binding<String>,
         placeholder: String = "",
         characterLimit: Int = 6,
+        fontSize: CGFloat = NSFont.systemFontSize(for: .large),
         onSubmit: @escaping () -> Void = {}
     ) {
         self._text = text
         self.placeholder = placeholder
         self.characterLimit = characterLimit
+        self.fontSize = fontSize
         self.onSubmit = onSubmit
     }
 
@@ -29,7 +32,7 @@ struct UppercaseCodeField: NSViewRepresentable {
         let field = NSTextField(string: text)
         field.delegate = context.coordinator
         field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize(for: .large), weight: .semibold)
+        field.font = .monospacedSystemFont(ofSize: fontSize, weight: .semibold)
         field.bezelStyle = .roundedBezel
         field.isBordered = true
         field.usesSingleLineMode = true
