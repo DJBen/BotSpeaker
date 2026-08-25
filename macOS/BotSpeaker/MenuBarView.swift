@@ -155,22 +155,23 @@ struct MainWindowView: View {
             if model.hasAPIKey {
                 ToolbarItemGroup(placement: .navigation) {
                     if orchestration.isHost {
-                        Text("Code \(orchestration.pairingCode)")
-                            .font(.headline.monospacedDigit().bold())
-                            .frame(minWidth: 150, alignment: .leading)
-                            .help("Hosted meeting code \(orchestration.pairingCode)")
-                        Menu {
-                            Button("Show Meeting", systemImage: "rectangle.on.rectangle") {
-                                showHostedMeeting()
-                            }
-                            Divider()
-                            Button("End Hosted Meeting", systemImage: "xmark.circle", role: .destructive) {
-                                Task { await orchestration.leaveSession() }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
+                        HStack(spacing: 5) {
+                            Text("Code")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            Text(orchestration.pairingCode)
+                                .font(.headline.monospacedDigit().bold())
+                                .foregroundStyle(Color.accentColor)
                         }
-                        .help("Hosted meeting options")
+                        .fixedSize()
+                        .help("Hosted meeting code \(orchestration.pairingCode)")
+                        Button(role: .destructive) {
+                            Task { await orchestration.leaveSession() }
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .disabled(orchestration.isBusy)
+                        .help("End hosted meeting")
                     } else if !orchestration.isActive {
                         Button(action: startHostGroup) {
                             if orchestration.isBusy && orchestration.setupMode == .host {
