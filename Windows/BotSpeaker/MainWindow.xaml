@@ -48,7 +48,8 @@
                                     Padding="8,7" Margin="0,0,0,10" Click="OnRemoteModeClick">
                                 <StackPanel>
                                     <TextBlock Text="📡 Remote Mode" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Join with a host code" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock x:Name="RemoteModeDetailText" Text="Join with a host code"
+                                               FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Button>
                             <!-- Scenario section headers are generated alongside the template rows. -->

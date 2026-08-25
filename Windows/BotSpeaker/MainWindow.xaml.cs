@@ -217,7 +217,12 @@ public partial class MainWindow : Window
             TemplateList.IsEnabled = !libraryLocked;
             CustomList.IsEnabled = !libraryLocked && !inSession;
             AddScriptButton.IsEnabled = !libraryLocked && !inSession;
-            RemoteModeButton.IsEnabled = !_orchestration.IsHost;
+            RemoteModeButton.IsEnabled = !_orchestration.IsBusy;
+            RemoteModeDetailText.Text = _orchestration.IsHost
+                ? "Exit host meeting to be able to join remotely."
+                : _orchestration.ActiveMode == OrchestrationMode.Remote
+                    ? $"Paired · {_orchestration.PairingCode}"
+                    : "Join with a host code";
             VoiceCombo.IsEnabled = VoiceCombo.IsEnabled && !remote;
             RefreshVoicesButton.IsEnabled = !remote && !_model.IsLoadingVoices;
             PlaybackOptionsButton.IsEnabled = !remote;
@@ -748,9 +753,21 @@ public partial class MainWindow : Window
         RemoteJoinButton.IsEnabled = isEnabled;
     }
 
-    private void OnRemoteModeClick(object sender, RoutedEventArgs e)
+    private async void OnRemoteModeClick(object sender, RoutedEventArgs e)
     {
-        if (_orchestration.IsHost) return;
+        if (_orchestration.IsHost)
+        {
+            var confirmation = MessageBox.Show(
+                this,
+                "This ends the hosted meeting and disconnects its paired speakers. You can then join another meeting in Remote Mode.",
+                "Exit hosted meeting?",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (confirmation != MessageBoxResult.Yes) return;
+            await _orchestration.LeaveSessionAsync();
+            _showOrchestrationSession = false;
+        }
         _showOrchestrationConfiguration = false;
         _showRemoteMode = true;
         TemplateList.SelectedItem = null;

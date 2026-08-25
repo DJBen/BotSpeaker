@@ -32,6 +32,7 @@ struct MainWindowView: View {
     @State private var isShowingRemoteMode = false
     @State private var detailPath: [DetailDestination] = []
     @State private var hostMeetingError: String?
+    @State private var isConfirmingExitHostForRemoteMode = false
 
     var body: some View {
         Group {
@@ -71,12 +72,7 @@ struct MainWindowView: View {
                             ? orchestration.selectedTemplate.id
                             : nil,
                         isRemoteModeSelected: isShowingRemoteMode,
-                        onOpenRemoteMode: {
-                            guard !orchestration.isHost else { return }
-                            detailPath.removeAll()
-                            isShowingOrchestrationConfiguration = false
-                            isShowingRemoteMode = true
-                        },
+                        onOpenRemoteMode: requestOpenRemoteMode,
                         onOpenOrchestratedMeeting: { template in
                             guard !isOrchestrationFlowPresented else { return }
                             isShowingRemoteMode = false
@@ -150,6 +146,12 @@ struct MainWindowView: View {
             Button("OK", role: .cancel) { hostMeetingError = nil }
         } message: {
             Text(hostMeetingError ?? "Unknown error")
+        }
+        .alert("Exit hosted meeting?", isPresented: $isConfirmingExitHostForRemoteMode) {
+            Button("Cancel", role: .cancel) {}
+            Button("Exit Hosted Meeting", role: .destructive, action: exitHostAndOpenRemoteMode)
+        } message: {
+            Text("This ends the hosted meeting and disconnects its paired speakers. You can then join another meeting in Remote Mode.")
         }
         .toolbar {
             if model.hasAPIKey {
@@ -228,6 +230,27 @@ struct MainWindowView: View {
         detailPath.removeAll()
     }
 
+    private func requestOpenRemoteMode() {
+        if orchestration.isHost {
+            isConfirmingExitHostForRemoteMode = true
+        } else {
+            openRemoteMode()
+        }
+    }
+
+    private func openRemoteMode() {
+        detailPath.removeAll()
+        isShowingOrchestrationConfiguration = false
+        isShowingRemoteMode = true
+    }
+
+    private func exitHostAndOpenRemoteMode() {
+        Task {
+            await orchestration.leaveSession()
+            openRemoteMode()
+        }
+    }
+
     private func startHostGroup() {
         orchestration.prepareHostSetup()
         Task {
@@ -299,18 +322,20 @@ private struct ScriptLibrarySidebar: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Remote Mode")
-                        Text(orchestration.activeMode == .remote
-                            ? "Paired · \(orchestration.pairingCode)"
-                            : "Join with a host code")
+                        Text(orchestration.isHost
+                            ? "Exit host meeting to be able to join remotely."
+                            : orchestration.activeMode == .remote
+                                ? "Paired · \(orchestration.pairingCode)"
+                                : "Join with a host code")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
                 } icon: {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                 }
                 .padding(.vertical, 3)
                 .tag("remote-mode")
-                .disabled(orchestration.isHost)
             }
 
             ForEach(model.bundledScriptGroups) { scenario in
