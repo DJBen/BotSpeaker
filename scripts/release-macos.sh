@@ -215,7 +215,15 @@ if [[ -z "$SIGN_UPDATE" ]]; then
     exit 1
 fi
 
-SPARKLE_SIGNATURE="$("$SIGN_UPDATE" "$DMG_PATH")"
+if [[ -n "${SPARKLE_SIGNING_KEY:-}" ]]; then
+    SPARKLE_KEY_FILE="$BUILD_DIR/sparkle_ed25519"
+    printf '%s' "$SPARKLE_SIGNING_KEY" >"$SPARKLE_KEY_FILE"
+    chmod 600 "$SPARKLE_KEY_FILE"
+    SPARKLE_SIGNATURE="$("$SIGN_UPDATE" --ed-key-file "$SPARKLE_KEY_FILE" "$DMG_PATH")"
+    rm -f "$SPARKLE_KEY_FILE"
+else
+    SPARKLE_SIGNATURE="$("$SIGN_UPDATE" "$DMG_PATH")"
+fi
 ED_SIGNATURE="$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
 ED_LENGTH="$(sed -n 's/.*length="\([^"]*\)".*/\1/p' <<<"$SPARKLE_SIGNATURE")"
 if [[ -z "$ED_SIGNATURE" || -z "$ED_LENGTH" ]]; then
