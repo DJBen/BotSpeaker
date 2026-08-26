@@ -59,8 +59,6 @@ struct ElevenLabsClient {
         voiceID: String,
         modelID: String,
         apiKey: String,
-        previousText: String? = nil,
-        nextText: String? = nil,
         cacheNamespace: String,
         bypassCache: Bool = false
     ) async throws -> SpeechClip {
@@ -68,8 +66,6 @@ struct ElevenLabsClient {
             text: text,
             voiceID: voiceID,
             modelID: modelID,
-            previousText: previousText,
-            nextText: nextText,
             namespace: cacheNamespace
         )
         if !bypassCache,
@@ -90,8 +86,6 @@ struct ElevenLabsClient {
         request.httpBody = try JSONEncoder().encode(SpeechRequest(
             text: text,
             modelID: modelID,
-            previousText: previousText,
-            nextText: nextText,
             voiceSettings: VoiceSettings(speed: Self.defaultSpeechSpeed)
         ))
 
@@ -114,8 +108,6 @@ struct ElevenLabsClient {
         text: String,
         voiceID: String,
         modelID: String,
-        previousText: String?,
-        nextText: String?,
         namespace: String
     ) throws -> (audio: URL, timing: URL) {
         let base = try FileManager.default.url(
@@ -127,7 +119,7 @@ struct ElevenLabsClient {
             .appendingPathComponent(safeCacheComponent(namespace), isDirectory: true)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let digest = SHA256.hash(data: Data(
-            "\(voiceID)|\(modelID)|speed=\(Self.defaultSpeechSpeed)|\(previousText ?? "")|\(text)|\(nextText ?? "")".utf8
+            "\(voiceID)|\(modelID)|speed=\(Self.defaultSpeechSpeed)|\(text)".utf8
         ))
             .map { String(format: "%02x", $0) }
             .joined()
@@ -333,15 +325,11 @@ private struct VoicePage: Decodable {
 private struct SpeechRequest: Encodable {
     let text: String
     let modelID: String
-    let previousText: String?
-    let nextText: String?
     let voiceSettings: VoiceSettings
 
     enum CodingKeys: String, CodingKey {
         case text
         case modelID = "model_id"
-        case previousText = "previous_text"
-        case nextText = "next_text"
         case voiceSettings = "voice_settings"
     }
 }

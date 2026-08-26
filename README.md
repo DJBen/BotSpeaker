@@ -30,7 +30,7 @@ The repository and its release downloads are public.
 - ElevenLabs voice selection
 - Speech generated at a 1.1× default speed for a more natural meeting pace
 - Sequential, sentence-aware speech generation for long scripts
-- Persistent audio-chunk caching per script, voice, model, and surrounding context
+- Persistent audio-chunk caching per script, voice, and model
 - Three launch-retrospective role templates written for Eleven v3 audio tags, with one-time speaker-name substitution
 - One host-controlled, four-speaker **AI meeting assistant launch readiness** conversation
 - Side-by-side script library and playback workspace, plus named custom scripts

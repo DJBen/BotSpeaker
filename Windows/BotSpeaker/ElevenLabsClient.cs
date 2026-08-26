@@ -65,13 +65,11 @@ public sealed class ElevenLabsClient
         string voiceId,
         string modelId,
         string apiKey,
-        string? previousText,
-        string? nextText,
         string cacheNamespace,
         bool bypassCache,
         CancellationToken cancellation = default)
     {
-        var (audioPath, timingPath) = CachePaths(text, voiceId, modelId, previousText, nextText, cacheNamespace);
+        var (audioPath, timingPath) = CachePaths(text, voiceId, modelId, cacheNamespace);
         if (!bypassCache && File.Exists(audioPath) && File.Exists(timingPath))
         {
             try
@@ -94,8 +92,6 @@ public sealed class ElevenLabsClient
             JsonSerializer.Serialize(new SpeechRequest(
                 text,
                 modelId,
-                previousText,
-                nextText,
                 new VoiceSettings(DefaultSpeechSpeed))),
             Encoding.UTF8,
             "application/json");
@@ -123,14 +119,14 @@ public sealed class ElevenLabsClient
     }
 
     private static (string Audio, string Timing) CachePaths(
-        string text, string voiceId, string modelId, string? previousText, string? nextText, string cacheNamespace)
+        string text, string voiceId, string modelId, string cacheNamespace)
     {
         var baseDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "BotSpeaker", "Audio", SafeCacheComponent(cacheNamespace));
         Directory.CreateDirectory(baseDirectory);
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"{voiceId}|{modelId}|speed={DefaultSpeechSpeed}|{previousText ?? ""}|{text}|{nextText ?? ""}")));
+            $"{voiceId}|{modelId}|speed={DefaultSpeechSpeed}|{text}")));
         var stem = Path.Combine(baseDirectory, digest);
         return (stem + ".mp3", stem + ".timing.json");
     }
@@ -165,8 +161,6 @@ public sealed class ElevenLabsClient
     private sealed record SpeechRequest(
         [property: JsonPropertyName("text")] string Text,
         [property: JsonPropertyName("model_id")] string ModelId,
-        [property: JsonPropertyName("previous_text")] string? PreviousText,
-        [property: JsonPropertyName("next_text")] string? NextText,
         [property: JsonPropertyName("voice_settings")] VoiceSettings VoiceSettings);
 
     private sealed record VoiceSettings(

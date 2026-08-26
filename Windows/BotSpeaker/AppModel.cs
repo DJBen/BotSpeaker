@@ -393,7 +393,7 @@ public sealed class AppModel : INotifyPropertyChanged
             cancellation.ThrowIfCancellationRequested();
             _ = await _client.SynthesizeAsync(
                 plan.Text, VoiceId, ModelId, apiKey,
-                plan.PreviousText, plan.NextText,
+
                 cacheNamespace, bypassCache: false, cancellation);
         }
     }
@@ -435,7 +435,7 @@ public sealed class AppModel : INotifyPropertyChanged
                 cancellation.ThrowIfCancellationRequested();
                 var clip = await _client.SynthesizeAsync(
                     plan.Text, VoiceId, ModelId, apiKey,
-                    plan.PreviousText, plan.NextText,
+
                     cacheNamespace, bypassCache: false, cancellation);
                 cancellation.ThrowIfCancellationRequested();
                 if (_generationId != taskId) throw new OperationCanceledException();
@@ -589,7 +589,7 @@ public sealed class AppModel : INotifyPropertyChanged
                 cancellation.ThrowIfCancellationRequested();
                 var clip = await _client.SynthesizeAsync(
                     plan.Text, voiceId, modelId, apiKey,
-                    plan.PreviousText, plan.NextText,
+
                     cacheNamespace, bypassCache, cancellation);
                 cancellation.ThrowIfCancellationRequested();
                 if (_generationId != taskId) return;

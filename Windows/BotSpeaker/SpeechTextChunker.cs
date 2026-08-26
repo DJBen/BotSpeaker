@@ -6,7 +6,7 @@ public readonly record struct TextSpan(int Location, int Length)
     public int End => Location + Length;
 }
 
-public sealed record SpeechChunkPlan(string Text, TextSpan SourceRange, string? PreviousText, string? NextText);
+public sealed record SpeechChunkPlan(string Text, TextSpan SourceRange);
 
 /// <summary>
 /// Splits a long script into ElevenLabs-sized requests, preferring sentence breaks,
@@ -18,7 +18,6 @@ public static class SpeechTextChunker
     private const int TargetCharacterCount = 420;
     private const int MinimumCharacterCount = 240;
     private const int MaximumCharacterCount = 650;
-    private const int ContextCharacterCount = 300;
 
     public static List<SpeechChunkPlan> Chunks(string source)
     {
@@ -68,11 +67,7 @@ public static class SpeechTextChunker
         {
             var text = source[start..end].Trim();
             if (text.Length == 0) continue;
-            plans.Add(new SpeechChunkPlan(
-                text,
-                new TextSpan(start, end - start),
-                ContextBefore(start, source),
-                ContextAfter(end, source)));
+            plans.Add(new SpeechChunkPlan(text, new TextSpan(start, end - start)));
         }
         return plans;
     }
@@ -86,21 +81,5 @@ public static class SpeechTextChunker
             if (candidate >= target) return candidate;
         }
         return valid[^1];
-    }
-
-    private static string? ContextBefore(int index, string source)
-    {
-        if (index <= 0) return null;
-        int start = Math.Max(index - ContextCharacterCount, 0);
-        var value = source[start..index].Trim();
-        return value.Length == 0 ? null : value;
-    }
-
-    private static string? ContextAfter(int index, string source)
-    {
-        if (index >= source.Length) return null;
-        int end = Math.Min(index + ContextCharacterCount, source.Length);
-        var value = source[index..end].Trim();
-        return value.Length == 0 ? null : value;
     }
 }

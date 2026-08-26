@@ -3,15 +3,12 @@ import Foundation
 struct SpeechChunkPlan: Sendable {
     let text: String
     let sourceRange: NSRange
-    let previousText: String?
-    let nextText: String?
 }
 
 enum SpeechTextChunker {
     private static let targetCharacterCount = 420
     private static let minimumCharacterCount = 240
     private static let maximumCharacterCount = 650
-    private static let contextCharacterCount = 300
 
     static func chunks(for source: String) -> [SpeechChunkPlan] {
         guard let contentRange = source.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) else {
@@ -89,12 +86,7 @@ enum SpeechTextChunker {
         return rawRanges.enumerated().map { index, range in
             let text = String(source[range]).trimmingCharacters(in: .whitespacesAndNewlines)
             let sourceRange = NSRange(range, in: source)
-            return SpeechChunkPlan(
-                text: text,
-                sourceRange: sourceRange,
-                previousText: context(before: range.lowerBound, in: source),
-                nextText: context(after: range.upperBound, in: source)
-            )
+            return SpeechChunkPlan(text: text, sourceRange: sourceRange)
         }
         .filter { !$0.text.isEmpty }
     }
@@ -107,19 +99,5 @@ enum SpeechTextChunker {
     ) -> String.Index? {
         let valid = candidates.filter { $0 >= minimum && $0 <= maximum }
         return valid.first(where: { $0 >= target }) ?? valid.last
-    }
-
-    private static func context(before index: String.Index, in source: String) -> String? {
-        guard index > source.startIndex else { return nil }
-        let start = source.index(index, offsetBy: -contextCharacterCount, limitedBy: source.startIndex) ?? source.startIndex
-        let value = source[start..<index].trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : String(value)
-    }
-
-    private static func context(after index: String.Index, in source: String) -> String? {
-        guard index < source.endIndex else { return nil }
-        let end = source.index(index, offsetBy: contextCharacterCount, limitedBy: source.endIndex) ?? source.endIndex
-        let value = source[index..<end].trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : String(value)
     }
 }

@@ -387,8 +387,7 @@ final class AppModel {
                 voiceID: voiceID,
                 modelID: modelID,
                 apiKey: apiKey,
-                previousText: plan.previousText,
-                nextText: plan.nextText,
+
                 cacheNamespace: cacheNamespace,
                 bypassCache: false
             )
@@ -431,8 +430,7 @@ final class AppModel {
                     voiceID: voiceID,
                     modelID: modelID,
                     apiKey: apiKey,
-                    previousText: plan.previousText,
-                    nextText: plan.nextText,
+
                     cacheNamespace: cacheNamespace,
                     bypassCache: false
                 )
@@ -566,8 +564,7 @@ final class AppModel {
                     voiceID: voiceID,
                     modelID: modelID,
                     apiKey: apiKey,
-                    previousText: plan.previousText,
-                    nextText: plan.nextText,
+
                     cacheNamespace: cacheNamespace,
                     bypassCache: bypassCache
                 )
