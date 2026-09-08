@@ -13,6 +13,11 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
 - **macOS 14 or later:** [`BotSpeaker-0.3.1-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.3.1), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. It downloads the signed `botspeaker` binary attached to the latest release.
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash
+  ```
 - **Windows 10/11 x64:** [`BotSpeaker-Windows-x64-0.3.1.zip`](https://github.com/DJBen/BotSpeaker/releases/tag/0.3.1), a self-contained portable exe—unzip and run, with no .NET installation required. It is currently unsigned, so Windows SmartScreen may warn on first launch.
 
 The repository and its release downloads are public.
@@ -138,9 +143,11 @@ and transcript details.
 
 ## Drive it from the command line or an agent
 
-The `botspeaker` CLI (`scripts/install-cli.sh`) speaks arbitrary text on this
-Mac or on any Mac paired to the meeting this Mac hosts, independent of the
-orchestrated script. `botspeaker speak --wait "Hello"` plays locally;
+The `botspeaker` CLI speaks arbitrary text on this Mac or on any Mac paired
+to the meeting this Mac hosts, independent of the orchestrated script. Install
+or update it with the one-liner under [Download](#download); the app updates
+itself through Sparkle, and when it gets ahead of the CLI, every CLI call
+prints a reminder to run `botspeaker upgrade`. `botspeaker speak --wait "Hello"` plays locally;
 `botspeaker speak --target "Other Mac" --wait "Hello"` plays remotely and
 reports when it finished. The app exposes the same functions over a loopback
 HTTP API with a per-launch token, and `cli/skills/botspeaker/SKILL.md` is a

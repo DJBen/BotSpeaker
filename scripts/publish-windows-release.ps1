@@ -148,7 +148,7 @@ try {
             'release', 'create', $Tag,
             '--verify-tag',
             '--title', "BotSpeaker $Version",
-            '--notes', 'Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.'
+            '--notes', "Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.`n`nInstall or update the macOS command line tool:`n`n``````sh`ncurl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash`n``````"
         )
     }
 

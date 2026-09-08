@@ -16,6 +16,7 @@ botspeaker status --json
 ```
 
 - The CLI launches BotSpeaker in the background if it is not running. Exit code 2 means the app is not installed or did not come up; ask the user to install or open BotSpeaker.
+- If `botspeaker` is missing, install it with `curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash`. If a command prints a `note:` that the app is newer than the CLI, run `botspeaker upgrade`.
 - `apiKeyConfigured` must be true and `output` non-null, otherwise ask the user to finish Settings.
 - `session` shows whether this Mac hosts (`"mode": "host"`) or joined a meeting; `attendees` lists paired Macs.
 

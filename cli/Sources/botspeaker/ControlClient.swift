@@ -81,7 +81,10 @@ struct ControlClient {
                 )
             }
         }
-        if let client = found.client { return client }
+        if let client = found.client {
+            client.warnIfAppIsNewer()
+            return client
+        }
         let detail = found.stalePID.map { "the last control.json belongs to pid \($0), which has exited" }
             ?? "no control.json found"
         throw Failure(
@@ -122,6 +125,17 @@ struct ControlClient {
                     + "Install BotSpeaker.app or set BOTSPEAKER_APP to its path."
             )
         }
+    }
+
+    /// Nudges the user to upgrade when the app (which updates itself through
+    /// Sparkle) is newer than this binary. Printed to stderr so JSON output on
+    /// stdout stays clean. Set `BOTSPEAKER_NO_UPGRADE_HINT=1` to silence it.
+    func warnIfAppIsNewer() {
+        guard let discovery,
+              ProcessInfo.processInfo.environment["BOTSPEAKER_NO_UPGRADE_HINT"] == nil,
+              BotSpeakerCLIVersion.compare(BotSpeakerCLIVersion.current, discovery.version) == .orderedAscending else { return }
+        FileHandle.standardError.write(Data(
+            "note: BotSpeaker app is \(discovery.version) but this CLI is \(BotSpeakerCLIVersion.current). Run `botspeaker upgrade`.\n".utf8))
     }
 
     func get(_ path: String, query: [String: String] = [:]) async throws -> [String: Any] {

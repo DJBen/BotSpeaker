@@ -9,10 +9,28 @@ Ad hoc speech is independent of the orchestrated meeting script. It uses the
 same ElevenLabs synthesis, cache, and virtual-audio output as the composer, so
 once a machine is configured for meetings it needs nothing extra.
 
-## Install
+## Install and update
+
+Each GitHub release ships a signed, notarized universal `botspeaker` binary.
+One line installs it, or replaces whatever version is already there:
 
 ```sh
-scripts/install-cli.sh            # builds cli/ in release mode, links into /usr/local/bin or ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash
+```
+
+It goes to `/usr/local/bin` when that is writable, otherwise `~/.local/bin`.
+Options: `--dest DIR`, `--version 0.4.0`, and `--source` (build `cli/` from a
+checkout; also the automatic fallback when a release has no CLI asset).
+
+The app keeps itself current through Sparkle, but the CLI is a separate file.
+Whenever the running app is newer than the CLI, every command prints
+`note: BotSpeaker app is X but this CLI is Y. Run \`botspeaker upgrade\`.` on
+stderr (silence it with `BOTSPEAKER_NO_UPGRADE_HINT=1`). `botspeaker upgrade`
+downloads the matching release, verifies its SHA-256, and swaps the binary in
+place; `botspeaker upgrade --check` only reports, and `--version` prints the
+installed version.
+
+```sh
 botspeaker --help
 ```
 

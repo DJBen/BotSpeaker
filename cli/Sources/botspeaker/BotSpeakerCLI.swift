@@ -7,15 +7,16 @@ struct BotSpeakerCLI: AsyncParsableCommand {
         commandName: "botspeaker",
         abstract: "Drive the BotSpeaker app: play text on this Mac or on a paired attendee.",
         discussion: """
-        The app must be running. Pair machines by hosting on one Mac (`botspeaker host`) and joining \
+        The CLI launches the app in the background if it is not running. Pair machines by hosting on one Mac (`botspeaker host`) and joining \
         from the other (`botspeaker join CODE`), then `botspeaker speak --target NAME "text"` plays \
         on that attendee. Without --target, text plays on this Mac.
 
         Exit codes: 0 success, 1 request failed, 2 app unreachable.
         """,
+        version: BotSpeakerCLIVersion.current,
         subcommands: [
             Speak.self, Stop.self, Status.self, Targets.self, Voices.self, Outputs.self,
-            Requests.self, Wait.self, Host.self, Join.self, Leave.self
+            Requests.self, Wait.self, Host.self, Join.self, Leave.self, Upgrade.self
         ],
         defaultSubcommand: Status.self
     )

@@ -90,6 +90,17 @@ if [[ ! -f "$ASC_KEY_PATH" ]] || ! grep -q -- '-----BEGIN PRIVATE KEY-----' "$AS
     exit 1
 fi
 
+# Keep the CLI's reported version in step with the app version being released.
+CLI_VERSION_FILE="$REPO_ROOT/cli/Sources/botspeaker/Version.swift"
+if ! grep -q "static let current = \"$VERSION\"" "$CLI_VERSION_FILE"; then
+    sed -i '' "s/static let current = \"[^\"]*\"/static let current = \"$VERSION\"/" "$CLI_VERSION_FILE"
+    echo "Updated $CLI_VERSION_FILE to $VERSION."
+    if $PUBLISH_GITHUB; then
+        echo "Error: commit the CLI version bump, then re-run." >&2
+        exit 1
+    fi
+fi
+
 if $PUBLISH_GITHUB; then
     if ! command -v gh >/dev/null 2>&1; then
         echo "Error: gh is required with --publish-github" >&2
@@ -119,9 +130,14 @@ APPCAST_PATH="$DIST_DIR/appcast.xml"
 ARCHIVE_PATH="$BUILD_DIR/BotSpeaker.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
 NOTARY_RESULT="$BUILD_DIR/notary-result.json"
+CLI_ASSET_NAME="botspeaker-cli-macos-universal.zip"
+CLI_ZIP_PATH="$DIST_DIR/$CLI_ASSET_NAME"
+CLI_CHECKSUM_PATH="$CLI_ZIP_PATH.sha256"
+CLI_NOTARY_RESULT="$BUILD_DIR/cli-notary-result.json"
+CLI_INSTALL_ONE_LINER='curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash'
 
 mkdir -p "$DIST_DIR"
-if [[ -e "$DMG_PATH" || -e "$CHECKSUM_PATH" ]]; then
+if [[ -e "$DMG_PATH" || -e "$CHECKSUM_PATH" || -e "$CLI_ZIP_PATH" || -e "$CLI_CHECKSUM_PATH" ]]; then
     echo "Error: release output already exists for $VERSION in $DIST_DIR" >&2
     exit 1
 fi
@@ -203,6 +219,61 @@ spctl --assess --verbose=2 --type open --context context:primary-signature "$DMG
 SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 printf '%s  %s\n' "$SHA256" "$DMG_NAME" >"$CHECKSUM_PATH"
 
+echo "Building the botspeaker CLI $VERSION for arm64 and x86_64..."
+CLI_BUILD_DIR="$BUILD_DIR/cli"
+(
+    cd "$REPO_ROOT/cli"
+    swift build -c release --product botspeaker \
+        --arch arm64 --arch x86_64 \
+        --scratch-path "$CLI_BUILD_DIR" >/dev/null
+)
+CLI_BINARY="$(cd "$REPO_ROOT/cli" && swift build -c release --product botspeaker --arch arm64 --arch x86_64 --scratch-path "$CLI_BUILD_DIR" --show-bin-path)/botspeaker"
+CLI_ARCHITECTURES="$(lipo -archs "$CLI_BINARY")"
+if [[ " $CLI_ARCHITECTURES " != *" arm64 "* || " $CLI_ARCHITECTURES " != *" x86_64 "* ]]; then
+    echo "Error: expected a universal CLI binary, found: $CLI_ARCHITECTURES" >&2
+    exit 1
+fi
+CLI_REPORTED_VERSION="$("$CLI_BINARY" --version)"
+if [[ "$CLI_REPORTED_VERSION" != "$VERSION" ]]; then
+    echo "Error: the CLI reports version $CLI_REPORTED_VERSION, expected $VERSION" >&2
+    exit 1
+fi
+
+CLI_STAGE="$BUILD_DIR/cli-stage"
+rm -rf "$CLI_STAGE"
+mkdir -p "$CLI_STAGE"
+cp "$CLI_BINARY" "$CLI_STAGE/botspeaker"
+codesign --force --sign "$DEVELOPER_ID_IDENTITY" --options runtime --timestamp "$CLI_STAGE/botspeaker"
+codesign --verify --strict --verbose=2 "$CLI_STAGE/botspeaker"
+ditto -c -k "$CLI_STAGE" "$CLI_ZIP_PATH"
+
+echo "Submitting the CLI to Apple's notary service..."
+set +e
+xcrun notarytool submit "$CLI_ZIP_PATH" \
+    --key "$ASC_KEY_PATH" \
+    --key-id "$ASC_KEY_ID" \
+    --issuer "$ASC_ISSUER_ID" \
+    --wait \
+    --output-format json >"$CLI_NOTARY_RESULT"
+CLI_NOTARY_EXIT=$?
+set -e
+CLI_NOTARY_STATUS="$(plutil -extract status raw "$CLI_NOTARY_RESULT" 2>/dev/null || true)"
+if [[ $CLI_NOTARY_EXIT -ne 0 || "$CLI_NOTARY_STATUS" != "Accepted" ]]; then
+    cat "$CLI_NOTARY_RESULT"
+    CLI_SUBMISSION_ID="$(plutil -extract id raw "$CLI_NOTARY_RESULT" 2>/dev/null || true)"
+    if [[ -n "$CLI_SUBMISSION_ID" ]]; then
+        xcrun notarytool log "$CLI_SUBMISSION_ID" \
+            --key "$ASC_KEY_PATH" \
+            --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" || true
+    fi
+    echo "Error: CLI notarization was not accepted" >&2
+    exit 1
+fi
+
+CLI_SHA256="$(shasum -a 256 "$CLI_ZIP_PATH" | awk '{print $1}')"
+printf '%s  %s\n' "$CLI_SHA256" "$CLI_ASSET_NAME" >"$CLI_CHECKSUM_PATH"
+
 SIGN_UPDATE=""
 for candidate in "$HOME"/Library/Developer/Xcode/DerivedData/BotSpeaker-*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update; do
     if [[ -x "$candidate" ]]; then
@@ -269,7 +340,7 @@ if $PUBLISH_GITHUB; then
         gh release create "$TAG" \
             --verify-tag \
             --title "BotSpeaker $VERSION" \
-            --notes "Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads."
+            --notes "$(printf 'Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.\n\nInstall or update the macOS command line tool:\n\n```sh\n%s\n```\n\nAlready installed? `botspeaker upgrade` does the same from the CLI.' "$CLI_INSTALL_ONE_LINER")"
     fi
 
     git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
@@ -282,20 +353,22 @@ if $PUBLISH_GITHUB; then
     fi
 
     EXISTING_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-    for asset in "$DMG_NAME" "$(basename "$CHECKSUM_PATH")" "$(basename "$APPCAST_PATH")"; do
+    for asset in "$DMG_NAME" "$(basename "$CHECKSUM_PATH")" "$(basename "$APPCAST_PATH")" "$CLI_ASSET_NAME" "$(basename "$CLI_CHECKSUM_PATH")"; do
         if grep -Fxq "$asset" <<<"$EXISTING_ASSETS"; then
             echo "Error: GitHub release $TAG already contains $asset" >&2
             exit 1
         fi
     done
 
-    gh release upload "$TAG" "$DMG_PATH" "$CHECKSUM_PATH" "$APPCAST_PATH"
+    gh release upload "$TAG" "$DMG_PATH" "$CHECKSUM_PATH" "$APPCAST_PATH" "$CLI_ZIP_PATH" "$CLI_CHECKSUM_PATH"
 fi
 
 echo "Release complete:"
 echo "  DMG: $DMG_PATH"
 echo "  SHA-256: $SHA256"
 echo "  Sparkle appcast: $APPCAST_PATH"
+echo "  CLI: $CLI_ZIP_PATH"
+echo "  CLI SHA-256: $CLI_SHA256"
 if ! $PUBLISH_GITHUB; then
     echo "  GitHub publishing was skipped. Re-run with --publish-github when ready."
 fi
