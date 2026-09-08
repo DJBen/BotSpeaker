@@ -58,6 +58,7 @@ cleanup() {
   local admin_header="Authorization: Bearer ${ADMIN_TOKEN}"
   curl --silent --request DELETE "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/turns/00000/events/integration-start" --header "$admin_header" >/dev/null
   curl --silent --request DELETE "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/turns/00000" --header "$admin_header" >/dev/null
+  curl --silent --request DELETE "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/speechRequests/integration-speech" --header "$admin_header" >/dev/null
   if [[ -n "$HOST_UID" ]]; then
     curl --silent --request DELETE "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/participants/${HOST_UID}" --header "$admin_header" >/dev/null
   fi
@@ -201,5 +202,87 @@ STALE_START_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}
   exit 1
 }
 
+# Ad hoc speech requests: the host creates one aimed at the client, the client
+# may report progress on it (server timestamps only), nobody else may touch it,
+# and a terminal request rejects further attendee writes.
+SPEECH_DOCUMENT="projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/orchestrationRooms/${ROOM_ID}/speechRequests/integration-speech"
+SPEECH_CREATE_BODY="$(jq -n \
+  --arg document "$SPEECH_DOCUMENT" \
+  --arg target "$CLIENT_UID" \
+  --arg host "$HOST_UID" \
+  --arg created "$STARTED_AT" \
+  '{writes:[{update:{name:$document,fields:{targetUID:{stringValue:$target},targetName:{stringValue:"Remote speaker"},text:{stringValue:"Integration ad hoc speech."},requestedBy:{stringValue:$host},status:{stringValue:"queued"},createdAt:{timestampValue:$created}}},updateTransforms:[{fieldPath:"updatedAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:false}}]}')"
+CLIENT_SPEECH_CREATE_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${CLIENT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$SPEECH_CREATE_BODY")"
+[[ "$CLIENT_SPEECH_CREATE_STATUS" == "403" ]] || {
+  echo "Expected a participant creating a speech request to return 403, received ${CLIENT_SPEECH_CREATE_STATUS}." >&2
+  exit 1
+}
+firestore_request "$HOST_TOKEN" POST "$COMMIT_URL" "$SPEECH_CREATE_BODY" >/dev/null
+
+SPEECH_SPEAKING_BODY="$(jq -n \
+  --arg document "$SPEECH_DOCUMENT" \
+  --arg started "$STARTED_AT" \
+  '{writes:[{update:{name:$document,fields:{status:{stringValue:"speaking"},startedAtClient:{timestampValue:$started}}},updateMask:{fieldPaths:["status","startedAtClient"]},updateTransforms:[{fieldPath:"startedAtServer",setToServerValue:"REQUEST_TIME"},{fieldPath:"updatedAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+HOST_SPEECH_SPEAKING_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${INTRUDER_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$SPEECH_SPEAKING_BODY")"
+[[ "$HOST_SPEECH_SPEAKING_STATUS" == "403" ]] || {
+  echo "Expected an unpaired client updating a speech request to return 403, received ${HOST_SPEECH_SPEAKING_STATUS}." >&2
+  exit 1
+}
+firestore_request "$CLIENT_TOKEN" POST "$COMMIT_URL" "$SPEECH_SPEAKING_BODY" >/dev/null
+
+SPEECH_TEXT_TAMPER_BODY="$(jq -n \
+  --arg document "$SPEECH_DOCUMENT" \
+  '{writes:[{update:{name:$document,fields:{text:{stringValue:"Tampered text."}}},updateMask:{fieldPaths:["text"]},updateTransforms:[{fieldPath:"updatedAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+SPEECH_TAMPER_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${CLIENT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$SPEECH_TEXT_TAMPER_BODY")"
+[[ "$SPEECH_TAMPER_STATUS" == "403" ]] || {
+  echo "Expected a participant rewriting speech request text to return 403, received ${SPEECH_TAMPER_STATUS}." >&2
+  exit 1
+}
+
+SPEECH_STALE_TS_BODY="$(jq -n \
+  --arg document "$SPEECH_DOCUMENT" \
+  --arg ended "$STARTED_AT" \
+  '{writes:[{update:{name:$document,fields:{status:{stringValue:"completed"},endedAtServer:{timestampValue:$ended}}},updateMask:{fieldPaths:["status","endedAtServer"]},updateTransforms:[{fieldPath:"updatedAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+SPEECH_STALE_TS_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${CLIENT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$SPEECH_STALE_TS_BODY")"
+[[ "$SPEECH_STALE_TS_STATUS" == "403" ]] || {
+  echo "Expected a client-supplied endedAtServer on a speech request to return 403, received ${SPEECH_STALE_TS_STATUS}." >&2
+  exit 1
+}
+
+SPEECH_CANCEL_BODY="$(jq -n '{fields:{status:{stringValue:"cancelled"}}}')"
+firestore_request "$HOST_TOKEN" PATCH \
+  "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/speechRequests/integration-speech?updateMask.fieldPaths=status" \
+  "$SPEECH_CANCEL_BODY" >/dev/null
+SPEECH_COMPLETE_BODY="$(jq -n \
+  --arg document "$SPEECH_DOCUMENT" \
+  '{writes:[{update:{name:$document,fields:{status:{stringValue:"completed"}}},updateMask:{fieldPaths:["status"]},updateTransforms:[{fieldPath:"endedAtServer",setToServerValue:"REQUEST_TIME"},{fieldPath:"updatedAt",setToServerValue:"REQUEST_TIME"}],currentDocument:{exists:true}}]}')"
+SPEECH_LATE_COMPLETE_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+  "$COMMIT_URL" \
+  --header "Authorization: Bearer ${CLIENT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data-binary "$SPEECH_COMPLETE_BODY")"
+[[ "$SPEECH_LATE_COMPLETE_STATUS" == "403" ]] || {
+  echo "Expected a cancelled speech request to reject a late completion, received ${SPEECH_LATE_COMPLETE_STATUS}." >&2
+  exit 1
+}
+SPEECH_RESULT="$(firestore_request "$HOST_TOKEN" GET "${FIRESTORE_ROOT}/orchestrationRooms/${ROOM_ID}/speechRequests/integration-speech")"
+jq -e '.fields.status.stringValue == "cancelled" and (.fields.startedAtServer.timestampValue | length > 0)' <<<"$SPEECH_RESULT" >/dev/null
+
 echo "Orchestration backend integration test passed."
-echo "Verified host authority, pairing, preparation readiness, participant access, terminal turn protection, server timestamps, activity-marker bumps, and unpaired-client denial."
+echo "Verified host authority, pairing, preparation readiness, participant access, terminal turn protection, server timestamps, activity-marker bumps, unpaired-client denial, and ad hoc speech request rules."
