@@ -16,8 +16,13 @@ scripts/install-cli.sh            # builds cli/ in release mode, links into /usr
 botspeaker --help
 ```
 
-The CLI needs the BotSpeaker app to be running. It finds the app through a
-discovery file the app writes at launch:
+The CLI is a thin client: synthesis, playback, and the Firestore session all
+live in the BotSpeaker app, so the app must be installed on every machine that
+plays audio. When the app is not running, the CLI launches it in the
+background (without stealing focus) and waits up to 20 seconds for it to come
+up. Set `BOTSPEAKER_NO_LAUNCH=1` to fail with exit code 2 instead, or
+`BOTSPEAKER_APP=/path/to/BotSpeaker.app` to launch a specific copy. It finds
+the running app through a discovery file the app writes at launch:
 
 ```
 ~/Library/Containers/ai.DJBen.2.BotSpeaker/Data/Library/Application Support/BotSpeaker/control.json
@@ -53,9 +58,16 @@ botspeaker leave
 Add `--json` after the subcommand for machine-readable output (for example
 `botspeaker speak --json "text"`, which returns `{"ok": true, "request": {"id":
 "...", "status": "...", ...}}`). Exit codes: `0` success, `1` the app rejected
-or failed the request, `2` the app is not running or the token was rejected.
+or failed the request, `2` the app could not be launched or reached, or the
+token was rejected.
 
 ### Remote playback
+
+The CLI and the app share one session. `botspeaker host` runs the same code
+path as **Host Meeting**, so the pairing code shows up in the app's menu bar
+window, and a Mac that joins through **Remote Mode** appears in `botspeaker
+targets`. Any mix works: host from the CLI and join from the app, or the other
+way round.
 
 1. On the host Mac: `botspeaker host` (or click **Host Meeting** in the app).
 2. On each remote Mac: `botspeaker join CODE` (or use **Remote Mode**).

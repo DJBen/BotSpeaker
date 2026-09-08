@@ -53,7 +53,7 @@ struct Speak: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let spoken = try resolveText()
             var body: [String: Any] = ["text": spoken, "target": target, "wait": wait, "timeout": timeout]
             if let voice { body["voice"] = voice }
@@ -119,7 +119,7 @@ struct Stop: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response: [String: Any]
             if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
                 response = try await client.post("/v1/speech/\(id)/cancel")
@@ -152,7 +152,7 @@ struct Wait: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response = try await client.get("/v1/speech/\(id)", query: ["wait": "1", "timeout": String(timeout)])
             let request = response["request"] as? [String: Any] ?? [:]
             if global.json {
@@ -177,7 +177,7 @@ struct Requests: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response = try await client.get("/v1/speech")
             if global.json {
                 Output.json(response)
@@ -214,7 +214,7 @@ struct Status: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response = try await client.get("/v1/status")
             if global.json {
                 Output.json(response)
@@ -258,7 +258,7 @@ struct Targets: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response = try await client.get("/v1/targets")
             if global.json {
                 Output.json(response)
@@ -293,7 +293,7 @@ struct Voices: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             if let select {
                 let response = try await client.post("/v1/voices/select", body: ["voice": select])
                 if global.json { Output.json(response) } else if let selected = response["selected"] as? [String: Any] {
@@ -333,7 +333,7 @@ struct Outputs: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             if let select {
                 let response = try await client.post("/v1/outputs/select", body: ["name": select])
                 if global.json { Output.json(response) } else if let selected = response["selected"] as? [String: Any] {
@@ -373,7 +373,7 @@ struct Host: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             var body: [String: Any] = [:]
             if let name { body["speakerName"] = name }
             let response = try await client.post("/v1/session/host", body: body)
@@ -399,7 +399,7 @@ struct Join: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             var body: [String: Any] = ["code": code]
             if let name { body["speakerName"] = name }
             let response = try await client.post("/v1/session/join", body: body)
@@ -419,7 +419,7 @@ struct Leave: AsyncParsableCommand {
 
     func run() async throws {
         do {
-            let client = try ControlClient.locate()
+            let client = try await ControlClient.locate()
             let response = try await client.post("/v1/session/leave")
             if global.json { Output.json(response) } else { print("left the meeting") }
         } catch {

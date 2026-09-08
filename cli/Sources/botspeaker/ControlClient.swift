@@ -36,12 +36,9 @@ struct ControlClient {
         return urls
     }
 
-    static func locate() throws -> ControlClient {
-        let environment = ProcessInfo.processInfo.environment
-        if let url = environment["BOTSPEAKER_CONTROL_URL"], let token = environment["BOTSPEAKER_TOKEN"],
-           let base = URL(string: url) {
-            return ControlClient(baseURL: base, token: token, discovery: nil)
-        }
+    /// Returns a client for a live app instance, or nil when no discovery
+    /// file points at a running process.
+    static func findRunning() -> (client: ControlClient?, stalePID: Int?) {
         var stalePID: Int?
         for candidate in discoveryCandidates {
             guard let data = try? Data(contentsOf: candidate),
@@ -52,9 +49,40 @@ struct ControlClient {
                 stalePID = discovery.pid
                 continue
             }
-            return ControlClient(baseURL: base, token: discovery.token, discovery: discovery)
+            return (ControlClient(baseURL: base, token: discovery.token, discovery: discovery), nil)
         }
-        let detail = stalePID.map { "the last control.json belongs to pid \($0), which has exited" }
+        return (nil, stalePID)
+    }
+
+    /// Finds the running app, launching it in the background first when it is
+    /// not running. Set `BOTSPEAKER_NO_LAUNCH=1` to fail instead of launching,
+    /// and `BOTSPEAKER_APP=/path/to/BotSpeaker.app` to launch a specific copy.
+    static func locate(launchIfNeeded: Bool = true) async throws -> ControlClient {
+        let environment = ProcessInfo.processInfo.environment
+        if let url = environment["BOTSPEAKER_CONTROL_URL"], let token = environment["BOTSPEAKER_TOKEN"],
+           let base = URL(string: url) {
+            return ControlClient(baseURL: base, token: token, discovery: nil)
+        }
+        var found = findRunning()
+        if found.client == nil, launchIfNeeded, environment["BOTSPEAKER_NO_LAUNCH"].map({ $0.isEmpty || $0 == "0" }) ?? true {
+            try launchApp(explicitPath: environment["BOTSPEAKER_APP"])
+            let deadline = Date().addingTimeInterval(launchTimeout)
+            while found.client == nil, Date() < deadline {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                found = findRunning()
+            }
+            if found.client == nil {
+                throw Failure(
+                    exitCode: 2,
+                    code: "app_unreachable",
+                    message: "Launched BotSpeaker but it did not publish a control file within \(Int(launchTimeout)) seconds. "
+                        + "Check that the installed app is version 0.4 or newer (the one built from this repository), "
+                        + "or point BOTSPEAKER_APP at the right BotSpeaker.app."
+                )
+            }
+        }
+        if let client = found.client { return client }
+        let detail = found.stalePID.map { "the last control.json belongs to pid \($0), which has exited" }
             ?? "no control.json found"
         throw Failure(
             exitCode: 2,
@@ -62,6 +90,38 @@ struct ControlClient {
             message: "BotSpeaker is not running (\(detail)). Launch the BotSpeaker app, then retry. Looked in: "
                 + discoveryCandidates.map(\.path).joined(separator: ", ")
         )
+    }
+
+    static let launchTimeout: TimeInterval = 20
+
+    /// Asks LaunchServices to start the app without stealing focus.
+    private static func launchApp(explicitPath: String?) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        if let explicitPath, !explicitPath.isEmpty {
+            process.arguments = ["-g", explicitPath]
+        } else {
+            process.arguments = ["-g", "-b", bundleID]
+        }
+        let stderr = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = stderr
+        do {
+            try process.run()
+        } catch {
+            throw Failure(exitCode: 2, code: "app_launch_failed", message: "Could not run /usr/bin/open: \(error.localizedDescription)")
+        }
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let output = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw Failure(
+                exitCode: 2,
+                code: "app_launch_failed",
+                message: "BotSpeaker is not installed or could not be launched (\(output.isEmpty ? "open exited \(process.terminationStatus)" : output)). "
+                    + "Install BotSpeaker.app or set BOTSPEAKER_APP to its path."
+            )
+        }
     }
 
     func get(_ path: String, query: [String: String] = [:]) async throws -> [String: Any] {

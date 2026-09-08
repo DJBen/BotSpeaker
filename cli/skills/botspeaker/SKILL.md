@@ -15,7 +15,7 @@ audio device that feeds a meeting).
 botspeaker status --json
 ```
 
-- Exit code 2 means the app is not running. Ask the user to launch BotSpeaker.
+- The CLI launches BotSpeaker in the background if it is not running. Exit code 2 means the app is not installed or did not come up; ask the user to install or open BotSpeaker.
 - `apiKeyConfigured` must be true and `output` non-null, otherwise ask the user to finish Settings.
 - `session` shows whether this Mac hosts (`"mode": "host"`) or joined a meeting; `attendees` lists paired Macs.
 
@@ -37,7 +37,9 @@ botspeaker speak --target "Attendee name" --wait "Text to say"
 ```
 
 If `targets` only lists `local`, this Mac is not hosting or nobody has paired:
-`botspeaker host` prints a pairing code; the other Mac runs `botspeaker join CODE`.
+`botspeaker host` prints a pairing code; the other Mac runs `botspeaker join CODE`
+or enters the code in the app's Remote Mode. CLI and app share the same session,
+so a meeting hosted from the CLI is visible in the app and vice versa.
 
 ## Other controls
 
