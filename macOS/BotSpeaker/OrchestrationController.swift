@@ -58,14 +58,14 @@ final class OrchestrationController {
     private(set) var errorMessage: String?
     private(set) var meetingScriptTitle = OrchestratedMeetingTemplate.launchReadiness.title
 
-    @ObservationIgnored private weak var model: AppModel?
-    @ObservationIgnored private let database: Firestore
-    @ObservationIgnored private var userID: String?
+    @ObservationIgnored weak var model: AppModel?
+    @ObservationIgnored let database: Firestore
+    @ObservationIgnored var userID: String?
     @ObservationIgnored private var hostUID: String?
     @ObservationIgnored private var localSegments: [String] = []
     @ObservationIgnored private var localScriptTitle = ""
     @ObservationIgnored private var localVoiceName = ""
-    @ObservationIgnored private var activeExecutionTurnID: String?
+    @ObservationIgnored var activeExecutionTurnID: String?
     @ObservationIgnored private var hasReportedPlaybackStart = false
     @ObservationIgnored private var isAdvancing = false
     @ObservationIgnored private var previousSessionStatus: OrchestrationSessionStatus = .lobby
@@ -83,13 +83,27 @@ final class OrchestrationController {
     @ObservationIgnored private var prefetchObserverTask: Task<Void, Never>?
     @ObservationIgnored private var defaultVoicesAppliedForTemplateID: String?
     // Notice-level so `log show` finds these without extra logging config.
-    @ObservationIgnored private let log = Logger(
+    @ObservationIgnored let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "BotSpeaker",
         category: "Orchestration"
     )
     @ObservationIgnored private var assignmentStallTicks = 0
     @ObservationIgnored private var stallRecoveryTask: Task<Void, Never>?
     @ObservationIgnored private var lastServerHealAt: Date?
+
+    // MARK: Ad hoc speech requests (see OrchestrationController+SpeechRequests.swift)
+
+    /// Every ad hoc request this process knows about, oldest first: local
+    /// requests plus the hosted room's mirrored `speechRequests` documents.
+    private(set) var speechRequests: [SpeechRequest] = []
+    @ObservationIgnored var speechRequestsByID: [String: SpeechRequest] = [:] {
+        didSet { speechRequests = speechRequestsByID.values.sorted { $0.createdAt < $1.createdAt } }
+    }
+    @ObservationIgnored var speechRequestsListener: ListenerRegistration?
+    @ObservationIgnored var activeSpeechRequestID: String?
+    @ObservationIgnored var speechExecutionTask: Task<Void, Never>?
+    @ObservationIgnored var remoteControlStatusBeforeSpeech: String?
+    @ObservationIgnored var hasReportedSpeechStart = false
 
     init(model: AppModel) {
         self.model = model
@@ -121,6 +135,9 @@ final class OrchestrationController {
         }
         model.player.onPlaybackFinished = { [weak self] in
             self?.playbackDidFinish()
+        }
+        model.onPlaybackTakenOver = { [weak self] in
+            self?.speechPlaybackWasTakenOver()
         }
     }
 
@@ -887,7 +904,7 @@ final class OrchestrationController {
         )
     }
 
-    private func ensureSignedIn() async throws -> String {
+    func ensureSignedIn() async throws -> String {
         if let uid = Auth.auth().currentUser?.uid {
             userID = uid
             return uid
@@ -986,6 +1003,7 @@ final class OrchestrationController {
     private func attachListeners(roomID: String) {
         removeListeners()
         log.notice("Attaching listeners for room \(roomID, privacy: .public)")
+        attachSpeechRequestsListener(roomID: roomID)
         roomListener = roomReference(roomID).addSnapshotListener { [weak self] snapshot, error in
             Task { @MainActor in
                 guard let self else { return }
@@ -1212,6 +1230,8 @@ final class OrchestrationController {
               localSegments.indices.contains(turn.segmentIndex),
               let sessionID else { return }
 
+        // A scripted turn always wins over ad hoc speech on the same output.
+        preemptActiveSpeechRequest(reason: "meeting turn \(turn.index + 1) started")
         activeExecutionTurnID = turn.id
         hasReportedPlaybackStart = false
         let text = localSegments[turn.segmentIndex]
@@ -1407,6 +1427,10 @@ final class OrchestrationController {
     }
 
     private func playbackDidStart() {
+        if activeSpeechRequestID != nil {
+            speechPlaybackDidStart()
+            return
+        }
         guard let turnID = activeExecutionTurnID,
               !hasReportedPlaybackStart,
               let sessionID else { return }
@@ -1465,6 +1489,10 @@ final class OrchestrationController {
     }
 
     private func playbackDidFinish() {
+        if activeSpeechRequestID != nil {
+            speechPlaybackDidFinish()
+            return
+        }
         guard let turnID = activeExecutionTurnID,
               let sessionID,
               hasReportedPlaybackStart else { return }
@@ -1503,7 +1531,7 @@ final class OrchestrationController {
     /// the turn (skip, stop, or replan). The security rules reject writes to
     /// terminal turns, so the denial is expected coordination noise rather
     /// than a broken session.
-    private func isStaleTurnWrite(_ error: Error) -> Bool {
+    func isStaleTurnWrite(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == FirestoreErrorDomain
             && (nsError.code == FirestoreErrorCode.permissionDenied.rawValue
@@ -1600,7 +1628,7 @@ final class OrchestrationController {
     /// polling (Windows) clients re-list the participant and turn collections.
     /// This is the one room update the security rules allow participants to
     /// make; heartbeats intentionally skip it.
-    private func addRoomActivityBump(to batch: WriteBatch, roomID: String) {
+    func addRoomActivityBump(to batch: WriteBatch, roomID: String) {
         batch.updateData(
             ["activityAt": FieldValue.serverTimestamp()],
             forDocument: roomReference(roomID)
@@ -1667,6 +1695,7 @@ final class OrchestrationController {
                 self.maybeExecuteActiveTurn()
                 self.scheduleNextPrefetch()
                 self.healAssignmentStallIfNeeded()
+                self.pumpSpeechRequestQueue()
             }
     }
 
@@ -1741,6 +1770,7 @@ final class OrchestrationController {
 
     private func resetLocalSession() {
         removeListeners()
+        clearRemoteSpeechRequests()
         heartbeatTimer?.cancel()
         heartbeatTimer = nil
         stopExecutionWatchdog()
@@ -1803,6 +1833,8 @@ final class OrchestrationController {
     }
 
     private func removeListeners() {
+        speechRequestsListener?.remove()
+        speechRequestsListener = nil
         roomListener?.remove()
         participantsListener?.remove()
         turnsListener?.remove()
@@ -1811,7 +1843,7 @@ final class OrchestrationController {
         turnsListener = nil
     }
 
-    private func roomReference(_ roomID: String) -> DocumentReference {
+    func roomReference(_ roomID: String) -> DocumentReference {
         database.collection("orchestrationRooms").document(roomID)
     }
 
@@ -1819,7 +1851,7 @@ final class OrchestrationController {
         database.collection("orchestrationPairings").document(code)
     }
 
-    private func participantReference(roomID: String, uid: String) -> DocumentReference {
+    func participantReference(roomID: String, uid: String) -> DocumentReference {
         roomReference(roomID).collection("participants").document(uid)
     }
 
@@ -1833,7 +1865,7 @@ final class OrchestrationController {
             .document()
     }
 
-    private static func date(from value: Any?) -> Date? {
+    static func date(from value: Any?) -> Date? {
         (value as? Timestamp)?.dateValue()
     }
 

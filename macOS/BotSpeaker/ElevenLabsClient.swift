@@ -83,7 +83,7 @@ struct ElevenLabsClient {
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-        request.httpBody = try JSONEncoder().encode(SpeechRequest(
+        request.httpBody = try JSONEncoder().encode(SynthesisRequest(
             text: text,
             modelID: modelID,
             voiceSettings: VoiceSettings(speed: Self.defaultSpeechSpeed)
@@ -322,7 +322,7 @@ private struct VoicePage: Decodable {
     }
 }
 
-private struct SpeechRequest: Encodable {
+private struct SynthesisRequest: Encodable {
     let text: String
     let modelID: String
     let voiceSettings: VoiceSettings

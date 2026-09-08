@@ -5,11 +5,17 @@ struct BotSpeakerApp: App {
     @State private var model: AppModel
     @State private var orchestration: OrchestrationController
     @State private var updates = UpdateController()
+    @State private var controlServer: ControlServer
 
     init() {
         let model = AppModel()
+        let orchestration = OrchestrationController(model: model)
+        let api = ControlAPI(model: model, orchestration: orchestration)
+        let server = ControlServer { request in await api.handle(request) }
         _model = State(initialValue: model)
-        _orchestration = State(initialValue: OrchestrationController(model: model))
+        _orchestration = State(initialValue: orchestration)
+        _controlServer = State(initialValue: server)
+        server.start()
     }
 
     var body: some Scene {

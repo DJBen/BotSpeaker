@@ -116,6 +116,23 @@ closed while a run is active; existing members keep access through their
 participant identity. Starting the next run reopens and refreshes the same code
 so another client can be added without replacing the paired group.
 
+### Ad hoc speech requests
+
+Besides scripted turns, the host can play arbitrary text on a paired machine
+(from the **Speak** toolbar popover or the `botspeaker` CLI, see
+[cli.md](cli.md)). Each request is a document in
+`orchestrationRooms/{roomID}/speechRequests/{requestID}` with `targetUID`,
+`targetName`, `text`, optional `voiceID`/`voiceName`, `requestedBy`, `status`
+(`queued`, `preparing`, `speaking`, `completed`, `failed`, `cancelled`),
+`createdAt`, `updatedAt`, and `startedAt*`/`endedAt*` client and server
+timestamps. The host creates, cancels, and deletes requests; the targeted
+participant may only advance the status fields of its own request, and only
+while it is not terminal. Every write bumps the room's `activityAt` marker.
+Requests targeting the host itself never touch Firestore.
+
+The Windows client does not yet observe `speechRequests`; remote ad hoc speech
+currently reaches macOS attendees only.
+
 Relevant deployment files are:
 
 - `firebase.json` — Firebase/Firestore project configuration;

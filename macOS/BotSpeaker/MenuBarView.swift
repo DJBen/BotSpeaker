@@ -34,6 +34,7 @@ struct MainWindowView: View {
     @State private var hostMeetingError: String?
     @State private var pendingHostExitNavigation: (() -> Void)?
     @State private var isShowingAttendeeList = false
+    @State private var isShowingAdHocSpeech = false
 
     var body: some View {
         Group {
@@ -182,6 +183,9 @@ struct MainWindowView: View {
                     }
                     ToolbarItem(placement: .primaryAction) {
                         attendeeListButton
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        adHocSpeechButton
                     }
                     ToolbarItem(placement: .primaryAction) {
                         endHostedMeetingButton
@@ -341,6 +345,18 @@ struct MainWindowView: View {
         .help("Show remotely joined attendees")
         .popover(isPresented: $isShowingAttendeeList, arrowEdge: .bottom) {
             AttendeeListPopover(orchestration: orchestration)
+        }
+    }
+
+    private var adHocSpeechButton: some View {
+        Button {
+            isShowingAdHocSpeech.toggle()
+        } label: {
+            Image(systemName: "waveform.badge.mic")
+        }
+        .help("Speak ad hoc text on this Mac or on a paired attendee")
+        .popover(isPresented: $isShowingAdHocSpeech, arrowEdge: .bottom) {
+            AdHocSpeechPopover(model: model, orchestration: orchestration)
         }
     }
 

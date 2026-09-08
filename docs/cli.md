@@ -1,0 +1,135 @@
+# BotSpeaker CLI and control API
+
+The `botspeaker` command lets a person or an LLM agent drive the running
+BotSpeaker app from a shell: play arbitrary text on this Mac, play it on any
+Mac paired to a meeting this Mac hosts, pick voices and outputs, and start or
+join meetings. Everything is also reachable with plain `curl`.
+
+Ad hoc speech is independent of the orchestrated meeting script. It uses the
+same ElevenLabs synthesis, cache, and virtual-audio output as the composer, so
+once a machine is configured for meetings it needs nothing extra.
+
+## Install
+
+```sh
+scripts/install-cli.sh            # builds cli/ in release mode, links into /usr/local/bin or ~/.local/bin
+botspeaker --help
+```
+
+The CLI needs the BotSpeaker app to be running. It finds the app through a
+discovery file the app writes at launch:
+
+```
+~/Library/Containers/ai.DJBen.2.BotSpeaker/Data/Library/Application Support/BotSpeaker/control.json
+```
+
+The file holds the loopback URL, the per-launch bearer token, the app's pid,
+and version. Override discovery with `BOTSPEAKER_CONTROL_URL` plus
+`BOTSPEAKER_TOKEN`, or point `BOTSPEAKER_CONTROL_FILE` at another file. Set
+the `controlPort` user default to change the preferred port (`47311`); when
+that port is busy the app falls back to an ephemeral port and the discovery
+file reflects it.
+
+## Everyday commands
+
+```sh
+botspeaker status                          # app, output, voice, session, active speech
+botspeaker speak "Hello from this Mac"     # play locally, return immediately with a request ID
+botspeaker speak --wait "Hello"            # block until playback finishes; exit 0 only on success
+botspeaker speak --voice "Rachel" "Hi"     # voice by name or ElevenLabs voice ID
+echo "long text" | botspeaker speak        # text from stdin (or --file path, --file -)
+botspeaker targets                         # "local" plus attendees paired to the meeting this Mac hosts
+botspeaker speak --target "Sihao's Mac" --wait "Hello from the host"
+botspeaker requests                        # recent requests with status
+botspeaker wait <request-id>               # follow a request started without --wait
+botspeaker stop [<request-id>]             # cancel one request, or all queued/playing speech
+botspeaker voices [--refresh] [--select NAME]
+botspeaker outputs [--select "BlackHole 2ch"]
+botspeaker host [--name NAME]              # start hosting; prints the pairing code
+botspeaker join ABC123 [--name NAME]       # pair this Mac to a host
+botspeaker leave
+```
+
+Add `--json` after the subcommand for machine-readable output (for example
+`botspeaker speak --json "text"`, which returns `{"ok": true, "request": {"id":
+"...", "status": "...", ...}}`). Exit codes: `0` success, `1` the app rejected
+or failed the request, `2` the app is not running or the token was rejected.
+
+### Remote playback
+
+1. On the host Mac: `botspeaker host` (or click **Host Meeting** in the app).
+2. On each remote Mac: `botspeaker join CODE` (or use **Remote Mode**).
+3. On the host: `botspeaker targets` lists the attendees; `botspeaker speak
+   --target NAME --wait "text"` plays on that attendee and reports
+   `completed`, `failed` (with the attendee's error), or `cancelled`.
+
+Remote requests are written to Firestore under the meeting room, claimed by the
+targeted attendee, played with the attendee's own ElevenLabs key and output,
+and their status is mirrored back to the host. Only the host can target other
+machines; an attendee can still play locally with `botspeaker speak`.
+
+### Interaction with orchestrated meetings
+
+Ad hoc speech shares the output with the meeting script. A scripted turn
+assigned to a machine always wins: it cancels any ad hoc request playing there
+(status `cancelled`, error notes the turn). While a scripted turn is playing,
+new ad hoc requests wait in the queue and start when the turn ends. Stopping
+playback in the app or pressing Play on a script also cancels the active ad hoc
+request.
+
+## HTTP API
+
+Base URL and token come from `control.json`. Send
+`Authorization: Bearer <token>` (or `X-BotSpeaker-Token`). Every response is
+JSON with an `ok` boolean; errors carry `error.code` and `error.message`.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /health` | Liveness; no token required. |
+| `GET /v1/status` | App, output, voice, player, session, active speech. |
+| `GET /v1/targets` | `local` plus attendees (host only lists attendees). |
+| `GET /v1/outputs`, `POST /v1/outputs/select {uid\|name}` | Audio outputs on this Mac. |
+| `GET /v1/voices?refresh=1`, `POST /v1/voices/select {id\|name}` | ElevenLabs voices. |
+| `POST /v1/speak {text, target?, voice?, wait?, timeout?}` | Queue speech. `202` with the request when not waiting, `200` with the final request when waiting. |
+| `GET /v1/speech` | Recent requests. |
+| `GET /v1/speech/{id}?wait=1&timeout=600` | One request; long-polls until terminal when `wait=1`. |
+| `POST /v1/speech/{id}/cancel`, `POST /v1/speech/cancel-all` (alias `POST /v1/stop`) | Cancel. |
+| `GET /v1/session`, `POST /v1/session/host {speakerName?}`, `POST /v1/session/join {code, speakerName?}`, `POST /v1/session/leave` | Meeting membership. |
+
+Example:
+
+```sh
+cfg=~/Library/Containers/ai.DJBen.2.BotSpeaker/Data/Library/Application\ Support/BotSpeaker/control.json
+url=$(python3 -c "import json;print(json.load(open('$cfg'))['url'])")
+tok=$(python3 -c "import json;print(json.load(open('$cfg'))['token'])")
+curl -s -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
+  -d '{"text":"Hello","target":"local","wait":true}' "$url/v1/speak"
+```
+
+A speech request looks like:
+
+```json
+{
+  "id": "local-3f0e…",
+  "target": "local",
+  "targetName": "This Mac",
+  "remote": false,
+  "text": "Hello",
+  "voiceID": null,
+  "voiceName": "Rachel",
+  "status": "completed",
+  "createdAt": "2026-09-08T18:20:11Z",
+  "startedAt": "2026-09-08T18:20:12Z",
+  "endedAt": "2026-09-08T18:20:14Z",
+  "error": null
+}
+```
+
+Statuses move `queued → preparing → speaking → completed`, or end in `failed`
+or `cancelled`.
+
+## Agent usage
+
+`cli/skills/botspeaker/SKILL.md` is a drop-in skill for Claude Code and similar
+agents. Copy or symlink it into the agent's skills directory
+(for Claude Code: `~/.claude/skills/botspeaker/SKILL.md`).

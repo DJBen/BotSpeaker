@@ -30,6 +30,10 @@ final class AppModel {
     @ObservationIgnored private var generationTask: Task<Void, Never>?
     @ObservationIgnored private var generationID = UUID()
     @ObservationIgnored private var currentSpeechSignature: String?
+    /// Fired when something other than the orchestration controller takes
+    /// over or stops the player (the Stop button, Play on a script, switching
+    /// scripts), so an in-flight ad hoc speech request can be finalized.
+    @ObservationIgnored var onPlaybackTakenOver: (() -> Void)?
 
     var bundledScripts: [SpeechScript] {
         ExampleExcerpt.all.map(\.speechScript)
@@ -394,7 +398,15 @@ final class AppModel {
         }
     }
 
-    func playOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
+    /// Plays arbitrary text through the configured output. Orchestrated turns
+    /// and ad hoc speech requests both route through here; `voiceID` overrides
+    /// the composer's voice for a single request.
+    func playOrchestratedTurn(
+        text turnText: String,
+        cacheNamespace: String,
+        voiceID requestedVoiceID: String? = nil
+    ) async throws {
+        let voiceID = requestedVoiceID?.isEmpty == false ? requestedVoiceID! : voiceID
         let plans = SpeechTextChunker.chunks(for: turnText)
         guard !plans.isEmpty else { throw AppError("The assigned turn is empty.") }
         guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
@@ -405,7 +417,7 @@ final class AppModel {
             throw AppError("Choose an audio output in Settings.")
         }
 
-        cancelGeneration(resetPlayer: true)
+        cancelGeneration(resetPlayer: true, notify: false)
         try player.selectOutputDevice(uid: selectedDeviceUID)
         text = turnText
         player.isLooping = false
@@ -460,10 +472,19 @@ final class AppModel {
     }
 
     func stopOrchestratedTurn() {
-        cancelGeneration(resetPlayer: false)
+        cancelGeneration(resetPlayer: false, notify: false)
         player.finishSequence()
         player.stop()
         currentSpeechSignature = nil
+    }
+
+    /// Restores the composer after ad hoc speech played outside a paired
+    /// session, so the spoken text does not linger as if it were the script.
+    func finishAdHocSpeech() {
+        guard !isRemoteControlled else { return }
+        cancelGeneration(resetPlayer: true, notify: false)
+        currentSpeechSignature = nil
+        text = selectedScript.text
     }
 
     private func generateOrToggle(forceRegenerate: Bool) async {
@@ -589,12 +610,13 @@ final class AppModel {
         }
     }
 
-    private func cancelGeneration(resetPlayer: Bool) {
+    private func cancelGeneration(resetPlayer: Bool, notify: Bool = true) {
         generationTask?.cancel()
         generationTask = nil
         generationID = UUID()
         isGenerating = false
         if resetPlayer { player.reset() }
+        if notify { onPlaybackTakenOver?() }
     }
 
     private func persistCustomScripts() {
