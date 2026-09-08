@@ -60,6 +60,8 @@ botspeaker status                          # app, output, voice, session, active
 botspeaker speak "Hello from this Mac"     # play locally, return immediately with a request ID
 botspeaker speak --wait "Hello"            # block until playback finishes; exit 0 only on success
 botspeaker speak --voice "Rachel" "Hi"     # voice by name or ElevenLabs voice ID
+botspeaker speak --loop "On a cycle"        # repeat until `botspeaker stop`
+botspeaker speak --repeat 3 --wait "Thrice" # play a fixed number of times
 echo "long text" | botspeaker speak        # text from stdin (or --file path, --file -)
 botspeaker targets                         # "local" plus attendees paired to the meeting this Mac hosts
 botspeaker speak --target "Sihao's Mac" --wait "Hello from the host"
@@ -120,7 +122,7 @@ JSON with an `ok` boolean; errors carry `error.code` and `error.message`.
 | `GET /v1/targets` | `local` plus attendees (host only lists attendees). |
 | `GET /v1/outputs`, `POST /v1/outputs/select {uid\|name}` | Audio outputs on this Mac. |
 | `GET /v1/voices?refresh=1`, `POST /v1/voices/select {id\|name}` | ElevenLabs voices. |
-| `POST /v1/speak {text, target?, voice?, wait?, timeout?}` | Queue speech. `202` with the request when not waiting, `200` with the final request when waiting. |
+| `POST /v1/speak {text, target?, voice?, loop?, repeat?, wait?, timeout?}` | Queue speech. `loop: true` repeats until cancelled; `repeat: n` plays `n` times. `202` with the request when not waiting, `200` with the final request when waiting. |
 | `GET /v1/speech` | Recent requests. |
 | `GET /v1/speech/{id}?wait=1&timeout=600` | One request; long-polls until terminal when `wait=1`. |
 | `POST /v1/speech/{id}/cancel`, `POST /v1/speech/cancel-all` (alias `POST /v1/stop`) | Cancel. |
@@ -151,12 +153,19 @@ A speech request looks like:
   "createdAt": "2026-09-08T18:20:11Z",
   "startedAt": "2026-09-08T18:20:12Z",
   "endedAt": "2026-09-08T18:20:14Z",
-  "error": null
+  "error": null,
+  "loop": false,
+  "cycles": 1,
+  "completedCycles": 1
 }
 ```
 
 Statuses move `queued → preparing → speaking → completed`, or end in `failed`
-or `cancelled`.
+or `cancelled`. A looping request (`loop: true`, `cycles: null`) stays
+`speaking` and replays the same audio until it is cancelled, so `--wait` on it
+only returns when it is stopped or the timeout passes; a counted repeat
+(`cycles: n`) completes after `n` passes. `completedCycles` counts passes on
+the Mac doing the playing, so the host sees `0` for a remote request.
 
 ## Agent usage
 

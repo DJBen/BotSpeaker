@@ -10,6 +10,7 @@ struct AdHocSpeechPopover: View {
     @State private var text = ""
     @State private var targetID = "local"
     @State private var voiceID = ""
+    @State private var loop = false
     @State private var errorMessage: String?
     @State private var isSubmitting = false
 
@@ -40,6 +41,11 @@ struct AdHocSpeechPopover: View {
                     Text(voice.name).tag(voice.id)
                 }
             }
+
+            Toggle(isOn: $loop) {
+                Label("Loop until stopped", systemImage: "repeat")
+            }
+            .toggleStyle(.checkbox)
 
             TextEditor(text: $text)
                 .font(.body)
@@ -85,7 +91,7 @@ struct AdHocSpeechPopover: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(request.text)
                                 .lineLimit(1)
-                            Text("\(request.targetName) · \(request.status.displayName)\(request.error.map { " · \($0)" } ?? "")")
+                            Text("\(request.targetName) · \(request.status.displayName)\(request.cyclesDescription.map { " · pass \($0)" } ?? "")\(request.error.map { " · \($0)" } ?? "")")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -120,7 +126,8 @@ struct AdHocSpeechPopover: View {
                 try await orchestration.speak(
                     text: spokenText,
                     target: target,
-                    voiceID: voiceID.isEmpty ? nil : voiceID
+                    voiceID: voiceID.isEmpty ? nil : voiceID,
+                    cycles: loop ? nil : 1
                 )
                 text = ""
             } catch {

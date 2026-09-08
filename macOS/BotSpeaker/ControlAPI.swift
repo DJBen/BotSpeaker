@@ -81,7 +81,8 @@ final class ControlAPI {
         }
         let target = try resolveTarget(body["target"] as? String)
         let voiceID = try await resolveVoiceID(body["voice"] as? String)
-        let id = try await orchestration.speak(text: text, target: target, voiceID: voiceID)
+        let cycles = try resolveCycles(loop: body["loop"], repeatCount: body["repeat"] ?? body["cycles"])
+        let id = try await orchestration.speak(text: text, target: target, voiceID: voiceID, cycles: cycles)
 
         let shouldWait = boolean(body["wait"]) ?? false
         let timeout = (body["timeout"] as? Double) ?? Double(body["timeout"] as? Int ?? 0)
@@ -94,6 +95,26 @@ final class ControlAPI {
             throw ControlError(500, "The request was not recorded.", code: "lost")
         }
         return ControlServer.Response(status: 202, body: ["ok": true, "request": payload(for: created)])
+    }
+
+    /// `loop: true` repeats until cancelled; `repeat: n` plays n times.
+    private func resolveCycles(loop: Any?, repeatCount: Any?) throws -> Int? {
+        let wantsLoop = boolean(loop) ?? false
+        let count: Int? = switch repeatCount {
+        case nil, is NSNull: nil
+        case let number as Int: number
+        case let number as Double: Int(number)
+        case let number as NSNumber: number.intValue
+        case let string as String: Int(string.trimmingCharacters(in: .whitespaces))
+        default: -1
+        }
+        if wantsLoop {
+            guard count == nil else { throw ControlError(400, "Use either \"loop\" or \"repeat\", not both.", code: "bad_request") }
+            return nil
+        }
+        guard let count else { return 1 }
+        guard count >= 1 else { throw ControlError(400, "\"repeat\" must be a whole number of at least 1.", code: "bad_request") }
+        return count
     }
 
     private func speechStatus(id: String, request: ControlServer.Request) async -> ControlServer.Response {
@@ -325,6 +346,9 @@ final class ControlAPI {
         payload["startedAt"] = orNull(request.startedAt.map(formatter.string(from:)))
         payload["endedAt"] = orNull(request.endedAt.map(formatter.string(from:)))
         payload["error"] = orNull(request.error)
+        payload["loop"] = request.cycles == nil
+        payload["cycles"] = orNull(request.cycles)
+        payload["completedCycles"] = request.completedCycles
         return payload
     }
 

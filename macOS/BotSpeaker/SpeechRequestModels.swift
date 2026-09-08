@@ -56,6 +56,29 @@ struct SpeechRequest: Identifiable, Hashable {
     var startedAt: Date?
     var endedAt: Date?
     var error: String?
+    /// Number of passes to play. `1` plays once; `nil` repeats until cancelled.
+    var cycles: Int? = 1
+    /// Passes that have finished so far on the machine doing the playing.
+    var completedCycles: Int = 0
 
     var isRemote: Bool { target != .local }
+    var isLooping: Bool { cycles != 1 }
+
+    /// "2/5" for a counted repeat, "3/∞" for an endless loop, nil for a single pass.
+    var cyclesDescription: String? {
+        guard isLooping else { return nil }
+        return "\(completedCycles)/\(cycles.map(String.init) ?? "∞")"
+    }
+
+    /// Firestore stores endless loops as 0 because the host must set a value the
+    /// attendee can distinguish from an absent (single-pass) field.
+    static func cycles(fromStored value: Any?) -> Int? {
+        let stored: Int? = switch value {
+        case let number as Int: number
+        case let number as NSNumber: number.intValue
+        default: nil
+        }
+        guard let stored else { return 1 }
+        return stored <= 0 ? nil : stored
+    }
 }

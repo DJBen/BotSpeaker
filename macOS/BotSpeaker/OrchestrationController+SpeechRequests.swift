@@ -21,10 +21,13 @@ extension OrchestrationController {
 
     /// Queues text for playback and returns the request ID. Remote targets
     /// require a hosted session; the host's own UID is treated as local.
+    /// `cycles` is how many times to play the text; `nil` loops until the
+    /// request is cancelled.
     @discardableResult
-    func speak(text: String, target: SpeechTarget, voiceID: String? = nil) async throws -> String {
+    func speak(text: String, target: SpeechTarget, voiceID: String? = nil, cycles: Int? = 1) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AppError("Nothing to speak: the text is empty.") }
+        if let cycles, cycles < 1 { throw AppError("The repeat count must be at least 1.") }
         guard let model else { throw AppError("The app is not ready.") }
 
         var resolvedTarget = target
@@ -49,10 +52,11 @@ extension OrchestrationController {
                 voiceName: voiceName(for: effectiveVoiceID) ?? model.selectedVoiceName,
                 requestedBy: userID ?? "local",
                 status: .queued,
-                createdAt: Date()
+                createdAt: Date(),
+                cycles: cycles
             )
             storeSpeechRequest(request)
-            log.notice("Queued local speech request \(id, privacy: .public) (\(trimmed.count) chars)")
+            log.notice("Queued local speech request \(id, privacy: .public) (\(trimmed.count) chars, cycles: \(cycles.map(String.init) ?? "endless", privacy: .public))")
             pumpSpeechRequestQueue()
             return id
 
@@ -82,6 +86,9 @@ extension OrchestrationController {
                 data["voiceID"] = effectiveVoiceID
                 data["voiceName"] = voiceName(for: effectiveVoiceID) ?? effectiveVoiceID
             }
+            if cycles != 1 {
+                data["cycles"] = cycles ?? 0
+            }
             let batch = database.batch()
             batch.setData(data, forDocument: reference)
             addRoomActivityBump(to: batch, roomID: sessionID)
@@ -96,7 +103,8 @@ extension OrchestrationController {
                 voiceName: effectiveVoiceID.map { voiceName(for: $0) ?? $0 },
                 requestedBy: hostUID,
                 status: .queued,
-                createdAt: now
+                createdAt: now,
+                cycles: cycles
             )
             // The listener will overwrite this with the server copy.
             storeSpeechRequest(request)
@@ -390,6 +398,18 @@ extension OrchestrationController {
 
     func speechPlaybackDidFinish() {
         guard let id = activeSpeechRequestID, let request = speechRequestsByID[id] else { return }
+        let completedCycles = request.completedCycles + 1
+        updateSpeechRequest(id: id) { $0.completedCycles = completedCycles }
+
+        // Looping requests start over instead of finishing. The player has
+        // finished the sequence, so `play()` rewinds and schedules it again.
+        let wantsAnotherPass = request.cycles.map { completedCycles < $0 } ?? true
+        if wantsAnotherPass, let model, model.player.hasAudio {
+            log.notice("Replaying speech request \(id, privacy: .public) (pass \(completedCycles + 1))")
+            model.player.play()
+            return
+        }
+
         switch request.target {
         case .local:
             finalizeLocalSpeechRequest(id: id, status: .completed, error: nil, stopPlayback: false)
@@ -448,7 +468,9 @@ extension OrchestrationController {
                 createdAt: Self.date(from: data["createdAt"]) ?? existing?.createdAt ?? Date(),
                 startedAt: Self.date(from: data["startedAtClient"]) ?? Self.date(from: data["startedAtServer"]),
                 endedAt: Self.date(from: data["endedAtClient"]) ?? Self.date(from: data["endedAtServer"]),
-                error: (data["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                error: (data["error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                cycles: SpeechRequest.cycles(fromStored: data["cycles"]),
+                completedCycles: existing?.completedCycles ?? 0
             )
         }
         speechRequestsByID = merged

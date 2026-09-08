@@ -37,6 +37,14 @@ enum Output {
         }
     }
 
+    /// "2/5" for a counted repeat, "3/∞" for a loop, nil for a single pass.
+    static func cycles(of request: [String: Any]) -> String? {
+        let completed = (request["completedCycles"] as? Int) ?? 0
+        if request["loop"] as? Bool == true { return "\(completed)/∞" }
+        guard let cycles = request["cycles"] as? Int, cycles != 1 else { return nil }
+        return "\(completed)/\(cycles)"
+    }
+
     static func table(_ rows: [[String]]) {
         guard let first = rows.first else { return }
         var widths = Array(repeating: 0, count: first.count)

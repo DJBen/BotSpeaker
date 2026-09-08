@@ -30,6 +30,13 @@ printf '%s' "$LONG_TEXT" | botspeaker speak --wait --file -
 `--wait` blocks until playback ends and exits 0 only when the status is `completed`.
 Without `--wait` the command returns immediately with a request ID; follow it with `botspeaker wait ID`.
 
+```bash
+botspeaker speak --loop "Text to repeat"   # plays on a cycle until `botspeaker stop ID` (or `botspeaker stop`)
+botspeaker speak --repeat 3 --wait "Text"  # plays exactly 3 times, then exits
+```
+
+Do not combine `--wait` with `--loop`: a loop never completes on its own, so the command would block until stopped or timed out.
+
 ## Speak on a paired remote Mac (host only)
 
 ```bash

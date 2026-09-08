@@ -49,14 +49,30 @@ struct Speak: AsyncParsableCommand {
     @Option(name: [.customShort("f"), .long], help: "Read the text from a file (\"-\" for stdin).")
     var file: String?
 
+    @Flag(name: [.customShort("l"), .long], help: "Play the text on a cycle until `botspeaker stop` cancels it.")
+    var loop = false
+
+    @Option(name: [.customShort("r"), .customLong("repeat")], help: "Play the text this many times.")
+    var repeatCount: Int?
+
     @Argument(help: "Text to speak. Omit to read from --file or stdin. Use \"--\" before text that starts with a dash.")
     var text: [String] = []
+
+    func validate() throws {
+        if let repeatCount, repeatCount < 1 {
+            throw ValidationError("--repeat must be at least 1.")
+        }
+        if loop, repeatCount != nil {
+            throw ValidationError("Use either --loop or --repeat, not both.")
+        }
+    }
 
     func run() async throws {
         do {
             let client = try await ControlClient.locate()
             let spoken = try resolveText()
-            var body: [String: Any] = ["text": spoken, "target": target, "wait": wait, "timeout": timeout]
+            var body: [String: Any] = ["text": spoken, "target": target, "wait": wait, "timeout": timeout, "loop": loop]
+            if let repeatCount { body["repeat"] = repeatCount }
             if let voice { body["voice"] = voice }
             let response = try await client.post("/v1/speak", body: body)
             let request = response["request"] as? [String: Any] ?? [:]
@@ -66,11 +82,18 @@ struct Speak: AsyncParsableCommand {
                 let status = Output.string(request["status"])
                 let id = Output.string(request["id"])
                 let targetName = Output.string(request["targetName"])
+                let passes = Output.cycles(of: request).map { " [\($0)]" } ?? ""
+                let appIgnoredCycles = (loop || repeatCount != nil) && request["loop"] == nil
+                if appIgnoredCycles {
+                    FileHandle.standardError.write(Data("note: this BotSpeaker app does not support --loop/--repeat; the text plays once. Update the app.\n".utf8))
+                }
                 if wait {
                     let detail = request["error"] as? String
-                    print("\(status) on \(targetName) (\(id))\(detail.map { ": \($0)" } ?? "")")
+                    print("\(status) on \(targetName)\(passes) (\(id))\(detail.map { ": \($0)" } ?? "")")
+                } else if loop, !appIgnoredCycles {
+                    print("\(status) on \(targetName)\(passes) (\(id)) — loops until `botspeaker stop \(id)`")
                 } else {
-                    print("\(status) on \(targetName) (\(id)) — use `botspeaker wait \(id)` to follow it")
+                    print("\(status) on \(targetName)\(passes) (\(id)) — use `botspeaker wait \(id)` to follow it")
                 }
             }
             if wait, request["status"] as? String != "completed" {
@@ -160,7 +183,8 @@ struct Wait: AsyncParsableCommand {
                 Output.json(response)
             } else {
                 let detail = request["error"] as? String
-                print("\(Output.string(request["status"])) on \(Output.string(request["targetName"]))\(detail.map { ": \($0)" } ?? "")")
+                let passes = Output.cycles(of: request).map { " [\($0)]" } ?? ""
+                print("\(Output.string(request["status"])) on \(Output.string(request["targetName"]))\(passes)\(detail.map { ": \($0)" } ?? "")")
             }
             if request["status"] as? String != "completed" { throw ExitCode(1) }
         } catch let error as ExitCode {
@@ -189,13 +213,14 @@ struct Requests: AsyncParsableCommand {
                 print("no speech requests yet")
                 return
             }
-            var rows = [["ID", "STATUS", "TARGET", "TEXT"]]
+            var rows = [["ID", "STATUS", "TARGET", "PASSES", "TEXT"]]
             for request in requests {
                 let text = Output.string(request["text"]).replacingOccurrences(of: "\n", with: " ")
                 rows.append([
                     Output.string(request["id"]),
                     Output.string(request["status"]),
                     Output.string(request["targetName"]),
+                    Output.cycles(of: request) ?? "1",
                     String(text.prefix(60))
                 ])
             }
