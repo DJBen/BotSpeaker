@@ -3,7 +3,7 @@ import Foundation
 /// The CLI's own version. `scripts/release-macos.sh` rewrites this line to
 /// match the app version it is releasing; commit the change with the release.
 enum BotSpeakerCLIVersion {
-    static let current = "0.3.1"
+    static let current = "0.4.0"
 
     /// Compares dotted numeric versions ("0.4.1" > "0.3.10"). Non-numeric
     /// components compare as 0.
