@@ -49,7 +49,7 @@ struct Speak: AsyncParsableCommand {
     @Option(name: [.customShort("f"), .long], help: "Read the text from a file (\"-\" for stdin).")
     var file: String?
 
-    @Argument(parsing: .captureForPassthrough, help: "Text to speak. Omit to read from --file or stdin.")
+    @Argument(help: "Text to speak. Omit to read from --file or stdin. Use \"--\" before text that starts with a dash.")
     var text: [String] = []
 
     func run() async throws {
