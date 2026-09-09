@@ -127,6 +127,40 @@ try {
     $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $ChecksumPath -NoNewline -Encoding utf8 -Value "$Hash  $ZipName`n"
 
+    # The botspeaker CLI ships beside the app as its own single-file exe;
+    # scripts/install-cli.ps1 downloads this asset by its version-free name.
+    $CliProject = Join-Path $RepoRoot 'Windows\BotSpeakerCli'
+    $CliVersion = ([xml](Get-Content -LiteralPath (Join-Path $CliProject 'BotSpeakerCli.csproj'))).Project.PropertyGroup.Version
+    if ($CliVersion -ne $Version) {
+        throw "BotSpeakerCli.csproj declares version $CliVersion, but you are releasing $Version. Update <Version> and commit first."
+    }
+    $CliPublishDirectory = Join-Path $DistDirectory 'windows-cli-publish'
+    if (Test-Path $CliPublishDirectory) {
+        Remove-Item -Recurse -Force $CliPublishDirectory
+    }
+    Invoke-CheckedCommand $Dotnet @(
+        'publish', $CliProject,
+        '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
+        '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+        '-o', $CliPublishDirectory, '-nologo'
+    )
+    $CliExePath = Join-Path $CliPublishDirectory 'botspeaker-cli.exe'
+    if (-not (Test-Path -LiteralPath $CliExePath)) {
+        throw "Publish did not produce $CliExePath"
+    }
+    if ($CertificateThumbprint) {
+        Invoke-CheckedCommand signtool @(
+            'sign', '/sha1', $CertificateThumbprint, '/fd', 'SHA256',
+            '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $CliExePath
+        )
+    }
+    $CliZipName = 'botspeaker-cli-windows-x64.zip'
+    $CliZipPath = Join-Path $DistDirectory $CliZipName
+    Compress-Archive -LiteralPath $CliExePath -DestinationPath $CliZipPath -Force
+    $CliChecksumPath = "$CliZipPath.sha256"
+    $CliHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CliZipPath).Hash.ToLowerInvariant()
+    Set-Content -LiteralPath $CliChecksumPath -NoNewline -Encoding utf8 -Value "$CliHash  $CliZipName`n"
+
     $Tag = $Version
     $ReleaseExists = $true
     & gh release view $Tag *> $null
@@ -148,7 +182,7 @@ try {
             'release', 'create', $Tag,
             '--verify-tag',
             '--title', "BotSpeaker $Version",
-            '--notes', "Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.`n`nInstall or update the macOS command line tool:`n`n``````sh`ncurl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash`n``````"
+            '--notes', "Cross-platform BotSpeaker release. See the attached assets for macOS and Windows downloads.`n`nInstall or update the macOS command line tool:`n`n``````sh`ncurl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash`n```````n`nInstall or update the Windows command line tool:`n`n``````powershell`nirm https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.ps1 | iex`n``````"
         )
     }
 
@@ -167,14 +201,14 @@ try {
         throw "Unable to inspect GitHub release $Tag"
     }
 
-    foreach ($Asset in @($ZipName, (Split-Path -Leaf $ChecksumPath))) {
+    foreach ($Asset in @($ZipName, (Split-Path -Leaf $ChecksumPath), $CliZipName, (Split-Path -Leaf $CliChecksumPath))) {
         if ($AssetNames -contains $Asset) {
             throw "GitHub release $Tag already contains $Asset; refusing to overwrite it."
         }
     }
 
-    Invoke-CheckedCommand gh @('release', 'upload', $Tag, $ZipPath, $ChecksumPath)
-    Write-Host "Published $ZipName and its checksum to GitHub release $Tag."
+    Invoke-CheckedCommand gh @('release', 'upload', $Tag, $ZipPath, $ChecksumPath, $CliZipPath, $CliChecksumPath)
+    Write-Host "Published $ZipName, $CliZipName, and their checksums to GitHub release $Tag."
 }
 finally {
     Pop-Location

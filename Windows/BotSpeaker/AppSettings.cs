@@ -17,6 +17,8 @@ public sealed class AppSettings
     public string OrchestrationSessionMode { get; set; } = "";
     public Dictionary<string, List<OrchestratedSpeakerPreference>> OrchestratedMeetingSpeakers { get; set; } = [];
     public string LastPlayableScriptId { get; set; } = "";
+    /// <summary>Preferred loopback port for the control API; 0 means the default (47311).</summary>
+    public int ControlPort { get; set; }
     public List<CustomSpeechScript> CustomScripts { get; set; } = [];
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };

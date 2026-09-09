@@ -1,23 +1,24 @@
 using System.ComponentModel;
+using System.IO;
 
 namespace BotSpeaker;
 
 /// <summary>
-/// Ad hoc speech requests — the attendee half of the macOS
-/// OrchestrationController+SpeechRequests. The host (from its Speak popover
-/// or the <c>botspeaker</c> CLI) writes a document under
-/// <c>orchestrationRooms/{roomID}/speechRequests</c>; this PC polls the
-/// collection, claims requests aimed at its participant UID, plays them with
-/// its own ElevenLabs key and output, and mirrors the status back so the
-/// host's <c>botspeaker speak --wait</c> returns. A scripted meeting turn
-/// always preempts ad hoc speech on the same output.
+/// Ad hoc speech requests — the Windows counterpart of the macOS
+/// OrchestrationController+SpeechRequests. Local requests never touch
+/// Firestore. When this PC hosts, requests for an attendee are written to
+/// <c>orchestrationRooms/{roomID}/speechRequests</c> and mirrored back by
+/// polling; when this PC is an attendee it claims requests aimed at its
+/// participant UID, plays them with its own ElevenLabs key and output, and
+/// reports status back. A scripted meeting turn always preempts ad hoc speech
+/// on the same output.
 /// </summary>
 public sealed partial class OrchestrationController
 {
     private const int SpeechRequestHistoryLimit = 50;
 
     private List<SpeechRequest> _speechRequests = [];
-    /// <summary>Every request mirrored from the room, oldest first.</summary>
+    /// <summary>Every request this process knows about, oldest first.</summary>
     public List<SpeechRequest> SpeechRequests { get => _speechRequests; private set => Set(ref _speechRequests, value); }
 
     private readonly Dictionary<string, SpeechRequest> _speechRequestsById = [];
@@ -29,11 +30,175 @@ public sealed partial class OrchestrationController
     public SpeechRequest? ActiveSpeechRequest =>
         _activeSpeechRequestId is string id ? _speechRequestsById.GetValueOrDefault(id) : null;
 
+    public SpeechRequest? FindSpeechRequest(string id) => _speechRequestsById.GetValueOrDefault(id);
+
+    public bool HasPendingSpeech => _speechRequestsById.Values.Any(request => !request.Status.IsTerminal());
+
+    // Public API
+
+    /// <summary>
+    /// Queues text (or a recorded file) for playback and returns the request
+    /// ID. <paramref name="targetUid"/> is <see cref="SpeechRequest.LocalTarget"/>
+    /// or an attendee's participant UID; remote targets require a hosted
+    /// session, and this PC's own UID is treated as local. <paramref name="cycles"/>
+    /// is how many times to play; null loops until cancelled.
+    /// </summary>
+    public async Task<string> SpeakAsync(string text, string targetUid, string? voiceId, int? cycles, string? audioPath = null)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0) throw new AppException("Nothing to speak: the text is empty.");
+        if (cycles is < 1) throw new AppException("The repeat count must be at least 1.");
+
+        var resolvedTarget = targetUid == _userId ? SpeechRequest.LocalTarget : targetUid;
+        if (audioPath is not null && resolvedTarget != SpeechRequest.LocalTarget)
+        {
+            throw new AppException("Audio files play on this PC only. Use target \"local\", or speak text to reach an attendee.");
+        }
+        var effectiveVoiceId = string.IsNullOrWhiteSpace(voiceId) ? null : voiceId.Trim();
+
+        if (resolvedTarget == SpeechRequest.LocalTarget)
+        {
+            if (audioPath is null && !_model.HasApiKey) throw new AppException("Add your ElevenLabs API key in Settings.");
+            if (string.IsNullOrEmpty(_model.SelectedDeviceId)) throw new AppException("Choose an audio output in Settings.");
+            var id = "local-" + Guid.NewGuid().ToString().ToLowerInvariant();
+            var request = new SpeechRequest(
+                id,
+                SpeechRequest.LocalTarget,
+                "This PC",
+                trimmed,
+                audioPath is null ? effectiveVoiceId : null,
+                audioPath is null ? (VoiceName(effectiveVoiceId) ?? _model.SelectedVoiceName) : null,
+                _userId ?? "local",
+                SpeechRequestStatus.Queued,
+                DateTime.UtcNow,
+                null, null, null,
+                cycles,
+                0,
+                audioPath);
+            StoreSpeechRequest(request);
+            PumpSpeechRequestQueue();
+            return id;
+        }
+
+        if (!IsHost || SessionId is not string sessionId)
+        {
+            throw new AppException("Remote speech needs a hosted meeting. Start hosting and pair the target machine first.");
+        }
+        var participant = Participants.FirstOrDefault(p => p.Id == resolvedTarget)
+            ?? throw new AppException($"No attendee with ID {resolvedTarget} is in this meeting.");
+        if (!participant.IsRecentlyConnected)
+        {
+            throw new AppException($"{participant.DisplayName} is not connected right now.");
+        }
+        var hostUid = await _database.EnsureSignedInAsync();
+        var requestId = Guid.NewGuid().ToString("N");
+        var now = DateTime.UtcNow;
+        var fields = new Dictionary<string, object?>
+        {
+            ["targetUID"] = resolvedTarget,
+            ["targetName"] = participant.DisplayName,
+            ["text"] = trimmed,
+            ["requestedBy"] = hostUid,
+            ["status"] = SpeechRequestStatus.Queued.RawValue(),
+            ["createdAt"] = now,
+        };
+        string? remoteVoiceName = null;
+        if (effectiveVoiceId is not null)
+        {
+            remoteVoiceName = VoiceName(effectiveVoiceId) ?? effectiveVoiceId;
+            fields["voiceID"] = effectiveVoiceId;
+            fields["voiceName"] = remoteVoiceName;
+        }
+        if (cycles != 1) fields["cycles"] = cycles ?? 0;
+        await _database.CommitAsync(
+        [
+            new FirestoreWrite
+            {
+                DocumentPath = SpeechRequestPath(sessionId, requestId),
+                Fields = fields,
+                ServerTimestampFields = ["updatedAt"],
+                MustExist = false,
+            },
+            RoomActivityBump(sessionId),
+        ]);
+        // The next poll overwrites this with the server copy.
+        StoreSpeechRequest(new SpeechRequest(
+            requestId, resolvedTarget, participant.DisplayName, trimmed, effectiveVoiceId, remoteVoiceName,
+            hostUid, SpeechRequestStatus.Queued, now, null, null, null, cycles, 0));
+        return requestId;
+    }
+
+    /// <summary>
+    /// Cancels a queued or in-flight request. Remote requests are cancelled by
+    /// marking the document; the attendee stops playback when it sees the change.
+    /// </summary>
+    public async Task CancelSpeechAsync(string id)
+    {
+        var request = _speechRequestsById.GetValueOrDefault(id)
+            ?? throw new AppException($"Unknown speech request {id}.");
+        if (request.Status.IsTerminal()) return;
+
+        if (!request.IsRemote)
+        {
+            await FinishSpeechRequestAsync(id, SpeechRequestStatus.Cancelled, null, stopPlayback: true);
+        }
+        else if (IsHost && SessionId is string sessionId)
+        {
+            await _database.CommitAsync(new FirestoreWrite
+            {
+                DocumentPath = SpeechRequestPath(sessionId, id),
+                Fields = new()
+                {
+                    ["status"] = SpeechRequestStatus.Cancelled.RawValue(),
+                    ["endedAtClient"] = DateTime.UtcNow,
+                },
+                UpdateMask = ["status", "endedAtClient"],
+                ServerTimestampFields = ["endedAtServer", "updatedAt"],
+                MustExist = true,
+            });
+            UpdateSpeechRequest(id, current => current with { Status = SpeechRequestStatus.Cancelled, EndedAt = DateTime.UtcNow });
+        }
+        else if (_activeSpeechRequestId == id)
+        {
+            // An attendee cancelling what it is currently speaking.
+            await FinishSpeechRequestAsync(id, SpeechRequestStatus.Cancelled, null, stopPlayback: true);
+        }
+        else
+        {
+            throw new AppException("Only the host can cancel a remote speech request.");
+        }
+    }
+
+    /// <summary>Cancels everything that is queued or playing.</summary>
+    public async Task CancelAllSpeechAsync()
+    {
+        foreach (var request in SpeechRequests.Where(r => !r.Status.IsTerminal()).ToList())
+        {
+            try { await CancelSpeechAsync(request.Id); } catch (AppException) { }
+        }
+    }
+
+    /// <summary>
+    /// Suspends until the request reaches a terminal state or the timeout
+    /// elapses. Returns the latest snapshot either way.
+    /// </summary>
+    public async Task<SpeechRequest?> WaitForSpeechRequestAsync(string id, TimeSpan timeout, CancellationToken cancellation = default)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            var request = _speechRequestsById.GetValueOrDefault(id);
+            if (request is null) return null;
+            if (request.Status.IsTerminal() || DateTime.UtcNow >= deadline || cancellation.IsCancellationRequested) return request;
+            await Task.Delay(150, CancellationToken.None);
+        }
+    }
+
     // Firestore mirror
 
     private void ApplySpeechRequests(List<FirestoreDocument> documents)
     {
-        var merged = new Dictionary<string, SpeechRequest>();
+        var merged = _speechRequestsById.Where(pair => !pair.Value.IsRemote).ToDictionary(pair => pair.Key, pair => pair.Value);
         foreach (var document in documents)
         {
             if (document.String("targetUID") is not string targetUid
@@ -68,7 +233,7 @@ public sealed partial class OrchestrationController
         if (_activeSpeechRequestId is string activeId)
         {
             var active = _speechRequestsById.GetValueOrDefault(activeId);
-            if (active is null || active.Status == SpeechRequestStatus.Cancelled)
+            if (active is null || (active.IsRemote && active.Status == SpeechRequestStatus.Cancelled))
             {
                 _speechExecutionCancellation?.Cancel();
                 _speechExecutionCancellation = null;
@@ -81,6 +246,11 @@ public sealed partial class OrchestrationController
         PumpSpeechRequestQueue();
     }
 
+    /// <summary>True while a poll should re-list the speechRequests collection every tick.</summary>
+    private bool WantsFrequentSpeechRequestSync =>
+        _activeSpeechRequestId is not null
+        || (IsHost && _speechRequestsById.Values.Any(request => request.IsRemote && !request.Status.IsTerminal()));
+
     // Queue
 
     /// <summary>
@@ -89,18 +259,12 @@ public sealed partial class OrchestrationController
     /// </summary>
     private void PumpSpeechRequestQueue()
     {
-        if (_activeSpeechRequestId is not null
-            || _activeExecutionTurnId is not null
-            || ActiveMode != OrchestrationMode.Remote
-            || _userId is not string uid
-            || SessionId is not string sessionId)
-        {
-            return;
-        }
+        if (_activeSpeechRequestId is not null || _activeExecutionTurnId is not null) return;
         var next = SpeechRequests.FirstOrDefault(request =>
-            request.Status == SpeechRequestStatus.Queued && request.TargetUid == uid);
+            request.Status == SpeechRequestStatus.Queued
+            && (!request.IsRemote || (ActiveMode == OrchestrationMode.Remote && request.TargetUid == _userId)));
         if (next is null) return;
-        ExecuteSpeechRequest(sessionId, next);
+        ExecuteSpeechRequest(next);
     }
 
     /// <summary>Cancels the active request so a scripted turn (or the host) can take the output.</summary>
@@ -111,9 +275,9 @@ public sealed partial class OrchestrationController
     }
 
     /// <summary>
-    /// Drops mirrored requests when the session ends. Any active request is
-    /// cancelled locally because the player is about to reset; the room is
-    /// gone for this PC, so nothing is written back.
+    /// Drops mirrored remote requests when the session ends. Any active
+    /// request, local or remote, is cancelled because the player is about to
+    /// reset; the room is gone for this PC, so nothing is written back.
     /// </summary>
     private void ClearRemoteSpeechRequests()
     {
@@ -134,61 +298,75 @@ public sealed partial class OrchestrationController
                 };
             }
         }
-        _speechRequestsById.Clear();
+        foreach (var remoteId in _speechRequestsById.Where(pair => pair.Value.IsRemote).Select(pair => pair.Key).ToList())
+        {
+            _speechRequestsById.Remove(remoteId);
+        }
         PublishSpeechRequests();
     }
 
     // Execution
 
-    private void ExecuteSpeechRequest(string sessionId, SpeechRequest request)
+    private void ExecuteSpeechRequest(SpeechRequest request)
     {
         _activeSpeechRequestId = request.Id;
         _hasReportedSpeechStart = false;
         _speechExecutionCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
         _speechExecutionCancellation = cancellation;
-        _ = RunSpeechRequestAsync(sessionId, request, cancellation);
+        _ = RunSpeechRequestAsync(request, cancellation);
     }
 
-    private async Task RunSpeechRequestAsync(string sessionId, SpeechRequest request, CancellationTokenSource cancellation)
+    private async Task RunSpeechRequestAsync(SpeechRequest request, CancellationTokenSource cancellation)
     {
         try
         {
-            // Claiming moves the document to `preparing`. The rules refuse the
-            // write once the host has cancelled the request, which is how a
-            // race with a cancellation resolves without a transaction.
-            try
+            if (request.IsRemote)
             {
-                await _database.CommitAsync(new FirestoreWrite
+                if (SessionId is not string sessionId) return;
+                // Claiming moves the document to `preparing`. The rules refuse
+                // the write once the host has cancelled the request, which is
+                // how a race with a cancellation resolves without a transaction.
+                try
                 {
-                    DocumentPath = SpeechRequestPath(sessionId, request.Id),
-                    Fields = new() { ["status"] = SpeechRequestStatus.Preparing.RawValue() },
-                    UpdateMask = ["status"],
-                    ServerTimestampFields = ["updatedAt"],
-                    MustExist = true,
-                }, cancellation.Token);
-            }
-            catch (Exception error) when (IsStaleWrite(error))
-            {
-                if (_activeSpeechRequestId == request.Id)
-                {
-                    _activeSpeechRequestId = null;
-                    _hasReportedSpeechStart = false;
-                    UpdateSpeechRequest(request.Id, current => current with { Status = SpeechRequestStatus.Cancelled });
-                    PumpSpeechRequestQueue();
+                    await _database.CommitAsync(new FirestoreWrite
+                    {
+                        DocumentPath = SpeechRequestPath(sessionId, request.Id),
+                        Fields = new() { ["status"] = SpeechRequestStatus.Preparing.RawValue() },
+                        UpdateMask = ["status"],
+                        ServerTimestampFields = ["updatedAt"],
+                        MustExist = true,
+                    }, cancellation.Token);
                 }
-                return;
+                catch (Exception error) when (IsStaleWrite(error))
+                {
+                    if (_activeSpeechRequestId == request.Id)
+                    {
+                        _activeSpeechRequestId = null;
+                        _hasReportedSpeechStart = false;
+                        UpdateSpeechRequest(request.Id, current => current with { Status = SpeechRequestStatus.Cancelled });
+                        PumpSpeechRequestQueue();
+                    }
+                    return;
+                }
+                if (_activeSpeechRequestId != request.Id) return;
             }
-            if (_activeSpeechRequestId != request.Id) return;
 
             UpdateSpeechRequest(request.Id, current => current with { Status = SpeechRequestStatus.Preparing });
-            SetSpeechControlStatus("Preparing speech from the host");
+            SetSpeechControlStatus(request.IsRemote ? "Preparing speech from the host" : "Preparing ad hoc speech");
             cancellation.Token.ThrowIfCancellationRequested();
-            await _model.PlayOrchestratedTurnAsync(
-                request.Text,
-                "adhoc",
-                cancellation.Token,
-                ResolveLocalVoiceId(request.VoiceId));
+            if (request.AudioPath is string audioPath)
+            {
+                _model.PlayAudioFile(audioPath, request.Text);
+            }
+            else
+            {
+                await _model.PlayOrchestratedTurnAsync(
+                    request.Text,
+                    "adhoc",
+                    cancellation.Token,
+                    ResolveLocalVoiceId(request.VoiceId));
+            }
             // Playback continues; SpeechPlaybackDidFinish completes the request.
             if (_activeSpeechRequestId == request.Id && !_model.Player.HasAudio)
             {
@@ -213,6 +391,7 @@ public sealed partial class OrchestrationController
     private async Task FinishSpeechRequestAsync(string id, SpeechRequestStatus status, string? error, bool stopPlayback)
     {
         bool wasActive = _activeSpeechRequestId == id;
+        var request = _speechRequestsById.GetValueOrDefault(id);
         if (wasActive)
         {
             _speechExecutionCancellation?.Cancel();
@@ -221,6 +400,7 @@ public sealed partial class OrchestrationController
             _hasReportedSpeechStart = false;
             if (stopPlayback) _model.StopOrchestratedTurn();
             RestoreSpeechControlStatus();
+            _model.FinishAdHocSpeech();
         }
         UpdateSpeechRequest(id, current => current with
         {
@@ -228,9 +408,15 @@ public sealed partial class OrchestrationController
             Error = error,
             EndedAt = DateTime.UtcNow,
         });
+        if (request?.AudioPath is string audioPath)
+        {
+            // The uploaded copy is only needed for this one request; the
+            // player has already decoded it into memory.
+            try { File.Delete(audioPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
         PumpSpeechRequestQueue();
 
-        if (SessionId is not string sessionId) return;
+        if (request is null || !request.IsRemote || SessionId is not string sessionId) return;
         var fields = new Dictionary<string, object?>
         {
             ["status"] = status.RawValue(),
@@ -273,16 +459,18 @@ public sealed partial class OrchestrationController
     {
         if (_activeSpeechRequestId is not string id
             || _hasReportedSpeechStart
-            || !_speechRequestsById.ContainsKey(id)
-            || SessionId is not string sessionId)
+            || _speechRequestsById.GetValueOrDefault(id) is not SpeechRequest request)
         {
             return;
         }
         _hasReportedSpeechStart = true;
         var clientTime = DateTime.UtcNow;
         UpdateSpeechRequest(id, current => current with { Status = SpeechRequestStatus.Speaking, StartedAt = clientTime });
-        SetSpeechControlStatus("Speaking for the host");
-        _ = ReportSpeechStartAsync(sessionId, id, clientTime);
+        SetSpeechControlStatus(request.IsRemote ? "Speaking for the host" : "Speaking ad hoc text");
+        if (request.IsRemote && SessionId is string sessionId)
+        {
+            _ = ReportSpeechStartAsync(sessionId, id, clientTime);
+        }
     }
 
     private async Task ReportSpeechStartAsync(string sessionId, string id, DateTime clientTime)
@@ -342,6 +530,13 @@ public sealed partial class OrchestrationController
 
     // Helpers
 
+    private void StoreSpeechRequest(SpeechRequest request)
+    {
+        _speechRequestsById[request.Id] = request;
+        TrimSpeechRequestHistory();
+        PublishSpeechRequests();
+    }
+
     private void UpdateSpeechRequest(string id, Func<SpeechRequest, SpeechRequest> mutate)
     {
         if (!_speechRequestsById.TryGetValue(id, out var request)) return;
@@ -368,6 +563,9 @@ public sealed partial class OrchestrationController
             _speechRequestsById.Remove(terminal[index].Id);
         }
     }
+
+    private string? VoiceName(string? voiceId) =>
+        voiceId is null ? null : _model.Voices.FirstOrDefault(voice => voice.Id == voiceId)?.Name;
 
     /// <summary>
     /// The host may send a voice name instead of an ID when it does not share

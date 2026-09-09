@@ -1,6 +1,6 @@
 ---
 name: botspeaker
-description: Play spoken text or a recorded audio file through BotSpeaker on this Mac, or spoken text on a paired remote machine, using the `botspeaker` CLI. Use when asked to say, speak, announce, or play audio into a meeting or virtual audio device.
+description: Play spoken text or a recorded audio file through BotSpeaker on this Mac or Windows PC, or spoken text on a paired remote machine, using the `botspeaker` CLI. Use when asked to say, speak, announce, or play audio into a meeting or virtual audio device.
 ---
 
 # BotSpeaker CLI
@@ -16,7 +16,8 @@ botspeaker status --json
 ```
 
 - The CLI launches BotSpeaker in the background if it is not running. Exit code 2 means the app is not installed or did not come up; ask the user to install or open BotSpeaker.
-- If `botspeaker` is missing, install it with `curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash`. If a command prints a `note:` that the app is newer than the CLI, run `botspeaker upgrade`.
+- If `botspeaker` is missing, install it with `curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash` on macOS, or `irm https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.ps1 | iex` in PowerShell on Windows. If a command prints a `note:` that the app is newer than the CLI, run `botspeaker upgrade` (macOS) or rerun the install line (Windows).
+- On Windows the command is `botspeaker-cli` (the app itself is `BotSpeaker.exe`); every subcommand and flag below is otherwise identical, and "this Mac" means the machine the CLI runs on.
 - `apiKeyConfigured` must be true and `output` non-null, otherwise ask the user to finish Settings.
 - `session` shows whether this Mac hosts (`"mode": "host"`) or joined a meeting; `attendees` lists paired Macs.
 

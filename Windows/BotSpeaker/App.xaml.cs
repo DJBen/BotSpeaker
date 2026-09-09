@@ -13,6 +13,14 @@ public partial class App : Application
     private Forms.NotifyIcon? _trayIcon;
     private Forms.ToolStripMenuItem? _playPauseItem;
     private Drawing.Icon? _appIcon;
+    private ControlServer? _controlServer;
+
+    public static string Version =>
+        typeof(App).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion.Split('+')[0]
+        ?? typeof(App).Assembly.GetName().Version?.ToString(3)
+        ?? "0.0.0";
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -20,8 +28,27 @@ public partial class App : Application
         Model = new AppModel();
         Orchestration = new OrchestrationController(Model);
 
+        // Loopback control API for the botspeaker CLI; started before the
+        // window so a CLI that launched us finds the discovery file quickly.
+        var api = new ControlApi(Model, Orchestration, Version);
+        _controlServer = new ControlServer(Dispatcher, Version, api.HandleAsync);
+        _controlServer.Start(Model.Settings.ControlPort);
+
         _mainWindow = new MainWindow(Model, Orchestration);
-        _mainWindow.Show();
+        if (e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase))
+        {
+            // Launched by the CLI: run the window's Loaded work (voices,
+            // session restore) but stay in the tray without stealing focus.
+            _mainWindow.ShowActivated = false;
+            _mainWindow.WindowState = WindowState.Minimized;
+            _mainWindow.Show();
+            _mainWindow.Hide();
+            _mainWindow.WindowState = WindowState.Normal;
+        }
+        else
+        {
+            _mainWindow.Show();
+        }
 
         SetUpTrayIcon();
         Model.Player.PropertyChanged += (_, args) =>
@@ -71,8 +98,16 @@ public partial class App : Application
         _mainWindow.Activate();
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _controlServer?.Stop();
+        base.OnExit(e);
+    }
+
     public void ExitApplication()
     {
+        _controlServer?.Stop();
+        _controlServer = null;
         Model.Player.Reset();
         if (_trayIcon is not null)
         {

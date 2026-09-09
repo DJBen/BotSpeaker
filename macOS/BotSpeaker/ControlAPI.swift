@@ -426,7 +426,7 @@ final class ControlAPI {
         payload["cycles"] = orNull(request.cycles)
         payload["completedCycles"] = request.completedCycles
         payload["kind"] = request.isAudioFile ? "audio" : "text"
-        payload["audioFile"] = orNull(request.audioURL?.lastPathComponent)
+        payload["audioFile"] = orNull(request.isAudioFile ? String(request.text.drop(while: { $0 == "♪" || $0 == " " })) : nil)
         return payload
     }
 

@@ -1171,11 +1171,10 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
                 _lastRoomActivityMarker = marker;
                 ApplyRoom(room);
             }
-            // The host cancels an ad hoc request by updating only its document,
-            // without touching the room marker, so keep re-listing the small
-            // speechRequests collection while one is playing here.
-            bool syncSpeechRequests = ActiveMode == OrchestrationMode.Remote
-                && (syncCollections || _activeSpeechRequestId is not null);
+            // Status changes on an ad hoc request only touch its document, not
+            // the room marker, so keep re-listing the small speechRequests
+            // collection while one is in flight on either side.
+            bool syncSpeechRequests = syncCollections || WantsFrequentSpeechRequestSync;
             if (!syncCollections && !syncSpeechRequests) return;
 
             if (syncCollections)

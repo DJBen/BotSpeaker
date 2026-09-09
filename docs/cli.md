@@ -1,11 +1,12 @@
 # BotSpeaker CLI and control API
 
 The `botspeaker` command lets a person or an LLM agent drive the running
-BotSpeaker app from a shell: play arbitrary text on this Mac, play it on any
-Mac or Windows PC paired to a meeting this Mac hosts, pick voices and outputs,
-and start or join meetings. Everything is also reachable with plain `curl`.
-The CLI itself is macOS-only for now; a Windows attendee only needs the
-BotSpeaker app running in **Remote Mode**.
+BotSpeaker app from a shell: play arbitrary text on this machine, play it on
+any Mac or Windows PC paired to a meeting this machine hosts, pick voices and
+outputs, and start or join meetings. Everything is also reachable with plain
+`curl`. The CLI exists for both platforms with the same commands, flags, JSON
+output, and exit codes; this guide is written from the Mac, and the
+[Windows section](#windows) lists what differs there.
 
 Ad hoc speech is independent of the orchestrated meeting script. It uses the
 same ElevenLabs synthesis, cache, and virtual-audio output as the composer, so
@@ -185,6 +186,39 @@ or `cancelled`. A looping request (`loop: true`, `cycles: null`) stays
 only returns when it is stopped or the timeout passes; a counted repeat
 (`cycles: n`) completes after `n` passes. `completedCycles` counts passes on
 the Mac doing the playing, so the host sees `0` for a remote request.
+
+## Windows
+
+The Windows app (0.4.1 Windows builds published from September 9, 2026, and later) runs the same loopback control API, and
+`botspeaker-cli.exe` is the same CLI built for Windows
+(`Windows/BotSpeakerCli`, plain .NET, no dependencies). Install or update it
+from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.ps1 | iex
+```
+
+Differences from the Mac:
+
+- The command is `botspeaker-cli`, not `botspeaker`: on Windows the app is
+  `BotSpeaker.exe`, and file names are case-insensitive, so the two could not
+  share a folder or a name on PATH. Every subcommand and flag in this guide
+  works the same after that substitution.
+- The discovery file is `%APPDATA%\BotSpeaker\control.json`; the preferred
+  port comes from `ControlPort` in `settings.json`. The same
+  `BOTSPEAKER_CONTROL_URL`, `BOTSPEAKER_TOKEN`, `BOTSPEAKER_CONTROL_FILE`,
+  `BOTSPEAKER_NO_LAUNCH`, and `BOTSPEAKER_APP` overrides apply.
+- When the app is not running, the CLI starts `BotSpeaker.exe --background`
+  (tray only, no focus) from `BOTSPEAKER_APP`, the app it last talked to
+  (remembered in `%APPDATA%\BotSpeaker\cli.json`), a `BotSpeaker.exe` beside
+  the CLI, `%LOCALAPPDATA%\Programs\BotSpeaker`, or the Desktop, in that
+  order.
+- There is no `upgrade` subcommand; rerun the install line instead. The app
+  prints a `note:` when it is newer than the CLI.
+- `play-audio` also accepts `.wma`; `.caf` is Mac-only. Local targets are
+  reported as "This PC".
+- A Windows attendee sees host requests on its next poll, about 1.5 seconds
+  after they are queued.
 
 ## Agent usage
 

@@ -41,10 +41,12 @@ public static class SpeechRequestStatusExtensions
 }
 
 /// <summary>
-/// One-off speech the host sends to this PC outside the scripted timeline,
-/// mirrored from the room's <c>speechRequests</c> collection. The host writes
-/// it (from the Speak popover or the <c>botspeaker</c> CLI), this attendee
-/// claims and plays it, and the status fields flow back to the host.
+/// One-off speech outside the scripted timeline. Local requests (target
+/// <see cref="LocalTarget"/>) live only in memory; requests aimed at a paired
+/// attendee are mirrored from the room's <c>speechRequests</c> collection.
+/// The host writes them (from the <c>botspeaker</c> CLI on either platform or
+/// the macOS Speak popover), the targeted attendee claims and plays them, and
+/// the status fields flow back to the host.
 /// </summary>
 public sealed record SpeechRequest(
     string Id,
@@ -61,10 +63,16 @@ public sealed record SpeechRequest(
     string? Error,
     /// <summary>Number of passes to play. 1 plays once; null repeats until cancelled.</summary>
     int? Cycles,
-    /// <summary>Passes that have finished so far on this PC.</summary>
-    int CompletedCycles)
+    /// <summary>Passes that have finished so far on the machine doing the playing.</summary>
+    int CompletedCycles,
+    /// <summary>A pre-recorded file to play instead of synthesizing <see cref="Text"/>. Local only.</summary>
+    string? AudioPath = null)
 {
+    public const string LocalTarget = "local";
+
+    public bool IsRemote => TargetUid != LocalTarget;
     public bool IsLooping => Cycles != 1;
+    public bool IsAudioFile => AudioPath is not null;
 
     /// <summary>
     /// Firestore stores endless loops as 0 because the host must set a value the

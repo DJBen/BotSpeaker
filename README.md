@@ -19,6 +19,11 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
   curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash
   ```
 - **Windows 10/11 x64:** [`BotSpeaker-Windows-x64-0.4.1.zip`](https://github.com/DJBen/BotSpeaker/releases/tag/0.4.1), a self-contained portable exe—unzip and run, with no .NET installation required. It is currently unsigned, so Windows SmartScreen may warn on first launch.
+- **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
+
+  ```powershell
+  irm https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.ps1 | iex
+  ```
 
 The repository and its release downloads are public.
 
@@ -143,9 +148,9 @@ and transcript details.
 
 ## Drive it from the command line or an agent
 
-The `botspeaker` CLI speaks arbitrary text on this Mac or on any Mac or
-Windows PC paired to the meeting this Mac hosts, independent of the
-orchestrated script. Install
+The `botspeaker` CLI (macOS and Windows) speaks arbitrary text on this
+machine or on any Mac or Windows PC paired to the meeting this machine hosts,
+independent of the orchestrated script. Install
 or update it with the one-liner under [Download](#download); the app updates
 itself through Sparkle, and when it gets ahead of the CLI, every CLI call
 prints a reminder to run `botspeaker upgrade`. `botspeaker speak --wait "Hello"` plays locally;
@@ -162,7 +167,7 @@ ready-made skill for LLM agents. See the [CLI guide](docs/cli.md).
 ```text
 BotSpeaker/
 ├── README.md
-├── cli/                        # `botspeaker` command-line tool and agent skill
+├── cli/                        # `botspeaker` command-line tool (macOS) and agent skill
 ├── docs/
 ├── scripts/                    # Release packaging, publishing, CLI install
 ├── macOS/
@@ -170,7 +175,8 @@ BotSpeaker/
 │   └── BotSpeaker/
 └── Windows/
     ├── README.md
-    └── BotSpeaker/
+    ├── BotSpeaker/             # WPF app
+    └── BotSpeakerCli/          # `botspeaker-cli.exe` command-line tool (Windows)
 ```
 
 Generated MP3 and timing files are stored in the platform's user cache. API credentials are stored in macOS Keychain or encrypted with Windows DPAPI and are never written to the repository.

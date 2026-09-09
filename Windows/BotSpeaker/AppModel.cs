@@ -190,6 +190,13 @@ public sealed class AppModel : INotifyPropertyChanged
         await RefreshVoicesAsync();
     }
 
+    public void RefreshAudioDevices()
+    {
+        Devices.Refresh();
+        Notify(nameof(SelectedDeviceName));
+        Notify(nameof(SelectedDeviceAvailable));
+    }
+
     public async Task RefreshVoicesAsync()
     {
         var apiKey = _credentials.Read();
@@ -477,6 +484,52 @@ public sealed class AppModel : INotifyPropertyChanged
                 IsGenerating = false;
             }
         }
+    }
+
+    /// <summary>
+    /// Plays a pre-recorded audio file through the configured output using the
+    /// same player as synthesized speech, so pause, stop, preemption, and the
+    /// finished callback all behave the same. Returns once the file is
+    /// decoded and queued; completion arrives through
+    /// <see cref="AudioPlaybackController.PlaybackFinished"/>.
+    /// </summary>
+    public void PlayAudioFile(string path, string displayName)
+    {
+        if (string.IsNullOrEmpty(SelectedDeviceId))
+        {
+            throw new AppException("Choose an audio output in Settings.");
+        }
+        CancelGeneration(resetPlayer: true, notify: false);
+        Player.SelectOutputDevice(SelectedDeviceId);
+        Text = displayName;
+        Player.IsLooping = false;
+        Player.BeginSequence(1);
+        _currentSpeechSignature = $"audio|{path}";
+        try
+        {
+            Player.Append(path, new SpeechTiming(), new TextSpan(0, 0));
+            Player.FinishSequence();
+        }
+        catch (Exception error)
+        {
+            Player.FinishSequence();
+            Player.Stop();
+            var failure = new AppException($"Could not play {System.IO.Path.GetFileName(path)}: {error.Message}");
+            ErrorMessage = failure.Message;
+            throw failure;
+        }
+    }
+
+    /// <summary>
+    /// Restores the composer after ad hoc speech played outside a paired
+    /// session, so the spoken text does not linger as if it were the script.
+    /// </summary>
+    public void FinishAdHocSpeech()
+    {
+        if (IsRemoteControlled) return;
+        CancelGeneration(resetPlayer: true, notify: false);
+        _currentSpeechSignature = null;
+        Text = SelectedScript.Text;
     }
 
     public void PauseOrchestratedTurn()
