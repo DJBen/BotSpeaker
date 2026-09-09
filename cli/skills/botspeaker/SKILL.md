@@ -1,6 +1,6 @@
 ---
 name: botspeaker
-description: Play spoken text through BotSpeaker on this Mac or on a paired remote Mac using the `botspeaker` CLI. Use when asked to say, speak, announce, or play audio into a meeting or virtual audio device.
+description: Play spoken text or a recorded audio file through BotSpeaker on this Mac, or spoken text on a paired remote machine, using the `botspeaker` CLI. Use when asked to say, speak, announce, or play audio into a meeting or virtual audio device.
 ---
 
 # BotSpeaker CLI
@@ -36,6 +36,15 @@ botspeaker speak --repeat 3 --wait "Text"  # plays exactly 3 times, then exits
 ```
 
 Do not combine `--wait` with `--loop`: a loop never completes on its own, so the command would block until stopped or timed out.
+
+## Play a recorded audio file on this Mac
+
+```bash
+botspeaker play-audio --wait /path/to/clip.mp3   # mp3, wav, m4a, aac, aiff, caf, flac, ogg, opus
+botspeaker play-audio --repeat 2 chime.wav
+```
+
+Same `--wait`, `--loop`, `--repeat`, `wait`, and `stop` semantics as `speak`, and no ElevenLabs key is needed. Audio files play locally only; there is no `--target` for them.
 
 ## Speak on a paired remote Mac (host only)
 

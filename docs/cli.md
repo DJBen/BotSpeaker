@@ -2,8 +2,10 @@
 
 The `botspeaker` command lets a person or an LLM agent drive the running
 BotSpeaker app from a shell: play arbitrary text on this Mac, play it on any
-Mac paired to a meeting this Mac hosts, pick voices and outputs, and start or
-join meetings. Everything is also reachable with plain `curl`.
+Mac or Windows PC paired to a meeting this Mac hosts, pick voices and outputs,
+and start or join meetings. Everything is also reachable with plain `curl`.
+The CLI itself is macOS-only for now; a Windows attendee only needs the
+BotSpeaker app running in **Remote Mode**.
 
 Ad hoc speech is independent of the orchestrated meeting script. It uses the
 same ElevenLabs synthesis, cache, and virtual-audio output as the composer, so
@@ -63,6 +65,8 @@ botspeaker speak --voice "Rachel" "Hi"     # voice by name or ElevenLabs voice I
 botspeaker speak --loop "On a cycle"        # repeat until `botspeaker stop`
 botspeaker speak --repeat 3 --wait "Thrice" # play a fixed number of times
 echo "long text" | botspeaker speak        # text from stdin (or --file path, --file -)
+botspeaker play-audio --wait clip.mp3      # play a recorded file (mp3, wav, m4a, aiff, caf, flac, ...) on this Mac
+botspeaker play-audio --loop jingle.wav    # same --loop / --repeat N as speak; stop with `botspeaker stop`
 botspeaker targets                         # "local" plus attendees paired to the meeting this Mac hosts
 botspeaker speak --target "Sihao's Mac" --wait "Hello from the host"
 botspeaker requests                        # recent requests with status
@@ -98,7 +102,21 @@ way round.
 Remote requests are written to Firestore under the meeting room, claimed by the
 targeted attendee, played with the attendee's own ElevenLabs key and output,
 and their status is mirrored back to the host. Only the host can target other
-machines; an attendee can still play locally with `botspeaker speak`.
+machines; an attendee can still play locally with `botspeaker speak`. Windows
+attendees are targeted the same way; they pick requests up on their next poll
+(about 1.5 seconds) and use the same `--loop` and `--repeat` semantics.
+
+### Playing audio files
+
+`botspeaker play-audio FILE` plays a recording instead of synthesizing text.
+The CLI uploads the file to the app (the app is sandboxed and cannot open
+arbitrary paths), the app stages it in its container, and the request joins
+the same queue as spoken text: `--wait`, `--loop`, `--repeat N`,
+`botspeaker requests`, `botspeaker wait ID`, and `botspeaker stop` all apply,
+and a scripted meeting turn preempts it. No ElevenLabs key is needed. Files up
+to 48 MB in any format Core Audio decodes (mp3, wav, m4a, aac, aiff, caf,
+flac, ogg, opus) are accepted. Audio files play on this Mac only; `--target`
+is not available because the recording is never sent through Firestore.
 
 ### Interaction with orchestrated meetings
 
@@ -123,6 +141,7 @@ JSON with an `ok` boolean; errors carry `error.code` and `error.message`.
 | `GET /v1/outputs`, `POST /v1/outputs/select {uid\|name}` | Audio outputs on this Mac. |
 | `GET /v1/voices?refresh=1`, `POST /v1/voices/select {id\|name}` | ElevenLabs voices. |
 | `POST /v1/speak {text, target?, voice?, loop?, repeat?, wait?, timeout?}` | Queue speech. `loop: true` repeats until cancelled; `repeat: n` plays `n` times. `202` with the request when not waiting, `200` with the final request when waiting. |
+| `POST /v1/play-audio {audio, filename, loop?, repeat?, wait?, timeout?}` | Play a recorded file on this Mac. `audio` is the file's bytes as base64, `filename` supplies the extension. Same response shape as `/v1/speak`; the request carries `"kind": "audio"` and `audioFile`. |
 | `GET /v1/speech` | Recent requests. |
 | `GET /v1/speech/{id}?wait=1&timeout=600` | One request; long-polls until terminal when `wait=1`. |
 | `POST /v1/speech/{id}/cancel`, `POST /v1/speech/cancel-all` (alias `POST /v1/stop`) | Cancel. |

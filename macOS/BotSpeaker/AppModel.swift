@@ -461,6 +461,32 @@ final class AppModel {
         }
     }
 
+    /// Plays a pre-recorded audio file through the configured output using
+    /// the same player as synthesized speech, so pause, stop, preemption, and
+    /// the finished callback all behave the same. Returns once the file is
+    /// queued; completion arrives through `player.onPlaybackFinished`.
+    func playAudioFile(url: URL, displayName: String) throws {
+        guard !selectedDeviceUID.isEmpty else {
+            throw AppError("Choose an audio output in Settings.")
+        }
+        cancelGeneration(resetPlayer: true, notify: false)
+        try player.selectOutputDevice(uid: selectedDeviceUID)
+        text = displayName
+        player.isLooping = false
+        player.beginSequence(totalChunks: 1)
+        currentSpeechSignature = "audio|\(url.path)"
+        do {
+            try player.append(url: url, timing: SpeechTiming(), sourceRange: NSRange(location: 0, length: 0))
+            player.finishSequence()
+        } catch {
+            player.finishSequence()
+            player.stop()
+            let failure = AppError("Could not play \(url.lastPathComponent): \(error.localizedDescription)")
+            errorMessage = failure.localizedDescription
+            throw failure
+        }
+    }
+
     func pauseOrchestratedTurn() {
         guard isRemoteControlled else { return }
         player.pause()

@@ -15,7 +15,7 @@ struct BotSpeakerCLI: AsyncParsableCommand {
         """,
         version: BotSpeakerCLIVersion.current,
         subcommands: [
-            Speak.self, Stop.self, Status.self, Targets.self, Voices.self, Outputs.self,
+            Speak.self, PlayAudio.self, Stop.self, Status.self, Targets.self, Voices.self, Outputs.self,
             Requests.self, Wait.self, Host.self, Join.self, Leave.self, Upgrade.self
         ],
         defaultSubcommand: Status.self
@@ -128,6 +128,99 @@ struct Speak: AsyncParsableCommand {
             }
         }
         throw ControlClient.Failure(exitCode: 1, code: "bad_input", message: "Give the text as an argument, via --file, or on stdin.")
+    }
+}
+
+// MARK: - play-audio
+
+struct PlayAudio: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "play-audio",
+        abstract: "Play an audio file (mp3, wav, m4a, aiff, ...) through BotSpeaker's output on this Mac.",
+        discussion: """
+        The file is uploaded to the running app and queued like spoken text, so `--wait`, \
+        `botspeaker stop`, and `botspeaker requests` all apply. A scripted meeting turn preempts it. \
+        Audio files play locally only; use `speak --target` to reach a paired attendee.
+        """
+    )
+
+    @OptionGroup var global: GlobalOptions
+
+    @Argument(help: "Path to the audio file to play.", completion: .file())
+    var file: String
+
+    @Flag(name: [.customShort("w"), .long], help: "Block until playback finishes and report the final status.")
+    var wait = false
+
+    @Option(name: .long, help: "Seconds to wait when --wait is set.")
+    var timeout: Double = 600
+
+    @Flag(name: [.customShort("l"), .long], help: "Play the file on a cycle until `botspeaker stop` cancels it.")
+    var loop = false
+
+    @Option(name: [.customShort("r"), .customLong("repeat")], help: "Play the file this many times.")
+    var repeatCount: Int?
+
+    static let supportedExtensions = ["mp3", "wav", "m4a", "aac", "aiff", "aif", "caf", "flac", "ogg", "opus"]
+
+    func validate() throws {
+        if let repeatCount, repeatCount < 1 {
+            throw ValidationError("--repeat must be at least 1.")
+        }
+        if loop, repeatCount != nil {
+            throw ValidationError("Use either --loop or --repeat, not both.")
+        }
+        let url = URL(fileURLWithPath: file)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ValidationError("No file at \(file).")
+        }
+        guard Self.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+            throw ValidationError("\(url.lastPathComponent) is not a supported audio file. Use one of: \(Self.supportedExtensions.joined(separator: ", ")).")
+        }
+    }
+
+    func run() async throws {
+        do {
+            let url = URL(fileURLWithPath: file)
+            let data = try Data(contentsOf: url)
+            guard !data.isEmpty else {
+                throw ControlClient.Failure(exitCode: 1, code: "bad_input", message: "\(url.lastPathComponent) is empty.")
+            }
+            let client = try await ControlClient.locate()
+            var body: [String: Any] = [
+                "audio": data.base64EncodedString(),
+                "filename": url.lastPathComponent,
+                "target": "local",
+                "wait": wait,
+                "timeout": timeout,
+                "loop": loop
+            ]
+            if let repeatCount { body["repeat"] = repeatCount }
+            let response = try await client.post("/v1/play-audio", body: body)
+            let request = response["request"] as? [String: Any] ?? [:]
+            if global.json {
+                Output.json(response)
+            } else {
+                let status = Output.string(request["status"])
+                let id = Output.string(request["id"])
+                let passes = Output.cycles(of: request).map { " [\($0)]" } ?? ""
+                if wait {
+                    let detail = request["error"] as? String
+                    print("\(status) \(url.lastPathComponent)\(passes) (\(id))\(detail.map { ": \($0)" } ?? "")")
+                } else if loop {
+                    print("\(status) \(url.lastPathComponent)\(passes) (\(id)) — loops until `botspeaker stop \(id)`")
+                } else {
+                    print("\(status) \(url.lastPathComponent)\(passes) (\(id)) — use `botspeaker wait \(id)` to follow it")
+                }
+            }
+            if wait, request["status"] as? String != "completed" {
+                throw ExitCode(1)
+            }
+        } catch let error as ExitCode {
+            throw error
+        } catch {
+            Output.fail(error, json: global.json)
+        }
     }
 }
 

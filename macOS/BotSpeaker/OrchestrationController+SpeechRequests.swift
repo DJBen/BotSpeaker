@@ -22,9 +22,17 @@ extension OrchestrationController {
     /// Queues text for playback and returns the request ID. Remote targets
     /// require a hosted session; the host's own UID is treated as local.
     /// `cycles` is how many times to play the text; `nil` loops until the
-    /// request is cancelled.
+    /// request is cancelled. When `audioURL` is set the file is played as-is
+    /// instead of synthesizing `text` (which then only labels the request);
+    /// audio files play locally only.
     @discardableResult
-    func speak(text: String, target: SpeechTarget, voiceID: String? = nil, cycles: Int? = 1) async throws -> String {
+    func speak(
+        text: String,
+        target: SpeechTarget,
+        voiceID: String? = nil,
+        cycles: Int? = 1,
+        audioURL: URL? = nil
+    ) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AppError("Nothing to speak: the text is empty.") }
         if let cycles, cycles < 1 { throw AppError("The repeat count must be at least 1.") }
@@ -34,13 +42,18 @@ extension OrchestrationController {
         if case .participant(let uid) = target, uid == userID {
             resolvedTarget = .local
         }
+        if audioURL != nil, resolvedTarget != .local {
+            throw AppError("Audio files play on this Mac only. Use target \"local\", or speak text to reach an attendee.")
+        }
 
         let normalizedVoiceID = voiceID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveVoiceID = normalizedVoiceID?.isEmpty == false ? normalizedVoiceID : nil
 
         switch resolvedTarget {
         case .local:
-            guard model.hasAPIKey else { throw AppError("Add your ElevenLabs API key in Settings.") }
+            if audioURL == nil {
+                guard model.hasAPIKey else { throw AppError("Add your ElevenLabs API key in Settings.") }
+            }
             guard !model.selectedDeviceUID.isEmpty else { throw AppError("Choose an audio output in Settings.") }
             let id = "local-" + UUID().uuidString.lowercased()
             let request = SpeechRequest(
@@ -48,15 +61,20 @@ extension OrchestrationController {
                 target: .local,
                 targetName: "This Mac",
                 text: trimmed,
-                voiceID: effectiveVoiceID,
-                voiceName: voiceName(for: effectiveVoiceID) ?? model.selectedVoiceName,
+                voiceID: audioURL == nil ? effectiveVoiceID : nil,
+                voiceName: audioURL == nil ? (voiceName(for: effectiveVoiceID) ?? model.selectedVoiceName) : nil,
                 requestedBy: userID ?? "local",
                 status: .queued,
                 createdAt: Date(),
-                cycles: cycles
+                cycles: cycles,
+                audioURL: audioURL
             )
             storeSpeechRequest(request)
-            log.notice("Queued local speech request \(id, privacy: .public) (\(trimmed.count) chars, cycles: \(cycles.map(String.init) ?? "endless", privacy: .public))")
+            if let audioURL {
+                log.notice("Queued local audio file request \(id, privacy: .public) (\(audioURL.lastPathComponent, privacy: .public), cycles: \(cycles.map(String.init) ?? "endless", privacy: .public))")
+            } else {
+                log.notice("Queued local speech request \(id, privacy: .public) (\(trimmed.count) chars, cycles: \(cycles.map(String.init) ?? "endless", privacy: .public))")
+            }
             pumpSpeechRequestQueue()
             return id
 
@@ -225,11 +243,15 @@ extension OrchestrationController {
         speechExecutionTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await model.playOrchestratedTurn(
-                    text: request.text,
-                    cacheNamespace: "adhoc",
-                    voiceID: request.voiceID
-                )
+                if let audioURL = request.audioURL {
+                    try model.playAudioFile(url: audioURL, displayName: request.text)
+                } else {
+                    try await model.playOrchestratedTurn(
+                        text: request.text,
+                        cacheNamespace: "adhoc",
+                        voiceID: request.voiceID
+                    )
+                }
                 // Playback continues; `speechPlaybackDidFinish` completes the request.
                 if self.activeSpeechRequestID == request.id, !model.player.hasAudio {
                     self.finalizeLocalSpeechRequest(id: request.id, status: .failed, error: "No audio was produced.", stopPlayback: false)
@@ -262,6 +284,12 @@ extension OrchestrationController {
             }
             restoreSpeechControlStatus()
             model?.finishAdHocSpeech()
+        }
+        // The uploaded copy is only needed for this one request. The player
+        // keeps its own handle open, so unlinking a file it is still draining
+        // is safe.
+        if let audioURL = speechRequestsByID[id]?.audioURL {
+            try? FileManager.default.removeItem(at: audioURL)
         }
         pumpSpeechRequestQueue()
     }

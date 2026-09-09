@@ -143,14 +143,17 @@ and transcript details.
 
 ## Drive it from the command line or an agent
 
-The `botspeaker` CLI speaks arbitrary text on this Mac or on any Mac paired
-to the meeting this Mac hosts, independent of the orchestrated script. Install
+The `botspeaker` CLI speaks arbitrary text on this Mac or on any Mac or
+Windows PC paired to the meeting this Mac hosts, independent of the
+orchestrated script. Install
 or update it with the one-liner under [Download](#download); the app updates
 itself through Sparkle, and when it gets ahead of the CLI, every CLI call
 prints a reminder to run `botspeaker upgrade`. `botspeaker speak --wait "Hello"` plays locally;
 `botspeaker speak --target "Other Mac" --wait "Hello"` plays remotely and
 reports when it finished; `--loop` keeps the text playing on a cycle until
-`botspeaker stop`, and `--repeat N` plays it a set number of times. The app exposes the same functions over a loopback
+`botspeaker stop`, and `--repeat N` plays it a set number of times.
+`botspeaker play-audio clip.mp3` plays a recorded file on this Mac through the
+same output and queue. The app exposes the same functions over a loopback
 HTTP API with a per-launch token, and `cli/skills/botspeaker/SKILL.md` is a
 ready-made skill for LLM agents. See the [CLI guide](docs/cli.md).
 

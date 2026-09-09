@@ -8,9 +8,22 @@ final class ControlAPI {
     private let model: AppModel
     private let orchestration: OrchestrationController
 
+    /// Uploaded audio files are staged here inside the sandbox container,
+    /// because the app cannot read arbitrary paths the CLI names.
+    static var audioDirectory: URL? {
+        ControlServer.discoveryDirectory?.appendingPathComponent("adhoc-audio", isDirectory: true)
+    }
+
+    static let maximumAudioBytes = 48 * 1024 * 1024
+    static let audioExtensions: Set<String> = ["mp3", "wav", "m4a", "aac", "aiff", "aif", "caf", "flac", "ogg", "opus"]
+
     init(model: AppModel, orchestration: OrchestrationController) {
         self.model = model
         self.orchestration = orchestration
+        // Anything left over belongs to a request from a previous launch.
+        if let directory = Self.audioDirectory {
+            try? FileManager.default.removeItem(at: directory)
+        }
     }
 
     func handle(_ request: ControlServer.Request) async -> ControlServer.Response {
@@ -36,6 +49,8 @@ final class ControlAPI {
                 return try await selectVoice(request)
             case ("POST", ["speak"]):
                 return try await speak(request)
+            case ("POST", ["play-audio"]), ("POST", ["audio"]):
+                return try await playAudio(request)
             case ("GET", ["speech"]):
                 return .ok(["ok": true, "requests": orchestration.speechRequests.map(payload(for:))])
             case ("POST", ["speech", "cancel-all"]), ("POST", ["stop"]):
@@ -83,7 +98,68 @@ final class ControlAPI {
         let voiceID = try await resolveVoiceID(body["voice"] as? String)
         let cycles = try resolveCycles(loop: body["loop"], repeatCount: body["repeat"] ?? body["cycles"])
         let id = try await orchestration.speak(text: text, target: target, voiceID: voiceID, cycles: cycles)
+        return try await respond(toRequest: id, body: body)
+    }
 
+    /// `{audio: <base64>, filename, target?, loop?, repeat?, wait?, timeout?}`.
+    /// The bytes are staged in the app container and played through the same
+    /// queue as text, so `wait`, `stop`, and preemption by a meeting turn all
+    /// apply. Audio files play on this Mac only.
+    private func playAudio(_ request: ControlServer.Request) async throws -> ControlServer.Response {
+        guard let body = request.json() else {
+            throw ControlError(400, "Send a JSON body with \"audio\" (base64) and \"filename\".", code: "bad_request")
+        }
+        guard let encoded = body["audio"] as? String, !encoded.isEmpty else {
+            throw ControlError(400, "\"audio\" is required: the file contents encoded as base64.", code: "bad_request")
+        }
+        guard let data = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters]), !data.isEmpty else {
+            throw ControlError(400, "\"audio\" is not valid base64.", code: "bad_request")
+        }
+        guard data.count <= Self.maximumAudioBytes else {
+            throw ControlError(413, "The audio file is larger than \(Self.maximumAudioBytes / (1024 * 1024)) MB.", code: "too_large")
+        }
+        let filename = ((body["filename"] as? String) ?? "audio")
+            .components(separatedBy: "/").last?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "audio"
+        let ext = (filename as NSString).pathExtension.lowercased()
+        guard Self.audioExtensions.contains(ext) else {
+            throw ControlError(
+                400,
+                "\"\(filename)\" is not a supported audio file. Use one of: \(Self.audioExtensions.sorted().joined(separator: ", ")).",
+                code: "unsupported_format"
+            )
+        }
+        let target = try resolveTarget(body["target"] as? String)
+        guard target == .local else {
+            throw ControlError(400, "Audio files play on this Mac only. Use target \"local\", or speak text to reach an attendee.", code: "local_only")
+        }
+        let cycles = try resolveCycles(loop: body["loop"], repeatCount: body["repeat"] ?? body["cycles"])
+
+        guard let directory = Self.audioDirectory else {
+            throw ControlError(500, "The app has no writable Application Support directory.", code: "storage_unavailable")
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staged = directory.appendingPathComponent("\(UUID().uuidString.lowercased()).\(ext)")
+        try data.write(to: staged, options: .atomic)
+
+        let id: String
+        do {
+            id = try await orchestration.speak(
+                text: "♪ \(filename.isEmpty ? staged.lastPathComponent : filename)",
+                target: .local,
+                cycles: cycles,
+                audioURL: staged
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw error
+        }
+        return try await respond(toRequest: id, body: body)
+    }
+
+    /// Shared tail of `speak` and `playAudio`: either long-poll for the final
+    /// state or return the queued request immediately.
+    private func respond(toRequest id: String, body: [String: Any]) async throws -> ControlServer.Response {
         let shouldWait = boolean(body["wait"]) ?? false
         let timeout = (body["timeout"] as? Double) ?? Double(body["timeout"] as? Int ?? 0)
         if shouldWait {
@@ -349,6 +425,8 @@ final class ControlAPI {
         payload["loop"] = request.cycles == nil
         payload["cycles"] = orNull(request.cycles)
         payload["completedCycles"] = request.completedCycles
+        payload["kind"] = request.isAudioFile ? "audio" : "text"
+        payload["audioFile"] = orNull(request.audioURL?.lastPathComponent)
         return payload
     }
 

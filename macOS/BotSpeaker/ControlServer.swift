@@ -219,7 +219,9 @@ private final class HTTPConnection: @unchecked Sendable {
     private let onClose: (HTTPConnection) -> Void
     private var buffer = Data()
     private var didClose = false
-    private static let maximumBodySize = 4 * 1024 * 1024
+    /// Large enough for `POST /v1/play-audio`, which carries a base64 audio
+    /// file inline (loopback only, so the cost is memory, not bandwidth).
+    private static let maximumBodySize = 64 * 1024 * 1024
 
     init(
         connection: NWConnection,

@@ -60,9 +60,13 @@ struct SpeechRequest: Identifiable, Hashable {
     var cycles: Int? = 1
     /// Passes that have finished so far on the machine doing the playing.
     var completedCycles: Int = 0
+    /// A pre-recorded file to play instead of synthesizing `text`. Only local
+    /// requests carry one; the file lives in the app's own container.
+    var audioURL: URL? = nil
 
     var isRemote: Bool { target != .local }
     var isLooping: Bool { cycles != 1 }
+    var isAudioFile: Bool { audioURL != nil }
 
     /// "2/5" for a counted repeat, "3/∞" for an endless loop, nil for a single pass.
     var cyclesDescription: String? {
