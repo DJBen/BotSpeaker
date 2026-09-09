@@ -15,7 +15,7 @@ namespace BotSpeaker;
 /// documents over REST on a short interval, so both clients drive the identical
 /// room/participant/turn protocol and satisfy the same security rules.
 /// </summary>
-public sealed class OrchestrationController : INotifyPropertyChanged
+public sealed partial class OrchestrationController : INotifyPropertyChanged
 {
     private const int MaximumTurnCount = 450;
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1.5);
@@ -149,6 +149,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             }
         };
         _model.Player.PlaybackFinished += PlaybackDidFinish;
+        _model.PlaybackTakenOver += SpeechPlaybackWasTakenOver;
     }
 
     public bool IsActive => ActiveMode is not null;
@@ -1170,16 +1171,31 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 _lastRoomActivityMarker = marker;
                 ApplyRoom(room);
             }
-            if (!syncCollections) return;
+            // The host cancels an ad hoc request by updating only its document,
+            // without touching the room marker, so keep re-listing the small
+            // speechRequests collection while one is playing here.
+            bool syncSpeechRequests = ActiveMode == OrchestrationMode.Remote
+                && (syncCollections || _activeSpeechRequestId is not null);
+            if (!syncCollections && !syncSpeechRequests) return;
 
-            var participants = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/participants");
-            if (SessionId != sessionId) return;
-            ApplyParticipants(participants);
+            if (syncCollections)
+            {
+                var participants = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/participants");
+                if (SessionId != sessionId) return;
+                ApplyParticipants(participants);
 
-            var turns = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/turns");
-            if (SessionId != sessionId) return;
-            ApplyTurns(turns);
-            _lastCollectionSyncUtc = DateTime.UtcNow;
+                var turns = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/turns");
+                if (SessionId != sessionId) return;
+                ApplyTurns(turns);
+                _lastCollectionSyncUtc = DateTime.UtcNow;
+            }
+
+            if (syncSpeechRequests)
+            {
+                var speechRequests = await _database.ListDocumentsAsync($"{RoomPath(sessionId)}/speechRequests");
+                if (SessionId != sessionId) return;
+                ApplySpeechRequests(speechRequests);
+            }
         }
         catch (Exception error) when (error is AppException or System.Net.Http.HttpRequestException)
         {
@@ -1235,38 +1251,56 @@ public sealed class OrchestrationController : INotifyPropertyChanged
                 {
                     BeginOrchestrationActivity();
                 }
-                _model.UpdateRemoteControlStatus("Paired and waiting for the host");
+                SetSessionStatusText("Paired and waiting for the host");
                 break;
             case OrchestrationSessionStatus.Running:
-                _model.UpdateRemoteControlStatus("Remote control active");
+                SetSessionStatusText("Remote control active");
                 if (_previousSessionStatus == OrchestrationSessionStatus.Paused
-                    && ActiveTurn?.ParticipantUid == _userId)
+                    && ActiveTurn?.ParticipantUid == _userId
+                    && _activeExecutionTurnId is not null)
                 {
                     _model.ResumeOrchestratedTurn();
                 }
                 break;
             case OrchestrationSessionStatus.Paused:
-                _model.UpdateRemoteControlStatus("Paused by the host");
-                if (ActiveTurn?.ParticipantUid == _userId)
+                SetSessionStatusText("Paused by the host");
+                if (ActiveTurn?.ParticipantUid == _userId && _activeExecutionTurnId is not null)
                 {
                     _model.PauseOrchestratedTurn();
                 }
                 break;
             case OrchestrationSessionStatus.Completed:
                 CancelPrefetch();
-                _model.UpdateRemoteControlStatus("Run completed; paired for the next script");
+                SetSessionStatusText("Run completed; paired for the next script");
                 break;
             case OrchestrationSessionStatus.Stopped:
                 CancelPrefetch();
-                _model.UpdateRemoteControlStatus("Run stopped; paired for the next script");
-                _turnExecutionCancellation?.Cancel();
-                _turnExecutionCancellation = null;
-                _activeExecutionTurnId = null;
-                _hasReportedPlaybackStart = false;
-                _model.StopOrchestratedTurn();
+                SetSessionStatusText("Run stopped; paired for the next script");
+                // Polling re-applies the room every tick; only the transition
+                // into Stopped may silence the player, otherwise ad hoc speech
+                // sent after the run ended would be cut off on the next poll.
+                if (_previousSessionStatus != OrchestrationSessionStatus.Stopped || _activeExecutionTurnId is not null)
+                {
+                    _turnExecutionCancellation?.Cancel();
+                    _turnExecutionCancellation = null;
+                    _activeExecutionTurnId = null;
+                    _hasReportedPlaybackStart = false;
+                    PreemptActiveSpeechRequest("The host stopped the meeting.");
+                    _model.StopOrchestratedTurn();
+                }
                 break;
         }
         MaybeExecuteActiveTurn();
+    }
+
+    /// <summary>
+    /// Session-level banner text. Ad hoc speech owns the banner while it is
+    /// preparing or speaking; the next poll restores the session text after.
+    /// </summary>
+    private void SetSessionStatusText(string status)
+    {
+        if (_activeSpeechRequestId is not null) return;
+        _model.UpdateRemoteControlStatus(status);
     }
 
     private void ApplyParticipants(List<FirestoreDocument> documents)
@@ -1344,6 +1378,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             _model.UpdateRemoteControlStatus(executionTurn.Status == OrchestrationTurnStatus.Skipped
                 ? "Turn skipped by the host"
                 : "Turn ended; waiting for the host");
+            PumpSpeechRequestQueue();
         }
         MaybeExecuteActiveTurn();
         ScheduleNextPrefetch();
@@ -1402,6 +1437,8 @@ public sealed class OrchestrationController : INotifyPropertyChanged
             return;
         }
 
+        // A scripted turn always wins over ad hoc speech on the same output.
+        PreemptActiveSpeechRequest($"Meeting turn {turn.Index + 1} started.");
         _activeExecutionTurnId = turn.Id;
         _hasReportedPlaybackStart = false;
         var text = _localSegments[turn.SegmentIndex];
@@ -1631,6 +1668,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     private void PlaybackDidStart()
     {
+        if (_activeSpeechRequestId is not null)
+        {
+            SpeechPlaybackDidStart();
+            return;
+        }
         if (_activeExecutionTurnId is not string turnId
             || _hasReportedPlaybackStart
             || SessionId is not string sessionId)
@@ -1704,6 +1746,11 @@ public sealed class OrchestrationController : INotifyPropertyChanged
 
     private void PlaybackDidFinish()
     {
+        if (_activeSpeechRequestId is not null)
+        {
+            SpeechPlaybackDidFinish();
+            return;
+        }
         if (_activeExecutionTurnId is not string turnId
             || SessionId is not string sessionId
             || !_hasReportedPlaybackStart)
@@ -1994,6 +2041,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     {
         _pollTimer.Stop();
         _heartbeatTimer.Stop();
+        ClearRemoteSpeechRequests();
         EndOrchestrationActivity();
         _model.DeactivateRemoteControl();
         ActiveMode = null;
@@ -2032,6 +2080,7 @@ public sealed class OrchestrationController : INotifyPropertyChanged
         _turnExecutionCancellation = null;
         _activeExecutionTurnId = null;
         _hasReportedPlaybackStart = false;
+        PreemptActiveSpeechRequest("The host replaced the meeting plan.");
         _model.StopOrchestratedTurn();
         _localSegments = [];
         _preparedLocalSegments.Clear();
@@ -2053,6 +2102,15 @@ public sealed class OrchestrationController : INotifyPropertyChanged
     private static string PairingPath(string code) => $"orchestrationPairings/{code}";
     private static string ParticipantPath(string roomId, string uid) => $"{RoomPath(roomId)}/participants/{uid}";
     private static string TurnPath(string roomId, string turnId) => $"{RoomPath(roomId)}/turns/{turnId}";
+    private static string SpeechRequestPath(string roomId, string requestId) => $"{RoomPath(roomId)}/speechRequests/{requestId}";
+
+    /// <summary>
+    /// The security rules reject writes to a request the host has already
+    /// finished (cancelled or deleted), so a permission or not-found error is
+    /// expected coordination noise rather than a broken session.
+    /// </summary>
+    private static bool IsStaleWrite(Exception error) =>
+        error is AppException { StatusCode: 403 or 404 };
 
     private static string MakePairingCode()
     {

@@ -130,8 +130,12 @@ participant may only advance the status fields of its own request, and only
 while it is not terminal. Every write bumps the room's `activityAt` marker.
 Requests targeting the host itself never touch Firestore.
 
-The Windows client does not yet observe `speechRequests`; remote ad hoc speech
-currently reaches macOS attendees only.
+Both attendee platforms execute requests. macOS observes the collection through
+a snapshot listener; Windows re-lists it whenever the room's `activityAt`
+marker moves and, because cancelling only touches the request document, on
+every poll tick while it is playing one. Windows can be targeted but cannot yet
+originate requests: there is no Windows CLI or Speak popover, so the host must
+be a Mac.
 
 Relevant deployment files are:
 

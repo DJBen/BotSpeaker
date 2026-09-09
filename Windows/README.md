@@ -16,6 +16,12 @@ Feature parity with the macOS app:
 - Cross-platform meeting orchestration where the host distributes one
   placeholder-driven script and every client prepares and persistently caches
   all assigned turns before playback
+- Ad hoc speech from the host: while paired in Remote Mode, the PC plays text
+  the host sends from the macOS Speak popover or the `botspeaker` CLI
+  (`botspeaker speak --target "This PC" --wait "Hello"`, including `--loop`
+  and `--repeat N`) and reports completion, failure, or cancellation back.
+  There is no Windows CLI yet, so a Windows machine can be targeted but not host
+  ad hoc speech. See [docs/cli.md](../docs/cli.md).
 - Optional looping, disabled by default
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
 

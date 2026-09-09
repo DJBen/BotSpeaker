@@ -49,6 +49,13 @@ public sealed class AppModel : INotifyPropertyChanged
     private Guid _generationId = Guid.NewGuid();
     private string? _currentSpeechSignature;
 
+    /// <summary>
+    /// Raised when something other than the orchestration controller takes
+    /// over or stops the player (the Stop button, the tray Stop item, Play on a
+    /// script), so an in-flight ad hoc speech request can be finalized.
+    /// </summary>
+    public event Action? PlaybackTakenOver;
+
     public List<SpeechScript> BundledScripts { get; } =
         ExampleExcerpt.All.Select(e => e.SpeechScript).ToList();
 
@@ -399,12 +406,17 @@ public sealed class AppModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Generates and plays one orchestrated meeting turn, returning after the
-    /// audio has been fully generated and queued. Playback completion is
-    /// reported through <see cref="AudioPlaybackController.PlaybackFinished"/>.
+    /// Generates and plays arbitrary text through the configured output,
+    /// returning after the audio has been fully generated and queued.
+    /// Orchestrated turns and ad hoc speech requests both route through here;
+    /// <paramref name="voiceId"/> overrides the composer's voice for a single
+    /// request. Playback completion is reported through
+    /// <see cref="AudioPlaybackController.PlaybackFinished"/>.
     /// </summary>
-    public async Task PlayOrchestratedTurnAsync(string turnText, string cacheNamespace, CancellationToken cancellation)
+    public async Task PlayOrchestratedTurnAsync(
+        string turnText, string cacheNamespace, CancellationToken cancellation, string? voiceId = null)
     {
+        var effectiveVoiceId = string.IsNullOrWhiteSpace(voiceId) ? VoiceId : voiceId;
         var plans = SpeechTextChunker.Chunks(turnText);
         if (plans.Count == 0) throw new AppException("The assigned turn is empty.");
         var apiKey = _credentials.Read();
@@ -418,12 +430,12 @@ public sealed class AppModel : INotifyPropertyChanged
             throw new AppException("Choose an audio output in Settings.");
         }
 
-        CancelGeneration(resetPlayer: true);
+        CancelGeneration(resetPlayer: true, notify: false);
         Player.SelectOutputDevice(SelectedDeviceId);
         Text = turnText;
         Player.IsLooping = false;
         Player.BeginSequence(plans.Count);
-        _currentSpeechSignature = $"orchestration|{cacheNamespace}|{VoiceId}|{ModelId}|{turnText}";
+        _currentSpeechSignature = $"orchestration|{cacheNamespace}|{effectiveVoiceId}|{ModelId}|{turnText}";
         IsGenerating = true;
         var taskId = Guid.NewGuid();
         _generationId = taskId;
@@ -434,7 +446,7 @@ public sealed class AppModel : INotifyPropertyChanged
             {
                 cancellation.ThrowIfCancellationRequested();
                 var clip = await _client.SynthesizeAsync(
-                    plan.Text, VoiceId, ModelId, apiKey,
+                    plan.Text, effectiveVoiceId, ModelId, apiKey,
 
                     cacheNamespace, bypassCache: false, cancellation);
                 cancellation.ThrowIfCancellationRequested();
@@ -481,7 +493,7 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public void StopOrchestratedTurn()
     {
-        CancelGeneration(resetPlayer: false);
+        CancelGeneration(resetPlayer: false, notify: false);
         Player.FinishSequence();
         Player.Stop();
         _currentSpeechSignature = null;
@@ -619,13 +631,14 @@ public sealed class AppModel : INotifyPropertyChanged
         }
     }
 
-    private void CancelGeneration(bool resetPlayer)
+    private void CancelGeneration(bool resetPlayer, bool notify = true)
     {
         _generationCancellation?.Cancel();
         _generationCancellation = null;
         _generationId = Guid.NewGuid();
         IsGenerating = false;
         if (resetPlayer) Player.Reset();
+        if (notify) PlaybackTakenOver?.Invoke();
     }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
