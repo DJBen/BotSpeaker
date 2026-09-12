@@ -53,6 +53,8 @@ struct SpeechComposer: View {
     @State private var loop = false
     @State private var errorMessage: String?
     @State private var isSubmitting = false
+    /// A recent request waiting for the user to confirm replacing the draft.
+    @State private var pendingReuse: SpeechRequest?
 
     static let localTargetID = "local"
 
@@ -155,9 +157,11 @@ struct SpeechComposer: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(requests) { request in
-                        SpeechRequestRow(request: request) {
-                            Task { try? await orchestration.cancelSpeech(id: request.id) }
-                        }
+                        SpeechRequestRow(
+                            request: request,
+                            onCancel: { Task { try? await orchestration.cancelSpeech(id: request.id) } },
+                            onReuse: { requestReuse(of: request) }
+                        )
                     }
                 }
             }
@@ -166,6 +170,42 @@ struct SpeechComposer: View {
             if targetID != Self.localTargetID, !ids.contains(targetID) {
                 targetID = Self.localTargetID
             }
+        }
+        .alert("Replace the current text?", isPresented: reuseAlertBinding, presenting: pendingReuse) { request in
+            Button("Replace", role: .destructive) { reuse(request) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The text you have typed will be replaced with the selected request's text, voice, and target.")
+        }
+    }
+
+    private var reuseAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingReuse != nil },
+            set: { if !$0 { pendingReuse = nil } }
+        )
+    }
+
+    /// Copies a recent request back into the composer, asking first when it
+    /// would discard text the user has typed.
+    private func requestReuse(of request: SpeechRequest) {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            reuse(request)
+        } else {
+            pendingReuse = request
+        }
+    }
+
+    private func reuse(_ request: SpeechRequest) {
+        text = request.text
+        voiceID = request.voiceID ?? ""
+        loop = request.isLooping
+        errorMessage = nil
+        switch request.target {
+        case .participant(let uid) where canTargetAttendees && attendees.contains { $0.id == uid }:
+            targetID = uid
+        default:
+            targetID = Self.localTargetID
         }
     }
 
@@ -234,6 +274,7 @@ struct SpeechComposer: View {
 struct SpeechRequestRow: View {
     let request: SpeechRequest
     let onCancel: () -> Void
+    var onReuse: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -256,6 +297,14 @@ struct SpeechRequestRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Cancel")
+            }
+            if let onReuse {
+                Button(action: onReuse) {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.plain)
+                .help("Copy this request's text, voice, and target into the box above")
+                .accessibilityLabel("Reuse request")
             }
         }
     }
