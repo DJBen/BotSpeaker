@@ -368,9 +368,23 @@ struct OrchestrationView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Speak on this Mac", systemImage: "waveform.badge.mic")
+                        .font(.headline)
+                    Text("Ad hoc text plays through this Mac's output between scripted turns. Text the host sends here shows up below too.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    SpeechComposer(model: model, orchestration: controller, layout: .compact)
+                }
+                .padding(8)
+            }
+            .frame(maxWidth: 560)
+
             Spacer()
             HStack {
-                Text("Local playback controls are locked while this Mac is paired.")
+                Text("Script playback controls are locked while this Mac is paired.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

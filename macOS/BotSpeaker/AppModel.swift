@@ -19,6 +19,12 @@ final class AppModel {
     private(set) var voiceLoadError: String?
     private(set) var isRemoteControlled = false
     private(set) var remoteControlStatus = ""
+    /// True while this Mac hosts a meeting. The host keeps its composer: Play
+    /// routes through the ad hoc speech queue so scripted turns keep priority.
+    private(set) var isHostingMeeting = false
+    /// True while the hosted meeting is running or paused, when scripted turns
+    /// own this Mac's output.
+    private(set) var isHostedMeetingInProgress = false
     /// Result of the most recent manual device refresh, shown next to the refresh button.
     private(set) var deviceRefreshFeedback: String?
 
@@ -34,6 +40,23 @@ final class AppModel {
     /// over or stops the player (the Stop button, Play on a script, switching
     /// scripts), so an in-flight ad hoc speech request can be finalized.
     @ObservationIgnored var onPlaybackTakenOver: (() -> Void)?
+    /// Plays composer text on this Mac through the orchestration controller's
+    /// ad hoc speech queue while hosting.
+    @ObservationIgnored var hostedLocalSpeechHandler: ((String) async throws -> Void)?
+
+    /// Whether the composer's local playback controls are unavailable: a
+    /// paired attendee is always locked, and a host is locked only while its
+    /// orchestrated meeting is running or paused.
+    var isLocalPlaybackLocked: Bool {
+        isRemoteControlled && (!isHostingMeeting || isHostedMeetingInProgress)
+    }
+
+    var localPlaybackLockReason: String? {
+        guard isLocalPlaybackLocked else { return nil }
+        return isHostingMeeting
+            ? "Local playback resumes when the orchestrated meeting ends. Use Speak to queue ad hoc text."
+            : "Playback is controlled by the meeting host."
+    }
 
     var bundledScripts: [SpeechScript] {
         ExampleExcerpt.all.map(\.speechScript)
@@ -201,7 +224,7 @@ final class AppModel {
     }
 
     func selectScript(id: String) {
-        guard !isRemoteControlled,
+        guard !isLocalPlaybackLocked,
               id != selectedScriptID,
               let script = availableScripts.first(where: { $0.id == id }) else { return }
         cancelGeneration(resetPlayer: true)
@@ -345,15 +368,51 @@ final class AppModel {
     }
 
     func primaryAction() async {
-        guard !isRemoteControlled else {
-            errorMessage = "Playback is controlled by the meeting host."
+        guard !isLocalPlaybackLocked else {
+            errorMessage = localPlaybackLockReason
             return
         }
-        await generateOrToggle(forceRegenerate: false)
+        if isHostingMeeting {
+            await hostedPrimaryAction()
+        } else {
+            await generateOrToggle(forceRegenerate: false)
+        }
     }
 
-    func activateRemoteControl(status: String) {
+    /// Host-side Play: toggles the ad hoc request that is already playing this
+    /// text, otherwise queues the composer text as a local speech request.
+    private func hostedPrimaryAction() async {
+        errorMessage = nil
+        if let signature = currentSpeechSignature,
+           signature.hasPrefix("orchestration|adhoc|"),
+           player.hasAudio || isGenerating {
+            if player.isPlaying || player.isBuffering {
+                player.pause()
+            } else {
+                player.play()
+            }
+            return
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Paste some text first."
+            return
+        }
+        guard let hostedLocalSpeechHandler else {
+            errorMessage = "Ad hoc speech is unavailable."
+            return
+        }
+        do {
+            try await hostedLocalSpeechHandler(trimmed)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func activateRemoteControl(status: String, hosting: Bool = false) {
         isRemoteControlled = true
+        isHostingMeeting = hosting
+        isHostedMeetingInProgress = false
         remoteControlStatus = status
         loopEnabled = false
         player.isLooping = false
@@ -365,9 +424,16 @@ final class AppModel {
         remoteControlStatus = status
     }
 
+    func setHostedMeetingInProgress(_ inProgress: Bool) {
+        guard isHostingMeeting else { return }
+        isHostedMeetingInProgress = inProgress
+    }
+
     func deactivateRemoteControl() {
         stopOrchestratedTurn()
         isRemoteControlled = false
+        isHostingMeeting = false
+        isHostedMeetingInProgress = false
         remoteControlStatus = ""
         text = selectedScript.text
         errorMessage = nil
@@ -507,7 +573,7 @@ final class AppModel {
     /// Restores the composer after ad hoc speech played outside a paired
     /// session, so the spoken text does not linger as if it were the script.
     func finishAdHocSpeech() {
-        guard !isRemoteControlled else { return }
+        guard !isRemoteControlled || isHostingMeeting else { return }
         cancelGeneration(resetPlayer: true, notify: false)
         currentSpeechSignature = nil
         text = selectedScript.text

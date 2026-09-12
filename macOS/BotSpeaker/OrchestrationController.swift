@@ -139,6 +139,10 @@ final class OrchestrationController {
         model.onPlaybackTakenOver = { [weak self] in
             self?.speechPlaybackWasTakenOver()
         }
+        model.hostedLocalSpeechHandler = { [weak self] text in
+            guard let self else { return }
+            _ = try await self.speak(text: text, target: .local)
+        }
     }
 
     var isActive: Bool { activeMode != nil }
@@ -993,7 +997,7 @@ final class OrchestrationController {
         pairingOpen = true
         errorMessage = nil
         persistSession(roomID: roomID, code: code, mode: mode)
-        model?.activateRemoteControl(status: "")
+        model?.activateRemoteControl(status: "", hosting: mode == .host)
         beginOrchestrationActivity()
         attachListeners(roomID: roomID)
         startHeartbeat(roomID: roomID)
@@ -1103,6 +1107,7 @@ final class OrchestrationController {
             hasReportedPlaybackStart = false
             model?.stopOrchestratedTurn()
         }
+        model?.setHostedMeetingInProgress(sessionStatus == .running || sessionStatus == .paused)
         maybeExecuteActiveTurn()
     }
 

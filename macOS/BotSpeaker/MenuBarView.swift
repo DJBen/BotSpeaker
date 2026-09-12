@@ -30,11 +30,11 @@ struct MainWindowView: View {
     @State private var isShowingScriptEditor = false
     @State private var isShowingOrchestrationConfiguration = false
     @State private var isShowingRemoteMode = false
+    @State private var isShowingSpeak = false
     @State private var detailPath: [DetailDestination] = []
     @State private var hostMeetingError: String?
     @State private var pendingHostExitNavigation: (() -> Void)?
     @State private var isShowingAttendeeList = false
-    @State private var isShowingAdHocSpeech = false
 
     var body: some View {
         Group {
@@ -43,16 +43,13 @@ struct MainWindowView: View {
                     ScriptLibrarySidebar(
                         model: model,
                         onAdd: {
-                            guard !orchestration.isActive else { return }
-                            isShowingRemoteMode = false
-                            isShowingOrchestrationConfiguration = false
+                            guard canUseScriptLibrary else { return }
+                            showComposer()
                             model.prepareNewScript()
                             isShowingScriptEditor = true
                         },
                         onEdit: { scriptID in
-                            navigateExitingHostIfNeeded {
-                                isShowingRemoteMode = false
-                                isShowingOrchestrationConfiguration = false
+                            navigateToScriptLibrary {
                                 model.selectScript(id: scriptID)
                                 model.prepareScriptEditor()
                                 isShowingScriptEditor = true
@@ -60,16 +57,12 @@ struct MainWindowView: View {
                         },
                         onDelete: { model.deleteCustomScript(id: $0) },
                         onReplicate: { scriptID in
-                            navigateExitingHostIfNeeded {
-                                isShowingRemoteMode = false
-                                isShowingOrchestrationConfiguration = false
+                            navigateToScriptLibrary {
                                 model.selectScript(id: scriptID)
                             }
                         },
                         onSelectScript: { scriptID in
-                            navigateExitingHostIfNeeded {
-                                isShowingRemoteMode = false
-                                isShowingOrchestrationConfiguration = false
+                            navigateToScriptLibrary {
                                 model.selectScript(id: scriptID)
                             }
                         },
@@ -77,16 +70,23 @@ struct MainWindowView: View {
                             ? orchestration.selectedTemplate.id
                             : nil,
                         isRemoteModeSelected: isShowingRemoteMode,
+                        isSpeakSelected: isShowingSpeak,
                         onOpenRemoteMode: requestOpenRemoteMode,
+                        onOpenSpeak: openSpeak,
                         onOpenOrchestratedMeeting: { template in
                             if orchestration.isHost, canSwitchTemplateWhileHosting {
                                 isShowingRemoteMode = false
+                                isShowingSpeak = false
                                 dismissOrchestrationFlow()
                                 orchestration.selectTemplate(template)
                                 isShowingOrchestrationConfiguration = true
+                            } else if orchestration.isHost, template.id == orchestration.selectedTemplate.id {
+                                // Return to the meeting that is prepared or in progress.
+                                showHostedMeeting()
                             } else {
                                 navigateExitingHostIfNeeded {
                                     isShowingRemoteMode = false
+                                    isShowingSpeak = false
                                     orchestration.selectTemplate(template)
                                     isShowingOrchestrationConfiguration = true
                                 }
@@ -100,6 +100,8 @@ struct MainWindowView: View {
                         Group {
                             if isShowingRemoteMode {
                                 RemoteModeView(model: model, controller: orchestration)
+                            } else if isShowingSpeak {
+                                SpeakView(model: model, orchestration: orchestration)
                             } else if isShowingOrchestrationConfiguration {
                                 OrchestratedMeetingConfigurationView(
                                     model: model,
@@ -147,6 +149,7 @@ struct MainWindowView: View {
                     }
                 } else {
                     isShowingRemoteMode = true
+                    isShowingSpeak = false
                     isShowingOrchestrationConfiguration = false
                 }
             }
@@ -185,7 +188,7 @@ struct MainWindowView: View {
                         attendeeListButton
                     }
                     ToolbarItem(placement: .primaryAction) {
-                        adHocSpeechButton
+                        speakButton
                     }
                     ToolbarItem(placement: .primaryAction) {
                         endHostedMeetingButton
@@ -221,7 +224,10 @@ struct MainWindowView: View {
         .onKeyPress(.space) {
             guard model.hasAPIKey,
                   !isOrchestrationFlowPresented,
-                  !model.isRemoteControlled,
+                  !isShowingSpeak,
+                  !isShowingRemoteMode,
+                  !isShowingOrchestrationConfiguration,
+                  !model.isLocalPlaybackLocked,
                   model.selectedScript.isCustom,
                   !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !(model.isGenerating && !model.player.hasAudio) else {
@@ -234,6 +240,7 @@ struct MainWindowView: View {
 
     private var selectedSectionTitle: String {
         if isShowingRemoteMode { return "Remote Mode" }
+        if isShowingSpeak { return "Speak" }
         if isShowingOrchestrationConfiguration { return "Orchestrated meeting" }
         return model.selectedScript.isCustom ? "My scripts" : "Script templates"
     }
@@ -262,7 +269,41 @@ struct MainWindowView: View {
     private func openRemoteMode() {
         detailPath.removeAll()
         isShowingOrchestrationConfiguration = false
+        isShowingSpeak = false
         isShowingRemoteMode = true
+    }
+
+    /// Ad hoc speech is available whenever this Mac is not a paired attendee;
+    /// the host keeps its meeting (prepared or running) while using it.
+    private func openSpeak() {
+        guard !isRemoteClientActive else { return }
+        detailPath.removeAll()
+        isShowingOrchestrationConfiguration = false
+        isShowingRemoteMode = false
+        isShowingSpeak = true
+    }
+
+    private func showComposer() {
+        detailPath.removeAll()
+        isShowingRemoteMode = false
+        isShowingSpeak = false
+        isShowingOrchestrationConfiguration = false
+    }
+
+    private var isRemoteClientActive: Bool {
+        orchestration.isActive && !orchestration.isHost
+    }
+
+    /// Scripts stay browsable and playable while hosting; only a paired
+    /// attendee, or a host whose meeting is running, is locked out.
+    private var canUseScriptLibrary: Bool {
+        !isRemoteClientActive && !model.isHostedMeetingInProgress
+    }
+
+    private func navigateToScriptLibrary(_ navigate: @escaping () -> Void) {
+        guard canUseScriptLibrary else { return }
+        showComposer()
+        navigate()
     }
 
     /// Runs a sidebar navigation directly when nothing is paired, or after a
@@ -311,6 +352,7 @@ struct MainWindowView: View {
     private func showHostedMeeting() {
         guard orchestration.isHost else { return }
         isShowingRemoteMode = false
+        isShowingSpeak = false
         isShowingOrchestrationConfiguration = true
         presentOrchestrationFlow()
     }
@@ -348,16 +390,11 @@ struct MainWindowView: View {
         }
     }
 
-    private var adHocSpeechButton: some View {
-        Button {
-            isShowingAdHocSpeech.toggle()
-        } label: {
+    private var speakButton: some View {
+        Button(action: openSpeak) {
             Image(systemName: "waveform.badge.mic")
         }
         .help("Speak ad hoc text on this Mac or on a paired attendee")
-        .popover(isPresented: $isShowingAdHocSpeech, arrowEdge: .bottom) {
-            AdHocSpeechPopover(model: model, orchestration: orchestration)
-        }
     }
 
     private var endHostedMeetingButton: some View {
@@ -421,7 +458,9 @@ private struct ScriptLibrarySidebar: View {
     let onSelectScript: (String) -> Void
     let selectedOrchestrationTemplateID: String?
     let isRemoteModeSelected: Bool
+    let isSpeakSelected: Bool
     let onOpenRemoteMode: () -> Void
+    let onOpenSpeak: () -> Void
     let onOpenOrchestratedMeeting: (OrchestratedMeetingTemplate) -> Void
     let orchestration: OrchestrationController
     @State private var scriptPendingDeletion: SpeechScript?
@@ -446,6 +485,21 @@ private struct ScriptLibrarySidebar: View {
                 }
                 .padding(.vertical, 3)
                 .tag("remote-mode")
+
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Speak")
+                        Text(speakSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                } icon: {
+                    Image(systemName: "waveform.badge.mic")
+                }
+                .padding(.vertical, 3)
+                .tag("speak")
+                .disabled(isRemoteClientActive)
             }
 
             ForEach(model.bundledScriptGroups) { scenario in
@@ -453,7 +507,7 @@ private struct ScriptLibrarySidebar: View {
                     ForEach(scenario.excerpts.map(\.speechScript)) { script in
                         ScriptRow(script: script, icon: "person.text.rectangle")
                             .tag(script.id)
-                            .disabled(isRemoteClientActive)
+                            .disabled(isScriptLibraryLocked)
                             .contextMenu {
                                 Button("Replicate…") {
                                     onReplicate(script.id)
@@ -481,7 +535,7 @@ private struct ScriptLibrarySidebar: View {
                     ForEach(model.playableScripts) { script in
                         ScriptRow(script: script, icon: "waveform")
                             .tag(script.id)
-                            .disabled(isRemoteClientActive)
+                            .disabled(isScriptLibraryLocked)
                             .contextMenu {
                                 Button("Edit…") {
                                     onEdit(script.id)
@@ -502,7 +556,7 @@ private struct ScriptLibrarySidebar: View {
                     Label("Add Script", systemImage: "plus")
                 }
                 .help("Add a custom script")
-                .disabled(orchestration.isActive)
+                .disabled(isScriptLibraryLocked)
             }
         }
         .alert(
@@ -527,12 +581,15 @@ private struct ScriptLibrarySidebar: View {
         Binding(
             get: {
                 if isRemoteModeSelected { return "remote-mode" }
+                if isSpeakSelected { return "speak" }
                 return selectedOrchestrationTemplateID.map { "orchestrated:\($0)" } ?? model.selectedScriptID
             },
             set: { id in
                 guard let id else { return }
                 if id == "remote-mode" {
                     onOpenRemoteMode()
+                } else if id == "speak" {
+                    onOpenSpeak()
                 } else if id.hasPrefix("orchestrated:"),
                    let template = OrchestratedMeetingTemplate.all.first(where: {
                        orchestrationSelectionID(for: $0) == id
@@ -547,6 +604,19 @@ private struct ScriptLibrarySidebar: View {
 
     private var isRemoteClientActive: Bool {
         orchestration.isActive && !orchestration.isHost
+    }
+
+    private var isScriptLibraryLocked: Bool {
+        isRemoteClientActive || model.isHostedMeetingInProgress
+    }
+
+    private var speakSubtitle: String {
+        if isRemoteClientActive { return "Use the box in Remote Mode while paired." }
+        if orchestration.isHost {
+            let count = orchestration.participants.filter { $0.id != orchestration.localParticipantID }.count
+            return count == 0 ? "This Mac · no attendees paired" : "This Mac or \(count) paired attendee\(count == 1 ? "" : "s")"
+        }
+        return "Ad hoc text on this Mac"
     }
 
     private func orchestrationSelectionID(for template: OrchestratedMeetingTemplate) -> String {
@@ -683,6 +753,16 @@ struct ComposerView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let reason = model.localPlaybackLockReason {
+                Label(reason, systemImage: "lock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.isHostingMeeting, model.selectedScript.isCustom {
+                Label("Hosting · Play queues this script on this Mac; scripted meeting turns take priority.", systemImage: "person.3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if model.selectedScript.isCustom {
@@ -791,7 +871,7 @@ struct ComposerView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .help("Choose a saved script")
-                .disabled(model.isRemoteControlled)
+                .disabled(model.isLocalPlaybackLocked)
             }
         }
         .padding(10)
@@ -811,7 +891,7 @@ struct ComposerView: View {
                     if !editing { try? player.seek(to: sliderValue) }
                 }
             )
-            .disabled(model.isRemoteControlled || !player.hasAudio)
+            .disabled(model.isLocalPlaybackLocked || !player.hasAudio)
 
             HStack {
                 Text(TimeDisplay.format(isScrubbing ? sliderValue : player.currentTime))
@@ -826,7 +906,7 @@ struct ComposerView: View {
     private var playbackControls: some View {
         HStack(spacing: 12) {
             Button { model.stop() } label: { Image(systemName: "stop.fill") }
-                .disabled(model.isRemoteControlled || (!player.hasAudio && !model.isGenerating))
+                .disabled(model.isLocalPlaybackLocked || (!player.hasAudio && !model.isGenerating))
 
             Button {
                 Task { await model.primaryAction() }
@@ -851,7 +931,7 @@ struct ComposerView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("Regenerate audio")
-            .disabled(playbackDisabled)
+            .disabled(playbackDisabled || model.isHostingMeeting)
 
             Spacer()
 
@@ -881,13 +961,13 @@ struct ComposerView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("Playback options")
-            .disabled(model.isRemoteControlled)
+            .disabled(model.isLocalPlaybackLocked)
         }
     }
 
     private var playbackDisabled: Bool {
         !model.selectedScript.isCustom ||
-        model.isRemoteControlled ||
+        model.isLocalPlaybackLocked ||
         (model.isGenerating && !player.hasAudio) ||
         model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -1009,7 +1089,7 @@ struct VoicePicker: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(model.isRemoteControlled)
+                .disabled(model.isLocalPlaybackLocked)
             }
 
             Button { Task { await model.refreshVoices() } } label: {
@@ -1017,7 +1097,7 @@ struct VoicePicker: View {
             }
             .buttonStyle(.plain)
             .help("Refresh ElevenLabs voices")
-            .disabled(model.isRemoteControlled || model.isLoadingVoices)
+            .disabled(model.isLocalPlaybackLocked || model.isLoadingVoices)
         }
 
         if let error = model.voiceLoadError {
