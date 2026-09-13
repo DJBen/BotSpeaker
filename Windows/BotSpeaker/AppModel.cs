@@ -38,6 +38,44 @@ public sealed class AppModel : INotifyPropertyChanged
     private string _remoteControlStatus = "";
     public string RemoteControlStatus { get => _remoteControlStatus; private set => Set(ref _remoteControlStatus, value); }
 
+    private bool _isHostingMeeting;
+    /// <summary>
+    /// True while this PC hosts a meeting. The host keeps its composer: Play
+    /// routes through the ad hoc speech queue so scripted turns keep priority.
+    /// </summary>
+    public bool IsHostingMeeting { get => _isHostingMeeting; private set => Set(ref _isHostingMeeting, value); }
+
+    private bool _isHostedMeetingInProgress;
+    /// <summary>
+    /// True while the hosted meeting is running or paused, when scripted turns
+    /// own this PC's output.
+    /// </summary>
+    public bool IsHostedMeetingInProgress { get => _isHostedMeetingInProgress; private set => Set(ref _isHostedMeetingInProgress, value); }
+
+    /// <summary>
+    /// Whether the composer's local playback controls are unavailable: a
+    /// paired attendee is always locked, and a host is locked only while its
+    /// orchestrated meeting is running or paused.
+    /// </summary>
+    public bool IsLocalPlaybackLocked => IsRemoteControlled && (!IsHostingMeeting || IsHostedMeetingInProgress);
+
+    public string? LocalPlaybackLockReason
+    {
+        get
+        {
+            if (!IsLocalPlaybackLocked) return null;
+            return IsHostingMeeting
+                ? "Local playback resumes when the orchestrated meeting ends. Use Speak to queue ad hoc text."
+                : "Playback is controlled by the meeting host.";
+        }
+    }
+
+    /// <summary>
+    /// Plays composer text on this PC through the orchestration controller's
+    /// ad hoc speech queue while hosting.
+    /// </summary>
+    public Func<string, Task>? HostedLocalSpeechHandler { get; set; }
+
     public AudioPlaybackController Player { get; } = new();
     public AudioDeviceManager Devices { get; } = new();
     public List<CustomSpeechScript> CustomScripts => Settings.CustomScripts;
@@ -227,7 +265,7 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public void SelectScript(string id)
     {
-        if (IsRemoteControlled) return;
+        if (IsLocalPlaybackLocked) return;
         if (id == SelectedScriptId) return;
         var script = AvailableScripts.FirstOrDefault(s => s.Id == id);
         if (script is null) return;
@@ -352,17 +390,73 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public async Task PrimaryActionAsync()
     {
-        if (IsRemoteControlled)
+        if (IsLocalPlaybackLocked)
         {
-            ErrorMessage = "Playback is controlled by the meeting host.";
+            ErrorMessage = LocalPlaybackLockReason;
             return;
         }
-        await GenerateOrToggleAsync(forceRegenerate: false);
+        if (IsHostingMeeting)
+        {
+            await HostedPrimaryActionAsync();
+        }
+        else
+        {
+            await GenerateOrToggleAsync(forceRegenerate: false);
+        }
     }
 
-    public void ActivateRemoteControl(string status)
+    /// <summary>
+    /// Host-side Play: toggles the ad hoc request that is already playing this
+    /// text, otherwise queues the composer text as a local speech request.
+    /// </summary>
+    private async Task HostedPrimaryActionAsync()
+    {
+        ErrorMessage = null;
+        if (_currentSpeechSignature is string signature
+            && signature.StartsWith("orchestration|adhoc|", StringComparison.Ordinal)
+            && (Player.HasAudio || IsGenerating))
+        {
+            if (Player.IsPlaying || Player.IsBuffering)
+            {
+                Player.Pause();
+            }
+            else
+            {
+                Player.Play();
+            }
+            return;
+        }
+        var trimmed = Text.Trim();
+        if (trimmed.Length == 0)
+        {
+            ErrorMessage = "Paste some text first.";
+            return;
+        }
+        if (!SelectedScript.IsCustom)
+        {
+            ErrorMessage = "Create a named script from this template before playback.";
+            return;
+        }
+        if (HostedLocalSpeechHandler is not Func<string, Task> handler)
+        {
+            ErrorMessage = "Ad hoc speech is unavailable.";
+            return;
+        }
+        try
+        {
+            await handler(trimmed);
+        }
+        catch (Exception error)
+        {
+            ErrorMessage = error.Message;
+        }
+    }
+
+    public void ActivateRemoteControl(string status, bool hosting = false)
     {
         IsRemoteControlled = true;
+        IsHostingMeeting = hosting;
+        IsHostedMeetingInProgress = false;
         RemoteControlStatus = status;
         Settings.LoopEnabled = false;
         Settings.Save();
@@ -377,10 +471,18 @@ public sealed class AppModel : INotifyPropertyChanged
         RemoteControlStatus = status;
     }
 
+    public void SetHostedMeetingInProgress(bool inProgress)
+    {
+        if (!IsHostingMeeting) return;
+        IsHostedMeetingInProgress = inProgress;
+    }
+
     public void DeactivateRemoteControl()
     {
         StopOrchestratedTurn();
         IsRemoteControlled = false;
+        IsHostingMeeting = false;
+        IsHostedMeetingInProgress = false;
         RemoteControlStatus = "";
         Text = SelectedScript.Text;
         ErrorMessage = null;
@@ -526,7 +628,7 @@ public sealed class AppModel : INotifyPropertyChanged
     /// </summary>
     public void FinishAdHocSpeech()
     {
-        if (IsRemoteControlled) return;
+        if (IsRemoteControlled && !IsHostingMeeting) return;
         CancelGeneration(resetPlayer: true, notify: false);
         _currentSpeechSignature = null;
         Text = SelectedScript.Text;

@@ -122,13 +122,13 @@ is not available because the recording is never sent through Firestore.
 ### The same queue in the app
 
 The **Speak** entry at the top of the script sidebar is the GUI for this
-queue. It offers the same text box, target (this Mac or a paired attendee
-while hosting), voice choice, and a **Loop until stopped** checkbox
-(`--loop`), and lists recent requests from both the app and the CLI with
-their pass count and a cancel control. A paired attendee sees the same box inside
-Remote Mode for local playback. While hosting, pressing Play on a script in
-the composer also goes through the queue, so scripted meeting turns keep
-priority.
+queue, on macOS and Windows alike. It offers the same text box, target (this
+machine or a paired attendee while hosting), voice choice, and a **Loop until
+stopped** checkbox (`--loop`), and lists recent requests from both the app and
+the CLI with their pass count and a cancel control. A paired attendee sees the
+same box inside Remote Mode for local playback. While hosting, pressing Play on
+a script in the composer also goes through the queue, so scripted meeting turns
+keep priority.
 
 ### Interaction with orchestrated meetings
 

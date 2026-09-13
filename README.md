@@ -51,7 +51,7 @@ The repository and its release downloads are public.
   automatic handoff, pause, resume, skip, and stop
 - Ahead-of-time orchestration preparation that caches every assigned paragraph
   before playback and reuses unchanged text and voice results across meetings
-- A **Speak** page for ad hoc text: play it on this Mac at any time, or, while
+- A **Speak** page for ad hoc text: play it on this machine at any time, or, while
   hosting, on any paired attendee; attendees get the same box in Remote Mode.
   Script templates stay available while hosting
 - Timestamped JSON transcript export with both playback-device and

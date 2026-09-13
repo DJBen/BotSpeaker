@@ -1,0 +1,55 @@
+<UserControl x:Class="BotSpeaker.SpeakView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- The text box, target and voice pickers, Speak control, and request
+         log: the Windows counterpart of the macOS SpeechComposer. The page
+         layout fills the main detail pane; the compact layout sits inside the
+         paired attendee's session view. -->
+    <StackPanel>
+        <!-- Target row: only a host can aim ad hoc speech at attendees -->
+        <DockPanel x:Name="TargetRow" Margin="0,0,0,8" Visibility="Collapsed">
+            <TextBlock Text="Play on" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock x:Name="TargetHint" DockPanel.Dock="Right" FontSize="11" Foreground="Gray"
+                       VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis"/>
+            <ComboBox x:Name="TargetCombo" MinWidth="200" HorizontalAlignment="Left"
+                      SelectionChanged="OnTargetChanged"/>
+        </DockPanel>
+
+        <!-- Voice row -->
+        <DockPanel Margin="0,0,0,8">
+            <TextBlock Text="Voice" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <CheckBox x:Name="LoopCheck" DockPanel.Dock="Right" Content="🔁 Loop until stopped"
+                      VerticalAlignment="Center" Margin="12,0,0,0"
+                      ToolTip="Play the text on a cycle until you stop it" Click="OnLoopChanged"/>
+            <ComboBox x:Name="VoiceCombo" MaxWidth="360" HorizontalAlignment="Left"
+                      SelectionChanged="OnVoiceChanged"/>
+        </DockPanel>
+
+        <Border BorderBrush="#40808080" BorderThickness="1" CornerRadius="8">
+            <TextBox x:Name="SpeechTextBox" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0"
+                     Padding="6" FontSize="13" VerticalScrollBarVisibility="Auto"
+                     MinHeight="140" MaxHeight="260" Background="Transparent"
+                     TextChanged="OnTextChanged" PreviewKeyDown="OnTextKeyDown"/>
+        </Border>
+
+        <!-- Status line and controls -->
+        <DockPanel Margin="0,8,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="StopAllButton" Content="Stop All" Padding="10,4" Margin="0,0,8,0"
+                        Visibility="Collapsed" Click="OnStopAllClick"/>
+                <Button x:Name="SpeakSubmitButton" Content="▶ Speak" Padding="14,4" FontWeight="Bold" MinWidth="100"
+                        Background="#FF2E6BD6" Foreground="White" BorderThickness="0" Click="OnSpeakClick"/>
+            </StackPanel>
+            <TextBlock x:Name="StatusText" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+        </DockPanel>
+
+        <!-- Recent requests from this app and the CLI -->
+        <StackPanel x:Name="RecentPanel" Margin="0,12,0,0" Visibility="Collapsed">
+            <Separator Margin="0,0,0,8"/>
+            <TextBlock x:Name="RecentTitle" Text="RECENT REQUESTS" FontSize="10" FontWeight="Bold"
+                       Foreground="Gray" Margin="0,0,0,4"/>
+            <StackPanel x:Name="RecentList"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

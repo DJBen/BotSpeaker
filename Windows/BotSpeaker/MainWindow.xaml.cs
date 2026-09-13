@@ -17,12 +17,14 @@ public partial class MainWindow : Window
     private readonly OrchestrationController _orchestration;
     private bool _showOrchestrationConfiguration;
     private bool _showRemoteMode;
+    private bool _showSpeak;
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
     private ScriptEditorWindow? _scriptEditor;
     private SettingsWindow? _settingsWindow;
     private readonly OrchestrationView _orchestrationView;
+    private readonly SpeakView _speakView;
 
     private static readonly Brush SpokenBrush = new SolidColorBrush(Color.FromArgb(0x59, 0x34, 0xC7, 0x59));
     private static readonly Brush SpeakingBrush = new SolidColorBrush(Color.FromArgb(0x8C, 0x2E, 0x6B, 0xD6));
@@ -50,6 +52,7 @@ public partial class MainWindow : Window
         _orchestrationView.MeetingViewDismissRequested += (_, _) =>
         {
             _showRemoteMode = false;
+            _showSpeak = false;
             _showOrchestrationSession = false;
             _showOrchestrationConfiguration = false;
             UpdateAll();
@@ -57,11 +60,14 @@ public partial class MainWindow : Window
         _orchestrationView.ChooseAnotherScriptRequested += (_, _) =>
         {
             _showRemoteMode = false;
+            _showSpeak = false;
             _showOrchestrationSession = false;
             _showOrchestrationConfiguration = true;
             UpdateAll();
         };
         OrchestrationSessionHost.Content = _orchestrationView;
+        _speakView = new SpeakView(model, orchestration);
+        SpeakHost.Content = _speakView;
 
         Loaded += async (_, _) =>
         {
@@ -84,12 +90,14 @@ public partial class MainWindow : Window
         // Space toggles play/pause while the window is foregrounded, unless the user
         // is typing in an editable field or operating a control that consumes space.
         if (e.Key != Key.Space || !_model.HasApiKey) return;
-        if (_orchestration.IsActive)
+        if (_orchestration.IsActive && OrchestrationSessionHost.Visibility == Visibility.Visible)
         {
             e.Handled = _orchestrationView.HandleSpaceShortcut();
             return;
         }
-        if (_model.IsRemoteControlled) return;
+        if (_orchestration.IsActive && !_orchestration.IsHost) return;
+        if (_showSpeak || _showRemoteMode || _showOrchestrationConfiguration) return;
+        if (_model.IsLocalPlaybackLocked) return;
         if (!_model.SelectedScript.IsCustom) return;
         var focused = Keyboard.FocusedElement;
         if (focused is PasswordBox) return;
@@ -129,14 +137,21 @@ public partial class MainWindow : Window
             bool choosingNextHostScript = _showOrchestrationConfiguration
                 && hostCanChooseRun;
             bool showSession = inSession && _showOrchestrationSession && !choosingNextHostScript;
-            ComposerPanel.Visibility = _showOrchestrationConfiguration || _showRemoteMode || showSession
+            // Speak is unavailable to a paired attendee, who has the same box in Remote Mode.
+            if (_showSpeak && inSession && !_orchestration.IsHost) _showSpeak = false;
+            bool showSpeak = _showSpeak && !showSession;
+            ComposerPanel.Visibility = _showOrchestrationConfiguration || _showRemoteMode || showSession || showSpeak
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && (!inSession || choosingNextHostScript)
+            SpeakPanel.Visibility = showSpeak ? Visibility.Visible : Visibility.Collapsed;
+            SpeakSubtitle.Text = _orchestration.IsHost
+                ? "Play ad hoc text through this PC's output or send it to a paired attendee. Scripted meeting turns always take priority."
+                : "Play ad hoc text through this PC's output, outside any script. Host a meeting to speak on paired attendees too.";
+            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && (!inSession || choosingNextHostScript) && !showSpeak
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             OrchestrationSessionHost.Visibility = showSession ? Visibility.Visible : Visibility.Collapsed;
-            RemoteModePanel.Visibility = _showRemoteMode && !inSession
+            RemoteModePanel.Visibility = _showRemoteMode && !inSession && !showSpeak
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             RemoteSpeakerNameBox.Text = _orchestration.SpeakerName;
@@ -215,20 +230,42 @@ public partial class MainWindow : Window
             DeviceDot.Fill = _model.SelectedDeviceAvailable ? Brushes.LimeGreen : Brushes.Orange;
             DeviceName.Text = _model.SelectedDeviceName;
 
-            // Local controls lock while this PC is paired to a meeting orchestrator.
-            // The library also locks for a host, so the meeting page cannot be
-            // navigated away from while its session is live.
-            bool remote = _model.IsRemoteControlled;
+            // Script playback locks while this PC is a paired attendee, and for
+            // a host only while its meeting is running or paused. A host keeps
+            // its library: Play routes through the ad hoc speech queue so
+            // scripted turns keep priority (matching macOS).
+            bool remote = _model.IsLocalPlaybackLocked;
             bool remoteClient = _orchestration.ActiveMode == OrchestrationMode.Remote;
-            // A hosting machine keeps its library clickable; navigating away asks
-            // to exit the hosted meeting instead of blocking (matching macOS).
-            bool libraryLocked = remoteClient;
-            RemoteControlBanner.Text = "📡 " + _model.RemoteControlStatus;
-            RemoteControlBanner.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
+            bool libraryLocked = remoteClient || _model.IsHostedMeetingInProgress;
+            if (_model.LocalPlaybackLockReason is string lockReason)
+            {
+                RemoteControlBanner.Text = "🔒 " + lockReason;
+                RemoteControlBanner.Visibility = Visibility.Visible;
+            }
+            else if (_model.IsHostingMeeting && isCustom)
+            {
+                RemoteControlBanner.Text = "👥 Hosting · Play queues this script on this PC; scripted meeting turns take priority.";
+                RemoteControlBanner.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                RemoteControlBanner.Visibility = Visibility.Collapsed;
+            }
             TemplateList.IsEnabled = !libraryLocked;
             CustomList.IsEnabled = !libraryLocked;
             AddScriptButton.IsEnabled = !libraryLocked;
             RemoteModeButton.IsEnabled = !_orchestration.IsBusy;
+            SpeakButton.IsEnabled = !remoteClient;
+            int attendeeCount = _orchestration.IsHost
+                ? _orchestration.Participants.Count(p => p.Id != _orchestration.LocalParticipantId)
+                : 0;
+            SpeakDetailText.Text = remoteClient
+                ? "Use the box in Remote Mode while paired."
+                : _orchestration.IsHost
+                    ? attendeeCount > 0
+                        ? $"This PC or {attendeeCount} paired attendee{(attendeeCount == 1 ? "" : "s")}"
+                        : "This PC · no attendees paired"
+                    : "Ad hoc text on this PC";
             RemoteModeDetailText.Text = _orchestration.IsHost
                 ? "Exit host meeting to be able to join remotely."
                 : _orchestration.ActiveMode == OrchestrationMode.Remote
@@ -252,7 +289,7 @@ public partial class MainWindow : Window
         _suppressUiEvents = true;
         try
         {
-            bool remote = _model.IsRemoteControlled;
+            bool remote = _model.IsLocalPlaybackLocked;
             StopButton.IsEnabled = !remote && (player.HasAudio || _model.IsGenerating);
             bool textEmpty = _model.Text.Trim().Length == 0;
             // Stay clickable while generating: hitting it during "Preparing…" or
@@ -262,7 +299,7 @@ public partial class MainWindow : Window
                 ? (player.HasAudio ? "Buffering…" : "Preparing…")
                 : player.IsPlaying ? "⏸ Pause"
                 : "▶ Play";
-            RegenerateButton.IsEnabled = !remote && !textEmpty;
+            RegenerateButton.IsEnabled = !remote && !textEmpty && !_model.IsHostingMeeting;
 
             ProgressSlider.IsEnabled = !remote && player.HasAudio;
             ProgressSlider.Maximum = Math.Max(player.Duration, 0.01);
@@ -428,13 +465,19 @@ public partial class MainWindow : Window
         templateItems.Add(BuildSidebarHeader("Orchestrated meeting", isFirstScenario: false));
         templateItems.AddRange(OrchestratedMeetingTemplate.All.Select(BuildOrchestratedMeetingItem));
         TemplateList.ItemsSource = templateItems;
-        TemplateList.SelectedItem = _showOrchestrationConfiguration
-            ? templateItems.FirstOrDefault(i => i.Tag as string == "orchestrated:" + _orchestration.SelectedTemplate.Id)
-            : templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
+        bool showingPage = _showSpeak || _showRemoteMode;
+        bool showingMeeting = _showOrchestrationConfiguration || (_showOrchestrationSession && _orchestration.IsHost);
+        TemplateList.SelectedItem = showingPage
+            ? null
+            : showingMeeting
+                ? templateItems.FirstOrDefault(i => i.Tag as string == "orchestrated:" + _orchestration.SelectedTemplate.Id)
+                : templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
 
         var custom = _model.PlayableScripts;
         CustomList.ItemsSource = custom.Select(s => BuildSidebarItem(s, isTemplate: false)).ToList();
-        CustomList.SelectedIndex = custom.FindIndex(s => s.Id == _model.SelectedScriptId);
+        CustomList.SelectedIndex = showingPage || showingMeeting
+            ? -1
+            : custom.FindIndex(s => s.Id == _model.SelectedScriptId);
         CustomEmptyHint.Visibility = custom.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -499,7 +542,7 @@ public partial class MainWindow : Window
         {
             Content = panel,
             Tag = script.Id,
-            IsEnabled = !_orchestration.IsActive || _orchestration.IsHost,
+            IsEnabled = CanUseScriptLibrary,
         };
         var menu = new ContextMenu();
         if (isTemplate)
@@ -507,8 +550,10 @@ public partial class MainWindow : Window
             var replicate = new MenuItem { Header = "Replicate…" };
             replicate.Click += (_, _) =>
             {
-                _showOrchestrationConfiguration = false;
+                if (!CanUseScriptLibrary) return;
+                ShowComposer();
                 _model.SelectScript(script.Id);
+                UpdateAll();
             };
             menu.Items.Add(replicate);
         }
@@ -517,6 +562,7 @@ public partial class MainWindow : Window
             var edit = new MenuItem { Header = "Edit…" };
             edit.Click += (_, _) =>
             {
+                if (!CanUseScriptLibrary) return;
                 _model.SelectScript(script.Id);
                 OpenScriptEditor(forNewScript: false);
             };
@@ -530,7 +576,7 @@ public partial class MainWindow : Window
         return item;
     }
 
-    private async void OnTemplateListSelected(object sender, SelectionChangedEventArgs e)
+    private void OnTemplateListSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressUiEvents) return;
         if (TemplateList.SelectedItem is ListBoxItem { Tag: string id })
@@ -540,55 +586,87 @@ public partial class MainWindow : Window
                 var templateId = id["orchestrated:".Length..];
                 var template = OrchestratedMeetingTemplate.All.FirstOrDefault(item => item.Id == templateId);
                 if (template is null) return;
-                _orchestration.SelectTemplate(template);
                 _showRemoteMode = false;
-                _showOrchestrationSession = false;
-                _showOrchestrationConfiguration = true;
+                _showSpeak = false;
+                if (_orchestration.IsHost && template.Id == _orchestration.SelectedTemplate.Id && !HostCanChooseScript)
+                {
+                    // Return to the meeting that is prepared or in progress.
+                    _showOrchestrationConfiguration = false;
+                    _showOrchestrationSession = true;
+                }
+                else
+                {
+                    _orchestration.SelectTemplate(template);
+                    _showOrchestrationSession = false;
+                    _showOrchestrationConfiguration = true;
+                }
                 CustomList.SelectedItem = null;
                 UpdateAll();
             }
             else
             {
-                if (_orchestration.IsActive && !_orchestration.IsHost) return;
-                if (!await ConfirmExitHostedMeetingIfNeededAsync()) { UpdateAll(); return; }
-                _showOrchestrationConfiguration = false;
-                _showRemoteMode = false;
+                if (!NavigateToScriptLibrary()) { UpdateAll(); return; }
                 _model.SelectScript(id);
+                UpdateAll();
             }
         }
     }
 
-    private async void OnCustomListSelected(object sender, SelectionChangedEventArgs e)
+    private void OnCustomListSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressUiEvents) return;
         if (CustomList.SelectedItem is ListBoxItem { Tag: string id })
         {
-            if (_orchestration.IsActive && !_orchestration.IsHost) return;
-            if (!await ConfirmExitHostedMeetingIfNeededAsync()) { UpdateAll(); return; }
-            _showOrchestrationConfiguration = false;
-            _showRemoteMode = false;
+            if (!NavigateToScriptLibrary()) { UpdateAll(); return; }
             _model.SelectScript(id);
+            UpdateAll();
         }
     }
 
+    private bool HostCanChooseScript => _orchestration.IsHost
+        && ((_orchestration.SessionStatus == OrchestrationSessionStatus.Lobby && _orchestration.Turns.Count == 0)
+            || _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped);
+
     /// <summary>
-    /// Navigating the library away from a hosted meeting asks to exit it first.
-    /// Returns false when the user keeps hosting (the caller re-syncs the UI).
+    /// Scripts stay browsable and playable while hosting; only a paired
+    /// attendee, or a host whose meeting is running, is locked out.
     /// </summary>
-    private async Task<bool> ConfirmExitHostedMeetingIfNeededAsync()
+    private bool CanUseScriptLibrary =>
+        !(_orchestration.IsActive && !_orchestration.IsHost) && !_model.IsHostedMeetingInProgress;
+
+    /// <summary>
+    /// Shows the composer for a library navigation. A host keeps its meeting
+    /// (prepared or running) in the background; the Show button returns to it.
+    /// Returns false when the library is locked (the caller re-syncs the UI).
+    /// </summary>
+    private bool NavigateToScriptLibrary()
     {
-        if (!_orchestration.IsHost) return true;
-        var confirmation = MessageBox.Show(
-            this,
-            "This ends the hosted meeting and disconnects its paired speakers.",
-            "Exit hosted meeting?",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        if (confirmation != MessageBoxResult.Yes) return false;
-        await _orchestration.LeaveSessionAsync();
-        _showOrchestrationSession = false;
+        if (!CanUseScriptLibrary) return false;
+        ShowComposer();
         return true;
+    }
+
+    private void ShowComposer()
+    {
+        _showOrchestrationConfiguration = false;
+        _showRemoteMode = false;
+        _showSpeak = false;
+        _showOrchestrationSession = false;
+    }
+
+    /// <summary>
+    /// Ad hoc speech is available whenever this PC is not a paired attendee;
+    /// the host keeps its meeting (prepared or running) while using it.
+    /// </summary>
+    private void OnSpeakClick(object sender, RoutedEventArgs e)
+    {
+        if (_orchestration.IsActive && !_orchestration.IsHost) return;
+        _showOrchestrationConfiguration = false;
+        _showRemoteMode = false;
+        _showOrchestrationSession = false;
+        _showSpeak = true;
+        UpdateAll();
+        _speakView.FocusText();
     }
 
     private const string AttendeeDragFormat = "BotSpeakerAttendeeId";
@@ -934,6 +1012,7 @@ public partial class MainWindow : Window
         if (_orchestration.IsHost)
         {
             _showOrchestrationConfiguration = false;
+            _showSpeak = false;
             _showOrchestrationSession = true;
             UpdateAll();
         }
@@ -953,6 +1032,7 @@ public partial class MainWindow : Window
         SetMeetingEntryButtonsEnabled(true);
         if (_orchestration.IsActive)
         {
+            _showSpeak = false;
             _showOrchestrationSession = true;
             UpdateAll();
         }
@@ -984,6 +1064,7 @@ public partial class MainWindow : Window
             _showOrchestrationSession = false;
         }
         _showOrchestrationConfiguration = false;
+        _showSpeak = false;
         _showRemoteMode = true;
         TemplateList.SelectedItem = null;
         CustomList.SelectedItem = null;
@@ -1008,6 +1089,7 @@ public partial class MainWindow : Window
     {
         if (!_orchestration.IsHost) return;
         _showRemoteMode = false;
+        _showSpeak = false;
         _showOrchestrationConfiguration = false;
         _showOrchestrationSession = true;
         UpdateAll();
@@ -1028,16 +1110,16 @@ public partial class MainWindow : Window
         OnJoinMeetingClick(sender, new RoutedEventArgs());
     }
 
-    private async void OnAddScriptClick(object sender, RoutedEventArgs e)
+    private void OnAddScriptClick(object sender, RoutedEventArgs e)
     {
-        if (!await ConfirmExitHostedMeetingIfNeededAsync()) return;
+        if (!CanUseScriptLibrary) return;
         OpenScriptEditor(forNewScript: true);
     }
 
     private void OpenScriptEditor(bool forNewScript)
     {
-        _showOrchestrationConfiguration = false;
-        _showRemoteMode = false;
+        ShowComposer();
+        UpdateAll();
         if (_scriptEditor is null || !_scriptEditor.IsLoaded)
         {
             _scriptEditor = new ScriptEditorWindow(_model) { Owner = this };

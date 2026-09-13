@@ -24,6 +24,9 @@ Feature parity with the macOS app:
   the host sends (`botspeaker speak --target "This PC" --wait "Hello"`,
   including `--loop` and `--repeat N`) and reports completion, failure, or
   cancellation back.
+- A **Speak** page for ad hoc text: play it on this PC at any time, or, while
+  hosting, on any paired attendee; attendees get the same box in Remote Mode.
+  Script templates stay available while hosting
 - Optional looping, disabled by default
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
 

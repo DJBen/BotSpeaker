@@ -10,7 +10,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Keep in step with Windows/BotSpeaker/BotSpeaker.csproj; the app prints an upgrade hint when it is newer. -->
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
   </PropertyGroup>
 
 </Project>

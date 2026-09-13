@@ -21,6 +21,7 @@ public partial class OrchestrationView : UserControl
         _model = model;
         _controller = controller;
         InitializeComponent();
+        RemoteSpeakHost.Content = new SpeakView(model, controller, compact: true);
 
         _controller.PropertyChanged += OnStateChanged;
         _model.PropertyChanged += OnStateChanged;

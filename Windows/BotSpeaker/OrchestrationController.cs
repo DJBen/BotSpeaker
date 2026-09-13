@@ -150,6 +150,10 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
         };
         _model.Player.PlaybackFinished += PlaybackDidFinish;
         _model.PlaybackTakenOver += SpeechPlaybackWasTakenOver;
+        _model.HostedLocalSpeechHandler = async text =>
+        {
+            _ = await SpeakAsync(text, SpeechRequest.LocalTarget, null, 1);
+        };
     }
 
     public bool IsActive => ActiveMode is not null;
@@ -1137,7 +1141,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
         _model.Settings.OrchestrationSessionPairingCode = code;
         _model.Settings.OrchestrationSessionMode = mode == OrchestrationMode.Host ? "host" : "remote";
         _model.Settings.Save();
-        _model.ActivateRemoteControl("Paired and waiting for the host");
+        _model.ActivateRemoteControl("Paired and waiting for the host", hosting: mode == OrchestrationMode.Host);
         _lastRoomActivityMarker = null;
         _lastCollectionSyncUtc = DateTime.MinValue;
         BeginOrchestrationActivity();
@@ -1289,6 +1293,8 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
                 }
                 break;
         }
+        _model.SetHostedMeetingInProgress(
+            SessionStatus is OrchestrationSessionStatus.Running or OrchestrationSessionStatus.Paused);
         MaybeExecuteActiveTurn();
     }
 

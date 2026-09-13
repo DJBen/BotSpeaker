@@ -79,10 +79,20 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="6">
                             <Button x:Name="RemoteModeButton" HorizontalContentAlignment="Left"
-                                    Padding="8,7" Margin="0,0,0,10" Click="OnRemoteModeClick">
+                                    Padding="8,7" Margin="0,0,0,6" Click="OnRemoteModeClick">
                                 <StackPanel>
                                     <TextBlock Text="📡 Remote Mode" FontWeight="SemiBold"/>
                                     <TextBlock x:Name="RemoteModeDetailText" Text="Join with a host code"
+                                               FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Button>
+                            <!-- Ad hoc speech: the GUI for the queue botspeaker-cli drives -->
+                            <Button x:Name="SpeakButton" HorizontalContentAlignment="Left"
+                                    Padding="8,7" Margin="0,0,0,10" Click="OnSpeakClick"
+                                    ToolTip="Speak ad hoc text on this PC or on a paired attendee">
+                                <StackPanel>
+                                    <TextBlock Text="🎙 Speak" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="SpeakDetailText" Text="Ad hoc text on this PC"
                                                FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Button>
@@ -285,6 +295,20 @@
                     </StackPanel>
                 </GroupBox>
             </StackPanel>
+
+            <!-- Speak page: ad hoc text on this PC or, while hosting, on a paired attendee -->
+            <DockPanel x:Name="SpeakPanel" Grid.Column="1" Margin="16" LastChildFill="True" Visibility="Collapsed">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                            Content="⚙" FontSize="16" ToolTip="Settings" Click="OnSettingsClick"/>
+                    <TextBlock Text="🎙 Speak" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/>
+                </DockPanel>
+                <TextBlock x:Name="SpeakSubtitle" DockPanel.Dock="Top" Foreground="Gray" TextWrapping="Wrap"
+                           Margin="0,0,0,16"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ContentControl x:Name="SpeakHost"/>
+                </ScrollViewer>
+            </DockPanel>
 
             <!-- Active meeting session, shown in place of the pages above -->
             <ContentControl x:Name="OrchestrationSessionHost" Grid.Column="1" Margin="16"
