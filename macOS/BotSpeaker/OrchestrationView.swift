@@ -321,6 +321,25 @@ struct OrchestrationView: View {
     }
 
     private var remoteSession: some View {
+        VStack(spacing: 16) {
+            ScrollView {
+                remoteSessionContent
+                    .frame(maxWidth: .infinity)
+            }
+            HStack {
+                Text("Script playback controls are locked while this Mac is paired.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Disconnect", action: leaveFlow)
+            }
+        }
+    }
+
+    // No `.fixedSize(horizontal: false, vertical: true)` on the text in here:
+    // inside the split view detail it lays the whole window content out off
+    // screen, and the scroll view above already gives multi-line text room.
+    private var remoteSessionContent: some View {
         VStack(spacing: 20) {
             Image(systemName: remoteStatusIcon)
                 .font(.system(size: 56))
@@ -360,12 +379,10 @@ struct OrchestrationView: View {
             if let error = controller.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             if let error = controller.preparationError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             GroupBox {
@@ -375,22 +392,13 @@ struct OrchestrationView: View {
                     Text("Ad hoc text plays through this Mac's output between scripted turns. Text the host sends here shows up below too.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                     SpeechComposer(model: model, orchestration: controller, layout: .compact)
                 }
                 .padding(8)
             }
             .frame(maxWidth: 560)
-
-            Spacer()
-            HStack {
-                Text("Script playback controls are locked while this Mac is paired.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Disconnect", action: leaveFlow)
-            }
         }
+        .padding(.vertical, 4)
     }
 
     private func leaveFlow() {

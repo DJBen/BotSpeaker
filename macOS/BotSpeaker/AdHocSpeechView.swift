@@ -114,7 +114,7 @@ struct SpeechComposer: View {
                 .padding(6)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator))
-                .frame(minHeight: layout == .page ? 140 : 72, maxHeight: layout == .page ? 260 : 120)
+                .frame(minHeight: layout == .page ? 140 : 72, idealHeight: layout == .page ? 200 : 100, maxHeight: layout == .page ? 260 : 120)
                 .accessibilityLabel("Text to speak")
 
             HStack(spacing: 10) {
