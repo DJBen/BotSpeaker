@@ -11,7 +11,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\BotSpeaker.ico</ApplicationIcon>
-    <Version>0.4.3</Version>
+    <Version>0.4.4</Version>
+    <StartupObject>BotSpeaker.App</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.0" />
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 

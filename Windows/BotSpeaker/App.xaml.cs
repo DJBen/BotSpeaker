@@ -14,6 +14,20 @@ public partial class App : Application
     private Forms.ToolStripMenuItem? _playPauseItem;
     private Drawing.Icon? _appIcon;
     private ControlServer? _controlServer;
+    private WindowsUpdater? _updater;
+    private Forms.ToolStripMenuItem? _checkUpdateItem;
+    private Forms.ToolStripMenuItem? _restartUpdateItem;
+
+    [STAThread]
+    public static void Main()
+    {
+        // Installer hooks must run before any WPF, audio, or control API startup.
+        // Explicit restart also prevents a second launch from interrupting a meeting.
+        Velopack.VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        var app = new App();
+        app.InitializeComponent();
+        app.Run();
+    }
 
     public static string Version =>
         typeof(App).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
@@ -51,8 +65,18 @@ public partial class App : Application
         }
 
         SetUpTrayIcon();
+        _updater = new WindowsUpdater();
+        _updater.Changed += RefreshUpdateMenu;
+        _updater.UpdateReady += version => _trayIcon?.ShowBalloonTip(
+            5000, "BotSpeaker update ready", $"Version {version} is ready. Restart to update from the tray menu.", Forms.ToolTipIcon.Info);
+        Model.PropertyChanged += (_, _) => RefreshUpdateMenu();
+        Orchestration.PropertyChanged += (_, _) => RefreshUpdateMenu();
+        RefreshUpdateMenu();
+        _updater.Start();
         Model.Player.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName is nameof(AudioPlaybackController.IsPlaying) or nameof(AudioPlaybackController.IsBuffering))
+                RefreshUpdateMenu();
             if (args.PropertyName == nameof(AudioPlaybackController.IsPlaying) && _playPauseItem is not null)
             {
                 _playPauseItem.Text = Model.Player.IsPlaying ? "Pause" : "Play";
@@ -71,7 +95,19 @@ public partial class App : Application
         stopItem.Click += (_, _) => Model.StopPlayback();
         var exitItem = new Forms.ToolStripMenuItem("Quit");
         exitItem.Click += (_, _) => ExitApplication();
-        menu.Items.AddRange([openItem, _playPauseItem, stopItem, new Forms.ToolStripSeparator(), exitItem]);
+        _checkUpdateItem = new Forms.ToolStripMenuItem("Check for Updates…");
+        _checkUpdateItem.Click += async (_, _) =>
+        {
+            if (_updater is null) return;
+            var message = await _updater.CheckAsync(manual: true);
+            if (message is not null)
+                MessageBox.Show(message, "BotSpeaker Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+        };
+        _restartUpdateItem = new Forms.ToolStripMenuItem("Restart to update") { Visible = false };
+        _restartUpdateItem.Click += (_, _) => RestartToUpdate();
+        menu.Opening += (_, _) => RefreshUpdateMenu();
+        menu.Items.AddRange([openItem, _playPauseItem, stopItem, new Forms.ToolStripSeparator(),
+            _checkUpdateItem, _restartUpdateItem, new Forms.ToolStripSeparator(), exitItem]);
 
         using (var iconStream = typeof(App).Assembly.GetManifestResourceStream("BotSpeaker.Assets.BotSpeaker.ico"))
         {
@@ -98,8 +134,59 @@ public partial class App : Application
         _mainWindow.Activate();
     }
 
+    private bool CanRestartForUpdate => !Model.IsGenerating && !Model.Player.IsPlaying
+        && !Model.Player.IsBuffering && !Orchestration.IsActive && !Orchestration.IsBusy;
+
+    private void RefreshUpdateMenu()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(RefreshUpdateMenu);
+            return;
+        }
+        if (_updater is null || _checkUpdateItem is null || _restartUpdateItem is null) return;
+        _checkUpdateItem.Enabled = !_updater.IsBusy;
+        _checkUpdateItem.Text = _updater.IsBusy ? "Checking / downloading update…" : "Check for Updates…";
+        _restartUpdateItem.Visible = _updater.PendingUpdate is not null;
+        _restartUpdateItem.Enabled = !_updater.IsBusy && CanRestartForUpdate;
+        _restartUpdateItem.Text = CanRestartForUpdate ? "Restart to update" : "Restart to update (end playback / leave meeting first)";
+    }
+
+    private void RestartToUpdate()
+    {
+        // Recheck at click time: meeting/playback state may have changed since opening the menu.
+        if (_updater is null || _updater.IsBusy || _updater.PendingUpdate is null || !CanRestartForUpdate) return;
+        try
+        {
+            // Velopack may terminate other processes using its install folder.
+            // Refuse a restart while another app instance could be in a meeting.
+            var instances = System.Diagnostics.Process.GetProcessesByName("BotSpeaker");
+            try
+            {
+                if (instances.Any(process => process.Id != Environment.ProcessId))
+                {
+                    MessageBox.Show("Close the other BotSpeaker instances before installing the update.",
+                        "BotSpeaker Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+            finally
+            {
+                foreach (var process in instances) process.Dispose();
+            }
+            _updater.ApplyAndRestart();
+            ExitApplication();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show($"Could not install the update. Try again later.\n\n{error.Message}",
+                "BotSpeaker Updates", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        _updater?.Dispose();
         _controlServer?.Stop();
         base.OnExit(e);
     }

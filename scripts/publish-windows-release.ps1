@@ -1,9 +1,10 @@
 # Builds, packages, and publishes the Windows app to the shared versioned GitHub
 # release — the Windows counterpart of release-macos.sh.
 #
-# Produces a self-contained single-file BotSpeaker.exe (no .NET install needed),
-# zips it with a SHA-256 checksum into dist/, and uploads both to the release,
-# creating the tag/release if this platform gets there first.
+# Produces self-contained portable app/CLI ZIPs plus a Velopack installer,
+# bundled app/CLI update package, and feed under a fresh dist/ subdirectory.
+# Uploads to the shared release, creating the tag/release if needed.
+# -BuildOnly produces local artifacts without publishing or changing Git tags.
 #
 # Signing: pass -CertificateThumbprint to Authenticode-sign the exe with signtool
 # before packaging. Without a certificate, pass -AllowUnsigned to make shipping an
@@ -20,7 +21,10 @@ param(
 
     [string] $CertificateThumbprint,
 
-    [switch] $AllowUnsigned
+    [switch] $AllowUnsigned,
+
+    # Build reviewable artifacts without touching Git tags or GitHub releases.
+    [switch] $BuildOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,7 +45,7 @@ function Invoke-CheckedCommand {
     }
 }
 
-foreach ($Tool in @('gh', 'git')) {
+foreach ($Tool in $(if ($BuildOnly) { @('git') } else { @('gh', 'git') })) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         throw "$Tool is required. Install it with: winget install $(if ($Tool -eq 'gh') { 'GitHub.cli' } else { 'Git.Git' })"
     }
@@ -61,7 +65,7 @@ if (-not $CertificateThumbprint -and -not $AllowUnsigned) {
     throw 'No -CertificateThumbprint given. Pass -AllowUnsigned to explicitly publish an unsigned build.'
 }
 
-Invoke-CheckedCommand gh @('auth', 'status')
+if (-not $BuildOnly) { Invoke-CheckedCommand gh @('auth', 'status') }
 
 $RepoRoot = (& git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $RepoRoot) {
@@ -74,7 +78,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to inspect the Git working tree.'
     }
-    if ($WorkingTreeChanges.Count -gt 0) {
+    if (-not $BuildOnly -and $WorkingTreeChanges.Count -gt 0) {
         throw 'Commit all release source changes before publishing to GitHub.'
     }
 
@@ -84,11 +88,10 @@ try {
         throw "BotSpeaker.csproj declares version $ProjectVersion, but you are releasing $Version. Update <Version> and commit first."
     }
 
-    $DistDirectory = Join-Path $RepoRoot 'dist'
+    # Fresh staging avoids stale update packages and never deletes a prior build.
+    $DistDirectory = Join-Path $RepoRoot ("dist\windows-$Version-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $DistDirectory -Force | Out-Null
     $PublishDirectory = Join-Path $DistDirectory 'windows-publish'
-    if (Test-Path $PublishDirectory) {
-        Remove-Item -Recurse -Force $PublishDirectory
-    }
 
     Invoke-CheckedCommand $Dotnet @(
         'publish', (Join-Path $RepoRoot 'Windows\BotSpeaker'),
@@ -135,9 +138,6 @@ try {
         throw "BotSpeakerCli.csproj declares version $CliVersion, but you are releasing $Version. Update <Version> and commit first."
     }
     $CliPublishDirectory = Join-Path $DistDirectory 'windows-cli-publish'
-    if (Test-Path $CliPublishDirectory) {
-        Remove-Item -Recurse -Force $CliPublishDirectory
-    }
     Invoke-CheckedCommand $Dotnet @(
         'publish', $CliProject,
         '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
@@ -160,6 +160,37 @@ try {
     $CliChecksumPath = "$CliZipPath.sha256"
     $CliHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CliZipPath).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $CliChecksumPath -NoNewline -Encoding utf8 -Value "$CliHash  $CliZipName`n"
+
+    # Bundle the same CLI in the managed app so updates keep both in step.
+    Copy-Item -LiteralPath $CliExePath -Destination $PublishDirectory
+    Invoke-CheckedCommand $Dotnet @('tool', 'restore')
+    $UpdateDirectory = Join-Path $DistDirectory 'velopack'
+    $PackArguments = @(
+        'tool', 'run', 'vpk', '--', 'pack',
+        '--packId', 'BotSpeaker.Windows', '--packVersion', $Version,
+        '--packTitle', 'BotSpeaker', '--packAuthors', 'BotSpeaker',
+        '--packDir', $PublishDirectory, '--mainExe', 'BotSpeaker.exe',
+        '--runtime', 'win-x64', '--channel', 'win',
+        '--icon', (Join-Path $RepoRoot 'Windows\BotSpeaker\Assets\BotSpeaker.ico'),
+        '--outputDir', $UpdateDirectory
+    )
+    if ($CertificateThumbprint) {
+        # Sign Velopack's setup/updater binaries as well as our executables.
+        $PackArguments += @('--signParams', "/sha1 $CertificateThumbprint /fd SHA256 /tr http://timestamp.digicert.com /td SHA256")
+    }
+    Invoke-CheckedCommand $Dotnet $PackArguments
+    $UpdateAssets = @(Get-ChildItem -LiteralPath $UpdateDirectory -File |
+        Where-Object { $_.Extension -in @('.exe', '.nupkg', '.json') })
+    if (-not ($UpdateAssets.Name -contains 'releases.win.json') -or
+        -not ($UpdateAssets.Name -like '*Setup.exe') -or
+        -not ($UpdateAssets.Name -like '*-full.nupkg')) {
+        throw 'Velopack did not produce the installer, full update package, and release feed.'
+    }
+    $UploadPaths = @($ZipPath, $ChecksumPath, $CliZipPath, $CliChecksumPath) + @($UpdateAssets.FullName)
+    if ($BuildOnly) {
+        Write-Host "Built Windows release artifacts in $DistDirectory (nothing published)."
+        return
+    }
 
     $Tag = $Version
     $ReleaseExists = $true
@@ -201,14 +232,18 @@ try {
         throw "Unable to inspect GitHub release $Tag"
     }
 
-    foreach ($Asset in @($ZipName, (Split-Path -Leaf $ChecksumPath), $CliZipName, (Split-Path -Leaf $CliChecksumPath))) {
+    foreach ($Asset in @($UploadPaths | ForEach-Object { Split-Path -Leaf $_ })) {
         if ($AssetNames -contains $Asset) {
             throw "GitHub release $Tag already contains $Asset; refusing to overwrite it."
         }
     }
 
-    Invoke-CheckedCommand gh @('release', 'upload', $Tag, $ZipPath, $ChecksumPath, $CliZipPath, $CliChecksumPath)
-    Write-Host "Published $ZipName, $CliZipName, and their checksums to GitHub release $Tag."
+    # Upload payloads before the feed, so clients never see a feed pointing at
+    # packages that have not finished uploading.
+    $FeedPath = Join-Path $UpdateDirectory 'releases.win.json'
+    Invoke-CheckedCommand gh (@('release', 'upload', $Tag) + @($UploadPaths | Where-Object { $_ -ne $FeedPath }))
+    Invoke-CheckedCommand gh @('release', 'upload', $Tag, $FeedPath)
+    Write-Host "Published Windows installer, update packages, portable app, and CLI to GitHub release $Tag."
 }
 finally {
     Pop-Location

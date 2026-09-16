@@ -176,10 +176,9 @@ public sealed class ControlClient
     }
 
     /// <summary>
-    /// Candidate app locations, most specific first: BOTSPEAKER_APP, the app
-    /// this CLI last talked to, a BotSpeaker.exe beside this CLI, the standard
-    /// install location, and a Desktop copy (how the portable zip is usually
-    /// run).
+    /// Prefer an explicit override, then the matching app for a managed CLI.
+    /// Standalone CLIs retain the remembered-app, companion, install, and
+    /// Desktop fallbacks used by portable builds.
     /// </summary>
     public static IEnumerable<string> AppCandidates
     {
@@ -187,8 +186,11 @@ public sealed class ControlClient
         {
             var explicitPath = Environment.GetEnvironmentVariable("BOTSPEAKER_APP");
             if (!string.IsNullOrEmpty(explicitPath)) yield return explicitPath;
+            if (File.Exists(Path.Combine(AppContext.BaseDirectory, "sq.version")))
+                yield return Path.Combine(AppContext.BaseDirectory, "BotSpeaker.exe");
             if (RememberedApp() is string remembered) yield return remembered;
             yield return Path.Combine(AppContext.BaseDirectory, "BotSpeaker.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BotSpeaker.Windows", "current", "BotSpeaker.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "BotSpeaker", "BotSpeaker.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "BotSpeaker.exe");
         }

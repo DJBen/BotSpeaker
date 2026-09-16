@@ -29,6 +29,7 @@ Feature parity with the macOS app:
   Script templates stay available while hosting
 - Optional looping, disabled by default
 - System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
+- Installed builds check for updates on launch and every six hours, download in the background, and offer **Restart to update** in the tray menu
 
 ## Requirements
 
@@ -63,6 +64,32 @@ On first launch, enter an ElevenLabs API key. BotSpeaker validates the key and s
 6. Use the volume slider to control the signal delivered to the cable.
 
 The cable is silent through local speakers by default. To monitor locally, enable "Listen to this device" on **CABLE Output** in the Windows Sound control panel (Recording tab → CABLE Output → Properties → Listen), routed to your headphones.
+
+## Install and update
+
+Starting with the first release containing Velopack assets, download
+`BotSpeaker.Windows-win-Setup.exe` from [GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
+It installs the app and matching CLI for the current user under
+`%LOCALAPPDATA%\BotSpeaker.Windows`, without requiring a separate .NET installation.
+Existing portable users must run this installer once, then use its shortcut.
+Settings, credentials, scripts, and the audio cache retain their existing locations.
+The separate install directory keeps uninstalling the app from deleting the audio cache.
+
+The app checks stable GitHub releases on launch and every six hours. Downloads
+run in the background; use the tray menu's **Check for Updates…** for a manual
+check. A downloaded update enables **Restart to update**, which waits until you
+stop playback/generation and leave hosted or joined meetings. Other running
+BotSpeaker instances must also be closed. Restart is always explicit, including
+after quitting and reopening the app; it never interrupts a meeting automatically.
+Failed background checks stay quiet and retry at the next interval.
+
+Portable ZIPs and builds started with `dotnet run` remain manual-update builds.
+VB-CABLE remains a separate installation and is not changed by app updates.
+
+The CLI installer command below detects a Velopack installation and puts its
+bundled CLI directory first in the user PATH, so the app and CLI update together.
+Run it once after installing the app, then open a new terminal. Explicit
+`-Version`, `-Source`, or `-Destination` options still install a standalone CLI.
 
 ## Command line
 
@@ -104,3 +131,29 @@ port (`47311`).
 - API key: `%APPDATA%\BotSpeaker\credentials.bin` (DPAPI encrypted)
 - Settings and custom scripts: `%APPDATA%\BotSpeaker\settings.json`
 - Generated MP3 and timing files: `%LOCALAPPDATA%\BotSpeaker\Audio\`
+
+## Build and verify update packages
+
+The release script restores the pinned `vpk` tool from `.config/dotnet-tools.json`.
+Keep that version aligned with the Velopack package references in the app and
+update test project. Build without publishing or changing Git tags:
+
+```powershell
+.\scripts\publish-windows-release.ps1 -Version 0.4.4 -AllowUnsigned -BuildOnly
+dotnet run --project Windows/BotSpeaker.UpdateTests -- <printed-output-directory>\velopack
+```
+
+Each build uses a new directory under `dist`. Outputs include the Windows
+installer, full update package, `releases.win.json`, and the existing portable
+app/standalone CLI ZIPs and checksums. Full packages are used; delta generation
+is not seeded with earlier releases. The tests use an isolated local feed and
+package directory to verify downloading, version selection, retry behavior,
+and corruption rejection without installing or restarting the app.
+
+For a public release, increment both app and CLI project versions, commit, and
+run the same script without `-BuildOnly`. Use `-CertificateThumbprint <sha1>`
+instead of `-AllowUnsigned` to sign the app, CLI, installer, and updater binaries.
+The feed uploads last, after its package. The public repository is the update
+source; no GitHub credentials are bundled in the app. Installer/restart behavior
+should also be smoke-tested with two successive versions in a disposable Windows
+account or VM before the first public updater release.

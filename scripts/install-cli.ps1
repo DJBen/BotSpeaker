@@ -29,6 +29,18 @@ $Repository = 'DJBen/BotSpeaker'
 $Asset = 'botspeaker-cli-windows-x64.zip'
 $ExeName = 'botspeaker-cli.exe'
 
+# Prefer the bundled CLI after installing the auto-updating app. Do not copy it
+# out of the managed directory: that would leave a stale CLI on PATH after updates.
+$ManagedDirectory = Join-Path $env:LOCALAPPDATA 'BotSpeaker.Windows\current'
+if (-not $Source -and -not $Version -and -not $Destination -and
+    (Test-Path -LiteralPath (Join-Path $ManagedDirectory $ExeName))) {
+    $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $OtherPaths = @($UserPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ine $ManagedDirectory.TrimEnd('\') })
+    [Environment]::SetEnvironmentVariable('Path', ((@($ManagedDirectory) + $OtherPaths) -join ';'), 'User')
+    Write-Host "Using the auto-updating CLI in $ManagedDirectory. Open a new terminal to use it."
+    return
+}
+
 if (-not $Destination) {
     $Destination = Join-Path $env:LOCALAPPDATA 'Programs\BotSpeaker'
 }
