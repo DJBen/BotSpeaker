@@ -18,7 +18,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
   ```sh
   curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash
   ```
-- **Windows 10/11 x64:** [BotSpeaker 0.4.4 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.4.4/BotSpeaker.Windows-win-Setup.exe), with automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.4.4/BotSpeaker-Windows-x64-0.4.4.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
+- **Windows 10/11 x64:** [BotSpeaker 0.4.5 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.4.5/BotSpeaker.Windows-win-Setup.exe), with automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.4.5/BotSpeaker-Windows-x64-0.4.5.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
 
   ```powershell
@@ -39,6 +39,7 @@ The repository and its release downloads are public.
 - Windows installer builds use Velopack for background downloads and an explicit **Restart to update** tray action; portable ZIPs remain manual-update builds
 - ElevenLabs API-key setup, validation, and platform-encrypted storage
 - ElevenLabs voice selection
+- Saved speech-model selection in Settings or `botspeaker models --select ID`: Flash v2 (`eleven_flash_v2`) by default, or Eleven v3 (`eleven_v3`). Flash v2 is English-only; use v3 for the bundled templates' expressive audio tags. Each machine uses its own saved model for local and remote-requested speech.
 - Speech generated at a 1.1× default speed for a more natural meeting pace
 - Sequential, sentence-aware speech generation for long scripts
 - Persistent audio-chunk caching per script, voice, and model

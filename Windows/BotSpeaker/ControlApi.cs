@@ -59,6 +59,16 @@ public sealed class ControlApi
                     return ControlServer.Response.Ok(new JsonObject { ["ok"] = true, ["outputs"] = OutputsPayload(), ["selected"] = _model.SelectedDeviceId });
                 case ("POST", ["outputs", "select"]):
                     return SelectOutput(request);
+                case ("GET", ["models"]):
+                    return ControlServer.Response.Ok(new JsonObject {
+                        ["ok"] = true, ["selected"] = _model.ModelId,
+                        ["models"] = new JsonArray(AppModel.ModelIds.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray()) });
+                case ("POST", ["models", "select"]):
+                    var modelId = StringValue(request.Json()?["model"]);
+                    if (modelId is null || !AppModel.ModelIds.Contains(modelId))
+                        throw new ControlError(400, "Choose eleven_flash_v2 or eleven_v3.", "bad_request");
+                    _model.ModelId = modelId;
+                    return ControlServer.Response.Ok(new JsonObject { ["ok"] = true, ["selected"] = _model.ModelId });
                 case ("GET", ["voices"]):
                     return await VoicesAsync(request);
                 case ("POST", ["voices", "select"]):

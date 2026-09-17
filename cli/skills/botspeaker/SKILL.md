@@ -5,6 +5,11 @@ description: Play spoken text or a recorded audio file through BotSpeaker on thi
 
 # BotSpeaker CLI
 
+The default speech model is Flash v2 (`eleven_flash_v2`). Use `botspeaker models`
+to inspect the selection and `botspeaker models --select eleven_v3` (or
+`eleven_flash_v2`) to save a different model on this machine. Remote attendees
+use their own saved model. Choose v3 for expressive audio tags in templates.
+
 `botspeaker` talks to the running BotSpeaker app. It synthesizes text with
 ElevenLabs and plays it through the app's configured output (usually a virtual
 audio device that feeds a meeting).

@@ -15,7 +15,7 @@ struct BotSpeakerCLI: AsyncParsableCommand {
         """,
         version: BotSpeakerCLIVersion.current,
         subcommands: [
-            Speak.self, PlayAudio.self, Stop.self, Status.self, Targets.self, Voices.self, Outputs.self,
+            Speak.self, PlayAudio.self, Stop.self, Status.self, Targets.self, Voices.self, Models.self, Outputs.self,
             Requests.self, Wait.self, Host.self, Join.self, Leave.self, Upgrade.self
         ],
         defaultSubcommand: Status.self
@@ -393,6 +393,33 @@ struct Targets: AsyncParsableCommand {
                 ])
             }
             Output.table(rows)
+        } catch {
+            Output.fail(error, json: global.json)
+        }
+    }
+}
+
+struct Models: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "List speech models, or save this app's default model (initially Flash v2).")
+    @OptionGroup var global: GlobalOptions
+    @Option(name: .long, help: "Model ID to save: eleven_flash_v2 or eleven_v3.")
+    var select: String?
+
+    func run() async throws {
+        do {
+            let client = try await ControlClient.locate()
+            if let select {
+                let response = try await client.post("/v1/models/select", body: ["model": select])
+                if global.json { Output.json(response) }
+                else { print("selected \(Output.string(response["selected"]))") }
+                return
+            }
+            let response = try await client.get("/v1/models")
+            if global.json { Output.json(response); return }
+            let selected = response["selected"] as? String
+            for id in response["models"] as? [String] ?? [] {
+                print("\(id == selected ? "*" : " ") \(id)")
+            }
         } catch {
             Output.fail(error, json: global.json)
         }

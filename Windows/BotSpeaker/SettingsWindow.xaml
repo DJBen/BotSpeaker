@@ -10,6 +10,15 @@
         <StackPanel Margin="20">
             <TextBlock Text="ElevenLabs" FontSize="15" FontWeight="Bold"/>
             <DockPanel Margin="0,10,0,0">
+                <TextBlock Text="Speech model" Width="110" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ModelCombo" SelectionChanged="OnModelSelected">
+                    <ComboBoxItem Content="Flash v2 (default)"/>
+                    <ComboBoxItem Content="Eleven v3"/>
+                </ComboBox>
+            </DockPanel>
+            <TextBlock Text="Flash v2 is English-only. Choose Eleven v3 for expressive audio tags in the bundled templates."
+                       FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,6,0,0"/>
+            <DockPanel Margin="0,10,0,0">
                 <TextBlock x:Name="KeyStatusLabel" Text="🔑 API key not configured" Foreground="Gray"
                            VerticalAlignment="Center"/>
                 <Button x:Name="EditKeyButton" Content="Add API Key…" Padding="10,4" HorizontalAlignment="Right"

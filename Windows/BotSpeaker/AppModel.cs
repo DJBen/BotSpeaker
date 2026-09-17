@@ -115,8 +115,18 @@ public sealed class AppModel : INotifyPropertyChanged
         set { Settings.VoiceId = value; Settings.Save(); Notify(); Notify(nameof(SelectedVoiceName)); }
     }
 
-    /// <summary>Fixed to Eleven v3 so scripts can rely on its audio tags and expressive delivery.</summary>
-    public const string ModelId = "eleven_v3";
+    public static readonly string[] ModelIds = ["eleven_flash_v2", "eleven_v3"];
+    public string ModelId
+    {
+        get => ModelIds.Contains(Settings.ModelId) ? Settings.ModelId : ModelIds[0];
+        set
+        {
+            if (!ModelIds.Contains(value)) throw new AppException("Choose eleven_flash_v2 or eleven_v3.");
+            Settings.ModelId = value;
+            Settings.Save();
+            Notify();
+        }
+    }
 
     public string SelectedDeviceId
     {
@@ -495,6 +505,7 @@ public sealed class AppModel : INotifyPropertyChanged
     public async Task PrepareOrchestratedTurnAsync(
         string turnText, string cacheNamespace, CancellationToken cancellation)
     {
+        var modelId = ModelId;
         var plans = SpeechTextChunker.Chunks(turnText);
         if (plans.Count == 0) throw new AppException("The turn to prepare is empty.");
         var apiKey = _credentials.Read();
@@ -508,7 +519,7 @@ public sealed class AppModel : INotifyPropertyChanged
         {
             cancellation.ThrowIfCancellationRequested();
             _ = await _client.SynthesizeAsync(
-                plan.Text, VoiceId, ModelId, apiKey,
+                plan.Text, VoiceId, modelId, apiKey,
 
                 cacheNamespace, bypassCache: false, cancellation);
         }
@@ -525,6 +536,7 @@ public sealed class AppModel : INotifyPropertyChanged
     public async Task PlayOrchestratedTurnAsync(
         string turnText, string cacheNamespace, CancellationToken cancellation, string? voiceId = null)
     {
+        var modelId = ModelId;
         var effectiveVoiceId = string.IsNullOrWhiteSpace(voiceId) ? VoiceId : voiceId;
         var plans = SpeechTextChunker.Chunks(turnText);
         if (plans.Count == 0) throw new AppException("The assigned turn is empty.");
@@ -544,7 +556,7 @@ public sealed class AppModel : INotifyPropertyChanged
         Text = turnText;
         Player.IsLooping = false;
         Player.BeginSequence(plans.Count);
-        _currentSpeechSignature = $"orchestration|{cacheNamespace}|{effectiveVoiceId}|{ModelId}|{turnText}";
+        _currentSpeechSignature = $"orchestration|{cacheNamespace}|{effectiveVoiceId}|{modelId}|{turnText}";
         IsGenerating = true;
         var taskId = Guid.NewGuid();
         _generationId = taskId;
@@ -555,7 +567,7 @@ public sealed class AppModel : INotifyPropertyChanged
             {
                 cancellation.ThrowIfCancellationRequested();
                 var clip = await _client.SynthesizeAsync(
-                    plan.Text, effectiveVoiceId, ModelId, apiKey,
+                    plan.Text, effectiveVoiceId, modelId, apiKey,
 
                     cacheNamespace, bypassCache: false, cancellation);
                 cancellation.ThrowIfCancellationRequested();

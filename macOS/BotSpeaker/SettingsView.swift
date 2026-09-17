@@ -14,6 +14,12 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("ElevenLabs") {
+                Picker("Speech model", selection: Binding(get: { model.modelID }, set: { model.modelID = $0 })) {
+                    Text("Flash v2 (default)").tag("eleven_flash_v2")
+                    Text("Eleven v3").tag("eleven_v3")
+                }
+                Text("Flash v2 is English-only. Choose Eleven v3 for expressive audio tags in the bundled templates.")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     if model.hasAPIKey {
                         Label("Saved in Keychain", systemImage: "checkmark.shield.fill")

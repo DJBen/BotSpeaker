@@ -8,6 +8,7 @@ Feature parity with the macOS app:
 
 - ElevenLabs API-key setup, validation, and encrypted storage (Windows DPAPI, current-user scope)
 - ElevenLabs voice selection
+- Speech-model selection in Settings or `botspeaker-cli models --select ID`: Flash v2 (`eleven_flash_v2`, default) or Eleven v3 (`eleven_v3`). Flash v2 is English-only; select v3 for expressive audio tags.
 - Sequential, sentence-aware speech generation for long scripts (identical chunking to macOS)
 - Persistent audio-chunk caching per script, voice, and model
 - Three read-only launch-retrospective templates written for Eleven v3 audio tags, plus named custom scripts with a separate editor window
@@ -139,7 +140,7 @@ Keep that version aligned with the Velopack package references in the app and
 update test project. Build without publishing or changing Git tags:
 
 ```powershell
-.\scripts\publish-windows-release.ps1 -Version 0.4.4 -AllowUnsigned -BuildOnly
+.\scripts\publish-windows-release.ps1 -Version 0.4.5 -AllowUnsigned -BuildOnly
 dotnet run --project Windows/BotSpeaker.UpdateTests -- <printed-output-directory>\velopack
 ```
 

@@ -43,6 +43,15 @@ final class ControlAPI {
                 return .ok(["ok": true, "outputs": outputsPayload(), "selected": model.selectedDeviceUID])
             case ("POST", ["outputs", "select"]):
                 return try selectOutput(request)
+            case ("GET", ["models"]):
+                return .ok(["ok": true, "models": AppModel.modelIDs, "selected": model.modelID])
+            case ("POST", ["models", "select"]):
+                guard let modelID = request.json()?["model"] as? String,
+                      AppModel.modelIDs.contains(modelID) else {
+                    throw ControlError(400, "Choose eleven_flash_v2 or eleven_v3.", code: "bad_request")
+                }
+                model.modelID = modelID
+                return .ok(["ok": true, "selected": model.modelID])
             case ("GET", ["voices"]):
                 return try await voices(request)
             case ("POST", ["voices", "select"]):

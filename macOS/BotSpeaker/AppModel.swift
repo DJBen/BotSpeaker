@@ -90,8 +90,13 @@ final class AppModel {
         didSet { UserDefaults.standard.set(voiceID, forKey: Defaults.voiceID) }
     }
 
-    /// Fixed to Eleven v3 so scripts can rely on its audio tags and expressive delivery.
-    @ObservationIgnored let modelID = "eleven_v3"
+    static let modelIDs = ["eleven_flash_v2", "eleven_v3"]
+    var modelID: String = {
+        let saved = UserDefaults.standard.string(forKey: "speechModelID") ?? "eleven_flash_v2"
+        return AppModel.modelIDs.contains(saved) ? saved : "eleven_flash_v2"
+    }() {
+        didSet { UserDefaults.standard.set(modelID, forKey: "speechModelID") }
+    }
 
     var selectedDeviceUID = UserDefaults.standard.string(forKey: Defaults.deviceUID) ?? "" {
         didSet {
@@ -443,6 +448,7 @@ final class AppModel {
     /// without touching the player or starting audio. When the turn is later
     /// assigned, `playOrchestratedTurn` reads these clips from disk.
     func prepareOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
+        let modelID = self.modelID
         let plans = SpeechTextChunker.chunks(for: turnText)
         guard !plans.isEmpty else { throw AppError("The turn to prepare is empty.") }
         guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
@@ -473,6 +479,7 @@ final class AppModel {
         voiceID requestedVoiceID: String? = nil
     ) async throws {
         let voiceID = requestedVoiceID?.isEmpty == false ? requestedVoiceID! : voiceID
+        let modelID = self.modelID
         let plans = SpeechTextChunker.chunks(for: turnText)
         guard !plans.isEmpty else { throw AppError("The assigned turn is empty.") }
         guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
@@ -580,6 +587,7 @@ final class AppModel {
     }
 
     private func generateOrToggle(forceRegenerate: Bool) async {
+        let modelID = self.modelID
         errorMessage = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -630,7 +638,7 @@ final class AppModel {
                 await self.generateSequentially(
                     plans: plans,
                     voiceID: self.voiceID,
-                    modelID: self.modelID,
+                    modelID: modelID,
                     apiKey: apiKey,
                     cacheNamespace: script.cacheNamespace,
                     bypassCache: forceRegenerate,

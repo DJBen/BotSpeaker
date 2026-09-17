@@ -6,6 +6,7 @@ namespace BotSpeaker;
 /// <summary>JSON-file settings — the Windows counterpart of the macOS UserDefaults keys.</summary>
 public sealed class AppSettings
 {
+    public string ModelId { get; set; } = "eleven_flash_v2";
     public string VoiceId { get; set; } = "JBFqnCBsd6RMkjVDRZzb";
     public string OutputDeviceId { get; set; } = "";
     public bool LoopEnabled { get; set; }

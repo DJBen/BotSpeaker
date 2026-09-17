@@ -63,6 +63,9 @@ botspeaker status                          # app, output, voice, session, active
 botspeaker speak "Hello from this Mac"     # play locally, return immediately with a request ID
 botspeaker speak --wait "Hello"            # block until playback finishes; exit 0 only on success
 botspeaker speak --voice "Rachel" "Hi"     # voice by name or ElevenLabs voice ID
+botspeaker models                         # list models; * marks the saved selection
+botspeaker models --select eleven_flash_v2 # save Flash v2 (the default)
+botspeaker models --select eleven_v3       # save Eleven v3 for expressive audio tags
 botspeaker speak --loop "On a cycle"        # repeat until `botspeaker stop`
 botspeaker speak --repeat 3 --wait "Thrice" # play a fixed number of times
 echo "long text" | botspeaker speak        # text from stdin (or --file path, --file -)
@@ -152,6 +155,7 @@ JSON with an `ok` boolean; errors carry `error.code` and `error.message`.
 | `GET /v1/targets` | `local` plus attendees (host only lists attendees). |
 | `GET /v1/outputs`, `POST /v1/outputs/select {uid\|name}` | Audio outputs on this Mac. |
 | `GET /v1/voices?refresh=1`, `POST /v1/voices/select {id\|name}` | ElevenLabs voices. |
+| `GET /v1/models`, `POST /v1/models/select {model}` | List model IDs or save `eleven_flash_v2` / `eleven_v3` as the local app's model. |
 | `POST /v1/speak {text, target?, voice?, loop?, repeat?, wait?, timeout?}` | Queue speech. `loop: true` repeats until cancelled; `repeat: n` plays `n` times. `202` with the request when not waiting, `200` with the final request when waiting. |
 | `POST /v1/play-audio {audio, filename, loop?, repeat?, wait?, timeout?}` | Play a recorded file on this Mac. `audio` is the file's bytes as base64, `filename` supplies the extension. Same response shape as `/v1/speak`; the request carries `"kind": "audio"` and `audioFile`. |
 | `GET /v1/speech` | Recent requests. |

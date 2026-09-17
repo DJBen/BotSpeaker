@@ -52,6 +52,7 @@ static class Cli
                 "status" => await StatusAsync(parsed),
                 "targets" => await TargetsAsync(parsed),
                 "voices" => await VoicesAsync(parsed),
+                "models" => await ModelsAsync(parsed),
                 "outputs" => await OutputsAsync(parsed),
                 "host" => await HostAsync(parsed),
                 "join" => await JoinAsync(parsed),
@@ -288,6 +289,27 @@ static class Cli
         return 0;
     }
 
+    private static async Task<int> ModelsAsync(Args args)
+    {
+        var client = await ControlClient.LocateAsync();
+        if (args.Option("select") is string select)
+        {
+            var response = await client.PostAsync("/v1/models/select", new JsonObject { ["model"] = select });
+            if (args.Json) Output.Json(response);
+            else Console.WriteLine($"selected {Output.String(response["selected"])}");
+            return 0;
+        }
+        var models = await client.GetAsync("/v1/models");
+        if (args.Json) { Output.Json(models); return 0; }
+        var selected = Output.String(models["selected"]);
+        foreach (var model in models["models"] as JsonArray ?? new JsonArray())
+        {
+            var id = Output.String(model);
+            Console.WriteLine($"{(id == selected ? "*" : " ")} {id}");
+        }
+        return 0;
+    }
+
     private static async Task<int> VoicesAsync(Args args)
     {
         var client = await ControlClient.LocateAsync();
@@ -406,6 +428,7 @@ static class Cli
                   requests                     recent requests with status
                   targets                      "local" plus attendees paired to the meeting this PC hosts
                   voices [--refresh] [--select NAME]
+                  models [--select ID]         saved speech model: eleven_flash_v2 (default) or eleven_v3
                   outputs [--select NAME]
                   host [--name NAME]           start hosting; prints the pairing code
                   join CODE [--name NAME]      pair this PC to a host

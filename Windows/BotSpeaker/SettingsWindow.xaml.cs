@@ -36,6 +36,7 @@ public partial class SettingsWindow : Window
         _suppressUiEvents = true;
         try
         {
+            ModelCombo.SelectedIndex = Array.IndexOf(AppModel.ModelIds, _model.ModelId);
             KeyStatusLabel.Text = _model.HasApiKey
                 ? "🛡 API key saved (DPAPI encrypted)"
                 : "🔑 API key not configured";
@@ -53,6 +54,12 @@ public partial class SettingsWindow : Window
         {
             _suppressUiEvents = false;
         }
+    }
+
+    private void OnModelSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_suppressUiEvents && ModelCombo.SelectedIndex >= 0)
+            _model.ModelId = AppModel.ModelIds[ModelCombo.SelectedIndex];
     }
 
     private void OnEditKeyClick(object sender, RoutedEventArgs e)
