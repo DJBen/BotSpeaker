@@ -12,7 +12,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.4.3-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.4.3), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
+- **macOS 14 or later:** [`BotSpeaker-0.4.5-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.4.5), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
 - **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. It downloads the signed `botspeaker` binary attached to the latest release.
 
   ```sh
