@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    let model: AppModel
+    @Bindable var model: AppModel
     let updates: UpdateController
     @State private var key = ""
     @State private var feedback: String?
@@ -14,7 +14,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("ElevenLabs") {
-                Picker("Speech model", selection: Binding(get: { model.modelID }, set: { model.modelID = $0 })) {
+                Picker("Speech model", selection: $model.modelID) {
                     Text("Flash v2 (default)").tag("eleven_flash_v2")
                     Text("Eleven v3").tag("eleven_v3")
                 }
@@ -41,7 +41,7 @@ struct SettingsView: View {
             }
 
             Section("Audio routing") {
-                Picker("Output device", selection: Binding(get: { model.selectedDeviceUID }, set: { model.selectedDeviceUID = $0 })) {
+                Picker("Output device", selection: $model.selectedDeviceUID) {
                     Text("Choose an output…").tag("")
                     ForEach(model.devices.outputDevices) { device in
                         Text(device.isBlackHole ? "\(device.name) — recommended" : device.name).tag(device.uid)
