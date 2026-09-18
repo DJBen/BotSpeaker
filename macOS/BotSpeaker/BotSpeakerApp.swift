@@ -1,6 +1,29 @@
 import SwiftUI
+import Darwin
 
 @main
+enum BotSpeakerEntryPoint {
+    @MainActor
+    static func main() {
+        do {
+            guard let executableURL = Bundle.main.executableURL else {
+                NSLog("Unable to determine BotSpeaker's executable path.")
+                exit(EXIT_FAILURE)
+            }
+            guard let instance = try SingleInstanceGuard.acquire(executableURL: executableURL) else {
+                return
+            }
+            // Acquire before SwiftUI constructs models, audio, updates, or the control server.
+            withExtendedLifetime(instance) {
+                BotSpeakerApp.main()
+            }
+        } catch {
+            NSLog("Unable to acquire BotSpeaker's instance lock: %@", error.localizedDescription)
+            exit(EXIT_FAILURE)
+        }
+    }
+}
+
 struct BotSpeakerApp: App {
     @State private var model: AppModel
     @State private var orchestration: OrchestrationController

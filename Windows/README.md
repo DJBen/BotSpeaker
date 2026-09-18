@@ -55,6 +55,11 @@ dotnet publish Windows/BotSpeaker -c Release -r win-x64 --self-contained
 
 On first launch, enter an ElevenLabs API key. BotSpeaker validates the key and stores it encrypted with DPAPI under `%APPDATA%\BotSpeaker`.
 
+Only one app instance can run from a given executable path. Additional launches
+from that path exit immediately, including when the first instance is in the tray.
+Copies in different folders can still run concurrently. Quitting or a crash releases
+the guard so the app can be launched again.
+
 ## Route speech into a meeting
 
 1. Install VB-Audio Virtual Cable and reboot if the installer asks.

@@ -18,7 +18,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
   ```sh
   curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash
   ```
-- **Windows 10/11 x64:** [BotSpeaker 0.4.5 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.4.5/BotSpeaker.Windows-win-Setup.exe), with automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.4.5/BotSpeaker-Windows-x64-0.4.5.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
+- **Windows 10/11 x64:** [BotSpeaker 0.4.6 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.4.6/BotSpeaker.Windows-win-Setup.exe), with automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.4.6/BotSpeaker-Windows-x64-0.4.6.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
 
   ```powershell
@@ -35,6 +35,7 @@ The repository and its release downloads are public.
 ## Features
 
 - Native SwiftUI menu-bar app on macOS and native WPF system-tray app on Windows
+- One running instance per executable path; duplicate launches exit, while copies in different folders can run concurrently (macOS guard applies within the current user account)
 - Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
 - Windows installer builds use Velopack for background downloads and an explicit **Restart to update** tray action; portable ZIPs remain manual-update builds
 - ElevenLabs API-key setup, validation, and platform-encrypted storage
