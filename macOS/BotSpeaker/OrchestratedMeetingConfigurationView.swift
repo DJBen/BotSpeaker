@@ -6,12 +6,25 @@ struct OrchestratedMeetingConfigurationView: View {
     let model: AppModel
     @Bindable var controller: OrchestrationController
     let onPrepareMeeting: () -> Void
+    @State private var showRecallMeeting = false
+    @State private var recallSetupError: String?
     @State private var editingSpeakerSlot: Int?
     @State private var draftSpeakerName = ""
     @State private var draggedAttendeeID: String?
     @State private var attendeeDropTarget: AttendeeDropTarget?
 
     var body: some View {
+        if showRecallMeeting {
+            RecallMeetingView(model: model, plan: model.recallMeeting) {
+                if model.recallMeeting.speakers.allSatisfy({ $0.bot.isEmpty }) {
+                    model.recallMeeting.speakers = []; model.recallMeeting.turns = []
+                }
+                showRecallMeeting = false
+            }
+        } else { hostConfiguration }
+    }
+
+    private var hostConfiguration: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(controller.selectedTemplate.title)
@@ -55,7 +68,7 @@ struct OrchestratedMeetingConfigurationView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if let error = controller.errorMessage {
+                    if let error = recallSetupError ?? controller.errorMessage {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -71,14 +84,19 @@ struct OrchestratedMeetingConfigurationView: View {
                             .controlSize(.small)
                     } else {
                         Label(
-                            controller.isHost
-                                ? controller.sessionStatus == .completed || controller.sessionStatus == .stopped
-                                    ? "Use for Next Run"
-                                    : "Use This Script"
-                                : "Host & Use This Script",
+                            "Host this transcript",
                             systemImage: "arrow.right.circle.fill"
                         )
                     }
+                }
+                .buttonStyle(.bordered)
+                .fixedSize()
+                .disabled(controller.isBusy)
+                Button("Host in Recall.ai") {
+                    do {
+                        try model.recallMeeting.configure(controller, model: model)
+                        showRecallMeeting = true
+                    } catch { recallSetupError = error.localizedDescription }
                 }
                 .buttonStyle(.borderedProminent)
                 .fixedSize()

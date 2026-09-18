@@ -301,11 +301,25 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
             new OrchestratedSpeakerPreference
             {
                 Slot = configuration.Slot,
-                Name = configuration.Name,
+                Name = configuration.CustomName,
                 VoiceId = configuration.VoiceId,
                 VoiceName = configuration.VoiceName,
             }).ToList();
         _model.Settings.Save();
+    }
+
+    public void SaveRecallSpeakerConfiguration(string templateId, OrchestratedSpeakerConfiguration configuration)
+    {
+        if (!_model.Settings.OrchestratedMeetingSpeakers.TryGetValue(templateId, out var saved))
+            _model.Settings.OrchestratedMeetingSpeakers[templateId] = saved = [];
+        saved.RemoveAll(s => s.Slot == configuration.Slot);
+        saved.Add(new OrchestratedSpeakerPreference { Slot = configuration.Slot, Name = configuration.CustomName, VoiceId = configuration.VoiceId, VoiceName = configuration.VoiceName });
+        _model.Settings.Save();
+        if (SelectedTemplate.Id == templateId) {
+            var current = SpeakerConfigurations.First(s => s.Slot == configuration.Slot);
+            current.Name = configuration.CustomName; current.VoiceId = configuration.VoiceId; current.VoiceName = configuration.VoiceName;
+            NotifySpeakerConfigurationChanged();
+        }
     }
 
     private void NotifySpeakerConfigurationChanged()

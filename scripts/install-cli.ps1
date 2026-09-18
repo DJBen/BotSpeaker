@@ -29,21 +29,33 @@ $Repository = 'DJBen/BotSpeaker'
 $Asset = 'botspeaker-cli-windows-x64.zip'
 $ExeName = 'botspeaker-cli.exe'
 
+function Set-CliPath([string] $Directory) {
+    # Prepend, and update this shell too: appending lets an older CLI win.
+    foreach ($Scope in @('User', 'Process')) {
+        $Existing = [Environment]::GetEnvironmentVariable('Path', $Scope)
+        $Others = @($Existing -split ';' | Where-Object {
+            $_ -and [Environment]::ExpandEnvironmentVariables($_.Trim().Trim('"')).TrimEnd('\') -ine $Directory.TrimEnd('\')
+        })
+        [Environment]::SetEnvironmentVariable('Path', ((@($Directory) + $Others) -join ';'), $Scope)
+    }
+    Write-Host "CLI directory is first on your user PATH and this terminal's PATH: $Directory"
+    Write-Host "Restart other terminals to refresh PATH. Use Get-Command botspeaker-cli -All to check for older copies."
+}
+
 # Prefer the bundled CLI after installing the auto-updating app. Do not copy it
 # out of the managed directory: that would leave a stale CLI on PATH after updates.
 $ManagedDirectory = Join-Path $env:LOCALAPPDATA 'BotSpeaker.Windows\current'
 if (-not $Source -and -not $Version -and -not $Destination -and
     (Test-Path -LiteralPath (Join-Path $ManagedDirectory $ExeName))) {
-    $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $OtherPaths = @($UserPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ine $ManagedDirectory.TrimEnd('\') })
-    [Environment]::SetEnvironmentVariable('Path', ((@($ManagedDirectory) + $OtherPaths) -join ';'), 'User')
-    Write-Host "Using the auto-updating CLI in $ManagedDirectory. Open a new terminal to use it."
+    Set-CliPath $ManagedDirectory
+    Write-Host "Using the auto-updating CLI in $ManagedDirectory."
     return
 }
 
 if (-not $Destination) {
     $Destination = Join-Path $env:LOCALAPPDATA 'Programs\BotSpeaker'
 }
+$Destination = [IO.Path]::GetFullPath($Destination)
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $Target = Join-Path $Destination $ExeName
 $Staging = Join-Path ([IO.Path]::GetTempPath()) ("botspeaker-cli-" + [guid]::NewGuid().ToString('N'))
@@ -92,6 +104,13 @@ try {
         catch {
             throw "Release $Tag has no $Asset (older releases predate the Windows CLI). Run with -Source from a checkout instead."
         }
+        $Checksum = (Invoke-WebRequest -Uri "$Url.sha256" -UseBasicParsing).Content
+        if ($Checksum -is [byte[]]) { $Checksum = [Text.Encoding]::UTF8.GetString($Checksum) }
+        $Expected = ($Checksum.Trim() -split '\s+')[0]
+        if ($Expected -notmatch '^[a-fA-F0-9]{64}$' -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $Zip).Hash -ine $Expected) {
+            throw 'CLI download failed SHA-256 verification. The installed CLI was not changed.'
+        }
         Expand-Archive -LiteralPath $Zip -DestinationPath $Staging -Force
     }
 
@@ -101,12 +120,7 @@ try {
     $Installed = (& $Target --version 2>$null)
     Write-Host "Installed botspeaker-cli $Installed to $Target"
 
-    $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $OnPath = ($UserPath -split ';') | Where-Object { $_.TrimEnd('\') -ieq $Destination.TrimEnd('\') }
-    if (-not $OnPath) {
-        [Environment]::SetEnvironmentVariable('Path', (($UserPath.TrimEnd(';')) + ';' + $Destination), 'User')
-        Write-Host "Added $Destination to your user PATH. Open a new terminal to use 'botspeaker-cli'."
-    }
+    Set-CliPath $Destination
 }
 finally {
     Remove-Item -Recurse -Force $Staging -ErrorAction SilentlyContinue

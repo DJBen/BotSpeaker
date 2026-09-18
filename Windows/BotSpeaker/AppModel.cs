@@ -6,6 +6,9 @@ namespace BotSpeaker;
 /// <summary>Application state and orchestration — the Windows counterpart of the macOS AppModel.</summary>
 public sealed class AppModel : INotifyPropertyChanged
 {
+    private RecallController? _recall;
+    public RecallController Recall => _recall ??= new(this);
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private string _text = "";

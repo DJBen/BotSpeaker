@@ -15,6 +15,7 @@ public partial class SettingsWindow : Window
     {
         _model = model;
         InitializeComponent();
+        RecallSettingsHost.Content = new RecallView(model, settingsOnly: true);
         _model.PropertyChanged += OnModelChanged;
         Loaded += async (_, _) =>
         {

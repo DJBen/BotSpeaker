@@ -33,6 +33,9 @@ final class ControlAPI {
         }
         let route = Array(segments.dropFirst())
         do {
+            if route.count == 2, route[0] == "recall", request.method == "POST" {
+                return .ok(try await model.recall.handle(route[1], request.json() ?? [:], model: model))
+            }
             switch (request.method, route) {
             case ("GET", ["status"]):
                 return .ok(statusPayload())

@@ -8,11 +8,11 @@ namespace BotSpeaker;
 /// Stores the ElevenLabs API key encrypted with DPAPI (current user scope) — the
 /// Windows counterpart of the macOS Keychain storage.
 /// </summary>
-public sealed class CredentialStore
+public sealed class CredentialStore(string filename = "credentials.bin")
 {
-    private static string FilePath => Path.Combine(
+    private string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "BotSpeaker", "credentials.bin");
+        "BotSpeaker", filename);
 
     public void Save(string value)
     {

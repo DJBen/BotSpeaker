@@ -31,6 +31,8 @@ struct MainWindowView: View {
     @State private var isShowingOrchestrationConfiguration = false
     @State private var isShowingRemoteMode = false
     @State private var isShowingSpeak = false
+    @State private var isShowingRecall = false
+    @State private var isShowingRecallMeeting = false
     @State private var detailPath: [DetailDestination] = []
     @State private var hostMeetingError: String?
     @State private var pendingHostExitNavigation: (() -> Void)?
@@ -69,6 +71,8 @@ struct MainWindowView: View {
                         selectedOrchestrationTemplateID: isShowingOrchestrationConfiguration
                             ? orchestration.selectedTemplate.id
                             : nil,
+                        isRecallSelected: isShowingRecall,
+                        onOpenRecall: { showComposer(); isShowingRecall = true },
                         isRemoteModeSelected: isShowingRemoteMode,
                         isSpeakSelected: isShowingSpeak,
                         onOpenRemoteMode: requestOpenRemoteMode,
@@ -77,6 +81,8 @@ struct MainWindowView: View {
                             if orchestration.isHost, canSwitchTemplateWhileHosting {
                                 isShowingRemoteMode = false
                                 isShowingSpeak = false
+                                isShowingRecall = false
+                                isShowingRecallMeeting = false
                                 dismissOrchestrationFlow()
                                 orchestration.selectTemplate(template)
                                 isShowingOrchestrationConfiguration = true
@@ -87,6 +93,8 @@ struct MainWindowView: View {
                                 navigateExitingHostIfNeeded {
                                     isShowingRemoteMode = false
                                     isShowingSpeak = false
+                                    isShowingRecall = false
+                                    isShowingRecallMeeting = false
                                     orchestration.selectTemplate(template)
                                     isShowingOrchestrationConfiguration = true
                                 }
@@ -98,7 +106,16 @@ struct MainWindowView: View {
                 } detail: {
                     NavigationStack(path: $detailPath) {
                         Group {
-                            if isShowingRemoteMode {
+                            if isShowingRecallMeeting {
+                                RecallMeetingView(model: model, plan: model.recallMeeting) {
+                                    if model.recallMeeting.speakers.allSatisfy({ $0.bot.isEmpty }) {
+                                        model.recallMeeting.speakers = []; model.recallMeeting.turns = []
+                                    }
+                                    isShowingRecallMeeting = false
+                                }
+                            } else if isShowingRecall {
+                                RecallView(model: model)
+                            } else if isShowingRemoteMode {
                                 RemoteModeView(model: model, controller: orchestration)
                             } else if isShowingSpeak {
                                 SpeakView(model: model, orchestration: orchestration)
@@ -150,6 +167,8 @@ struct MainWindowView: View {
                 } else {
                     isShowingRemoteMode = true
                     isShowingSpeak = false
+                    isShowingRecall = false
+                    isShowingRecallMeeting = false
                     isShowingOrchestrationConfiguration = false
                 }
             }
@@ -239,6 +258,7 @@ struct MainWindowView: View {
     }
 
     private var selectedSectionTitle: String {
+        if isShowingRecall { return "Recall.ai Bots" }
         if isShowingRemoteMode { return "Remote Mode" }
         if isShowingSpeak { return "Speak" }
         if isShowingOrchestrationConfiguration { return "Orchestrated meeting" }
@@ -270,12 +290,16 @@ struct MainWindowView: View {
         detailPath.removeAll()
         isShowingOrchestrationConfiguration = false
         isShowingSpeak = false
+        isShowingRecall = false
+        isShowingRecallMeeting = false
         isShowingRemoteMode = true
     }
 
     /// Ad hoc speech is available whenever this Mac is not a paired attendee;
     /// the host keeps its meeting (prepared or running) while using it.
     private func openSpeak() {
+        isShowingRecall = false
+        isShowingRecallMeeting = false
         guard !isRemoteClientActive else { return }
         detailPath.removeAll()
         isShowingOrchestrationConfiguration = false
@@ -287,6 +311,8 @@ struct MainWindowView: View {
         detailPath.removeAll()
         isShowingRemoteMode = false
         isShowingSpeak = false
+        isShowingRecall = false
+        isShowingRecallMeeting = false
         isShowingOrchestrationConfiguration = false
     }
 
@@ -353,6 +379,8 @@ struct MainWindowView: View {
         guard orchestration.isHost else { return }
         isShowingRemoteMode = false
         isShowingSpeak = false
+        isShowingRecall = false
+        isShowingRecallMeeting = false
         isShowingOrchestrationConfiguration = true
         presentOrchestrationFlow()
     }
@@ -457,6 +485,8 @@ private struct ScriptLibrarySidebar: View {
     let onReplicate: (String) -> Void
     let onSelectScript: (String) -> Void
     let selectedOrchestrationTemplateID: String?
+    let isRecallSelected: Bool
+    let onOpenRecall: () -> Void
     let isRemoteModeSelected: Bool
     let isSpeakSelected: Bool
     let onOpenRemoteMode: () -> Void
@@ -468,6 +498,19 @@ private struct ScriptLibrarySidebar: View {
     var body: some View {
         List(selection: scriptSelection) {
             Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recall.ai Bots")
+                        Text("Manage bots in your meeting")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                } icon: {
+                    Image("Recall").resizable().scaledToFit().frame(width: 16, height: 16)
+                }
+                .padding(.vertical, 3)
+                .tag("recall")
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Remote Mode")
@@ -502,6 +545,14 @@ private struct ScriptLibrarySidebar: View {
                 .disabled(isRemoteClientActive)
             }
 
+            Section("Orchestrated meeting") {
+                ForEach(OrchestratedMeetingTemplate.all) { template in
+                    OrchestratedMeetingRow(template: template)
+                        .tag(orchestrationSelectionID(for: template))
+                        .disabled(isRemoteClientActive)
+                }
+            }
+
             ForEach(model.bundledScriptGroups) { scenario in
                 Section(scenario.title) {
                     ForEach(scenario.excerpts.map(\.speechScript)) { script in
@@ -514,14 +565,6 @@ private struct ScriptLibrarySidebar: View {
                                 }
                             }
                     }
-                }
-            }
-
-            Section("Orchestrated meeting") {
-                ForEach(OrchestratedMeetingTemplate.all) { template in
-                    OrchestratedMeetingRow(template: template)
-                        .tag(orchestrationSelectionID(for: template))
-                        .disabled(isRemoteClientActive)
                 }
             }
 
@@ -580,13 +623,16 @@ private struct ScriptLibrarySidebar: View {
     private var scriptSelection: Binding<String?> {
         Binding(
             get: {
+                if isRecallSelected { return "recall" }
                 if isRemoteModeSelected { return "remote-mode" }
                 if isSpeakSelected { return "speak" }
                 return selectedOrchestrationTemplateID.map { "orchestrated:\($0)" } ?? model.selectedScriptID
             },
             set: { id in
                 guard let id else { return }
-                if id == "remote-mode" {
+                if id == "recall" {
+                    onOpenRecall()
+                } else if id == "remote-mode" {
                     onOpenRemoteMode()
                 } else if id == "speak" {
                     onOpenSpeak()

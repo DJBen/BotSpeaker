@@ -18,6 +18,9 @@ public partial class MainWindow : Window
     private bool _showOrchestrationConfiguration;
     private bool _showRemoteMode;
     private bool _showSpeak;
+    private bool _showRecall;
+    private RecallView _recallView = null!;
+    private RecallMeetingView? _recallMeetingView;
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
@@ -53,6 +56,7 @@ public partial class MainWindow : Window
         {
             _showRemoteMode = false;
             _showSpeak = false;
+            _showRecall = false;
             _showOrchestrationSession = false;
             _showOrchestrationConfiguration = false;
             UpdateAll();
@@ -61,6 +65,7 @@ public partial class MainWindow : Window
         {
             _showRemoteMode = false;
             _showSpeak = false;
+            _showRecall = false;
             _showOrchestrationSession = false;
             _showOrchestrationConfiguration = true;
             UpdateAll();
@@ -68,6 +73,9 @@ public partial class MainWindow : Window
         OrchestrationSessionHost.Content = _orchestrationView;
         _speakView = new SpeakView(model, orchestration);
         SpeakHost.Content = _speakView;
+        var recallView = _recallView = new RecallView(model);
+        recallView.SettingsRequested += (_, _) => OnSettingsClick(this, new RoutedEventArgs());
+        RecallHost.Content = recallView;
 
         Loaded += async (_, _) =>
         {
@@ -96,7 +104,7 @@ public partial class MainWindow : Window
             return;
         }
         if (_orchestration.IsActive && !_orchestration.IsHost) return;
-        if (_showSpeak || _showRemoteMode || _showOrchestrationConfiguration) return;
+        if (_showRecall || _showSpeak || _showRemoteMode || _showOrchestrationConfiguration) return;
         if (_model.IsLocalPlaybackLocked) return;
         if (!_model.SelectedScript.IsCustom) return;
         var focused = Keyboard.FocusedElement;
@@ -136,22 +144,23 @@ public partial class MainWindow : Window
                     || _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped);
             bool choosingNextHostScript = _showOrchestrationConfiguration
                 && hostCanChooseRun;
-            bool showSession = inSession && _showOrchestrationSession && !choosingNextHostScript;
+            bool showSession = !_showRecall && inSession && _showOrchestrationSession && !choosingNextHostScript;
             // Speak is unavailable to a paired attendee, who has the same box in Remote Mode.
             if (_showSpeak && inSession && !_orchestration.IsHost) _showSpeak = false;
-            bool showSpeak = _showSpeak && !showSession;
-            ComposerPanel.Visibility = _showOrchestrationConfiguration || _showRemoteMode || showSession || showSpeak
+            bool showSpeak = !_showRecall && _showSpeak && !showSession;
+            RecallHost.Visibility = _showRecall ? Visibility.Visible : Visibility.Collapsed;
+            ComposerPanel.Visibility = _showRecall || _showOrchestrationConfiguration || _showRemoteMode || showSession || showSpeak
                 ? Visibility.Collapsed
                 : Visibility.Visible;
             SpeakPanel.Visibility = showSpeak ? Visibility.Visible : Visibility.Collapsed;
             SpeakSubtitle.Text = _orchestration.IsHost
                 ? "Play ad hoc text through this PC's output or send it to a paired attendee. Scripted meeting turns always take priority."
                 : "Play ad hoc text through this PC's output, outside any script. Host a meeting to speak on paired attendees too.";
-            OrchestrationConfigurationPanel.Visibility = _showOrchestrationConfiguration && (!inSession || choosingNextHostScript) && !showSpeak
+            OrchestrationConfigurationPanel.Visibility = !_showRecall && _showOrchestrationConfiguration && (!inSession || choosingNextHostScript) && !showSpeak
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             OrchestrationSessionHost.Visibility = showSession ? Visibility.Visible : Visibility.Collapsed;
-            RemoteModePanel.Visibility = _showRemoteMode && !inSession && !showSpeak
+            RemoteModePanel.Visibility = !_showRecall && _showRemoteMode && !inSession && !showSpeak
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             RemoteSpeakerNameBox.Text = _orchestration.SpeakerName;
@@ -455,15 +464,13 @@ public partial class MainWindow : Window
     private void UpdateSidebar()
     {
         var templateItems = new List<ListBoxItem>();
-        var isFirstScenario = true;
+        templateItems.Add(BuildSidebarHeader("Orchestrated meeting", isFirstScenario: true));
+        templateItems.AddRange(OrchestratedMeetingTemplate.All.Select(BuildOrchestratedMeetingItem));
         foreach (var scenario in _model.BundledScriptGroups)
         {
-            templateItems.Add(BuildSidebarHeader(scenario.Title, isFirstScenario));
+            templateItems.Add(BuildSidebarHeader(scenario.Title, isFirstScenario: false));
             templateItems.AddRange(scenario.Excerpts.Select(e => BuildSidebarItem(e.SpeechScript, isTemplate: true)));
-            isFirstScenario = false;
         }
-        templateItems.Add(BuildSidebarHeader("Orchestrated meeting", isFirstScenario: false));
-        templateItems.AddRange(OrchestratedMeetingTemplate.All.Select(BuildOrchestratedMeetingItem));
         TemplateList.ItemsSource = templateItems;
         bool showingPage = _showSpeak || _showRemoteMode;
         bool showingMeeting = _showOrchestrationConfiguration || (_showOrchestrationSession && _orchestration.IsHost);
@@ -588,6 +595,7 @@ public partial class MainWindow : Window
                 if (template is null) return;
                 _showRemoteMode = false;
                 _showSpeak = false;
+                _showRecall = false;
                 if (_orchestration.IsHost && template.Id == _orchestration.SelectedTemplate.Id && !HostCanChooseScript)
                 {
                     // Return to the meeting that is prepared or in progress.
@@ -651,6 +659,7 @@ public partial class MainWindow : Window
         _showOrchestrationConfiguration = false;
         _showRemoteMode = false;
         _showSpeak = false;
+        _showRecall = false;
         _showOrchestrationSession = false;
     }
 
@@ -658,8 +667,26 @@ public partial class MainWindow : Window
     /// Ad hoc speech is available whenever this PC is not a paired attendee;
     /// the host keeps its meeting (prepared or running) while using it.
     /// </summary>
+    private void OnRecallMeetingClick(object sender, RoutedEventArgs e)
+    {
+        try {
+            if (_recallMeetingView == null) {
+                _recallMeetingView = new RecallMeetingView(_model, _orchestration);
+                _recallMeetingView.ChooseScriptRequested += (_, _) => {
+                    _recallMeetingView = null; RecallHost.Content = _recallView;
+                    _showRecall = false; _showOrchestrationConfiguration = true; UpdateAll();
+                };
+            }
+            OnRecallClick(sender, e);
+            RecallHost.Content = _recallMeetingView;
+        } catch (Exception error) { MessageBox.Show(this, error.Message, "Recall meeting"); }
+    }
+
+    private void OnRecallClick(object sender, RoutedEventArgs e) { RecallHost.Content = _recallView; _showRecall = true; _showSpeak = false; _showRemoteMode = false; _showOrchestrationConfiguration = false; _showOrchestrationSession = false; UpdateAll(); }
+
     private void OnSpeakClick(object sender, RoutedEventArgs e)
     {
+        _showRecall = false;
         if (_orchestration.IsActive && !_orchestration.IsHost) return;
         _showOrchestrationConfiguration = false;
         _showRemoteMode = false;
@@ -927,11 +954,7 @@ public partial class MainWindow : Window
     {
         OrchestrationTemplateTitle.Text = _orchestration.SelectedTemplate.Title;
         OrchestrationScriptPreview.Text = _orchestration.ConfiguredScriptPreview;
-        PrepareMeetingButton.Content = _orchestration.IsHost
-            ? _orchestration.SessionStatus is OrchestrationSessionStatus.Completed or OrchestrationSessionStatus.Stopped
-                ? "Use for Next Run"
-                : "Use This Script"
-            : "Host & Use This Script";
+        PrepareMeetingButton.Content = "Host this transcript";
         PrepareMeetingButton.IsEnabled = !_orchestration.IsBusy;
     }
 
@@ -1013,6 +1036,7 @@ public partial class MainWindow : Window
         {
             _showOrchestrationConfiguration = false;
             _showSpeak = false;
+            _showRecall = false;
             _showOrchestrationSession = true;
             UpdateAll();
         }
@@ -1033,6 +1057,7 @@ public partial class MainWindow : Window
         if (_orchestration.IsActive)
         {
             _showSpeak = false;
+            _showRecall = false;
             _showOrchestrationSession = true;
             UpdateAll();
         }
@@ -1065,6 +1090,7 @@ public partial class MainWindow : Window
         }
         _showOrchestrationConfiguration = false;
         _showSpeak = false;
+        _showRecall = false;
         _showRemoteMode = true;
         TemplateList.SelectedItem = null;
         CustomList.SelectedItem = null;
@@ -1090,6 +1116,7 @@ public partial class MainWindow : Window
         if (!_orchestration.IsHost) return;
         _showRemoteMode = false;
         _showSpeak = false;
+        _showRecall = false;
         _showOrchestrationConfiguration = false;
         _showOrchestrationSession = true;
         UpdateAll();
@@ -1257,6 +1284,7 @@ public partial class MainWindow : Window
         FirstRunError.Visibility = Visibility.Collapsed;
         try
         {
+            if (!string.IsNullOrWhiteSpace(FirstRunRecallKey.Password)) { await _model.Recall.HandleAsync("configure", new() { ["apiKey"] = FirstRunRecallKey.Password }); FirstRunRecallKey.Clear(); }
             await _model.ValidateAndSaveApiKeyAsync(FirstRunKeyBox.Password);
             FirstRunKeyBox.Clear();
         }

@@ -53,15 +53,22 @@ public sealed class ControlServer
     private readonly Func<Request, Task<Response>> _handler;
     private readonly Dispatcher _dispatcher;
     private readonly string _version;
+    private readonly string _discoveryFilePath;
     private TcpListener? _listener;
     private CancellationTokenSource? _lifetime;
+    private readonly DispatcherTimer _discoveryRepair = new() { Interval = TimeSpan.FromSeconds(2) };
 
-    public ControlServer(Dispatcher dispatcher, string version, Func<Request, Task<Response>> handler)
+    public ControlServer(Dispatcher dispatcher, string version, Func<Request, Task<Response>> handler, string? discoveryFilePath = null)
     {
         _dispatcher = dispatcher;
         _version = version;
         _handler = handler;
+        _discoveryFilePath = discoveryFilePath ?? DiscoveryFilePath;
         Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        _discoveryRepair.Tick += (_, _) =>
+        {
+            if (_listener is not null && !File.Exists(_discoveryFilePath)) WriteDiscoveryFile();
+        };
     }
 
     public void Start(int preferredPort)
@@ -69,16 +76,18 @@ public sealed class ControlServer
         var requested = preferredPort > 0 ? preferredPort : DefaultPort;
         if (!TryListen(requested) && !TryListen(0)) return;
         WriteDiscoveryFile();
+        _discoveryRepair.Start();
         _lifetime = new CancellationTokenSource();
         _ = AcceptLoopAsync(_listener!, _lifetime.Token);
     }
 
     public void Stop()
     {
+        _discoveryRepair.Stop();
         _lifetime?.Cancel();
         _listener?.Stop();
         _listener = null;
-        try { File.Delete(DiscoveryFilePath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try { File.Delete(_discoveryFilePath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     private bool TryListen(int port)
@@ -103,7 +112,7 @@ public sealed class ControlServer
     {
         try
         {
-            Directory.CreateDirectory(DiscoveryDirectory);
+            Directory.CreateDirectory(Path.GetDirectoryName(_discoveryFilePath)!);
             var payload = new JsonObject
             {
                 ["url"] = $"http://127.0.0.1:{Port}",
@@ -116,7 +125,9 @@ public sealed class ControlServer
                 // user keeps it.
                 ["exe"] = Environment.ProcessPath,
             };
-            File.WriteAllText(DiscoveryFilePath, payload.ToJsonString(new() { WriteIndented = true }));
+            var temporary = _discoveryFilePath + "." + Environment.ProcessId + ".tmp";
+            File.WriteAllText(temporary, payload.ToJsonString(new() { WriteIndented = true }));
+            File.Move(temporary, _discoveryFilePath, overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

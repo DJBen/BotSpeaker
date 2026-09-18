@@ -23,7 +23,11 @@ public partial class App : Application
     {
         // Installer hooks must run before any WPF, audio, or control API startup.
         // Explicit restart also prevents a second launch from interrupting a meeting.
-        Velopack.VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        Velopack.VelopackApp.Build().SetAutoApplyOnStartup(false)
+            .OnAfterInstallFastCallback(_ => CliPath.Register())
+            .OnAfterUpdateFastCallback(_ => CliPath.Register())
+            .OnBeforeUninstallFastCallback(_ => CliPath.Register(remove: true))
+            .Run();
         using var instance = SingleInstanceGuard.TryAcquire(
             Path.Combine(AppContext.BaseDirectory, "BotSpeaker.exe"));
         if (instance is null) return;

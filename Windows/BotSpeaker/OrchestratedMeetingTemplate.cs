@@ -8,7 +8,9 @@ public sealed class OrchestratedSpeakerConfiguration
 {
     public required int Slot { get; init; }
     public required string Role { get; init; }
-    public string Name { get; set; } = "";
+    private string customName = "";
+    public string CustomName => customName;
+    public string Name { get => string.IsNullOrWhiteSpace(customName) ? VoiceName.Split(" — ")[0].Split(" - ")[0].Trim() : customName; set => customName = value.Trim(); }
     public string VoiceId { get; set; } = "";
     public string VoiceName { get; set; } = "";
     public string Placeholder => $"{{{{speaker_{Slot}}}}}";

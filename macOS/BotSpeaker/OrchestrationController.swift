@@ -263,12 +263,23 @@ final class OrchestrationController {
         persistSpeakerConfigurations()
     }
 
+    func saveRecallSpeakerConfigurations(templateID: String, configurations: [OrchestratedSpeakerConfiguration]) {
+        var saved = Self.savedSpeakerConfigurations()
+        saved[templateID] = configurations.map {
+            PersistedOrchestratedSpeakerConfiguration(slot: $0.slot, name: $0.customName, voiceID: $0.voiceID, voiceName: $0.voiceName)
+        }
+        if let data = try? JSONEncoder().encode(saved) {
+            UserDefaults.standard.set(data, forKey: Self.speakerConfigurationDefaultsKey)
+        }
+        if selectedTemplate.id == templateID { speakerConfigurations = configurations }
+    }
+
     private func persistSpeakerConfigurations() {
         var saved = Self.savedSpeakerConfigurations()
         saved[selectedTemplate.id] = speakerConfigurations.map {
             PersistedOrchestratedSpeakerConfiguration(
                 slot: $0.slot,
-                name: $0.name,
+                name: $0.customName,
                 voiceID: $0.voiceID,
                 voiceName: $0.voiceName
             )

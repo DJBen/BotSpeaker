@@ -16,7 +16,7 @@ struct BotSpeakerCLI: AsyncParsableCommand {
         version: BotSpeakerCLIVersion.current,
         subcommands: [
             Speak.self, PlayAudio.self, Stop.self, Status.self, Targets.self, Voices.self, Models.self, Outputs.self,
-            Requests.self, Wait.self, Host.self, Join.self, Leave.self, Upgrade.self
+            Requests.self, Wait.self, Host.self, Join.self, Leave.self, Upgrade.self, Recall.self
         ],
         defaultSubcommand: Status.self
     )

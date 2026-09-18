@@ -78,6 +78,16 @@
                 <Border Background="#0D808080" CornerRadius="8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="6">
+                            <Button HorizontalContentAlignment="Left" Padding="8,7" Margin="0,0,0,6"
+                                    Click="OnRecallClick" ToolTip="Manage Recall.ai meeting bots">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Source="Assets/Recall.png" Width="16" Height="16" Margin="0,0,5,0"/>
+                                        <TextBlock Text="Recall.ai Bots" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Manage bots in your meeting" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Button>
                             <Button x:Name="RemoteModeButton" HorizontalContentAlignment="Left"
                                     Padding="8,7" Margin="0,0,0,6" Click="OnRemoteModeClick">
                                 <StackPanel>
@@ -246,9 +256,11 @@
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button x:Name="PrepareMeetingButton"
-                                Content="Use This Script" Padding="16,6" FontWeight="Bold"
-                                Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                                Content="Host this transcript" Padding="16,6" Margin="0,0,8,0"
                                 Click="OnOpenMeetingSetupClick"/>
+                        <Button Content="Host in Recall.ai" Padding="16,6" FontWeight="Bold"
+                                Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
+                                Click="OnRecallMeetingClick"/>
                     </StackPanel>
                     <TextBlock Text="A stable host code will be created automatically when needed."
                                FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
@@ -270,6 +282,7 @@
                 </GroupBox>
             </DockPanel>
 
+            <ContentControl x:Name="RecallHost" Grid.Column="1" Visibility="Collapsed"/>
             <!-- Durable remote pairing is a top-level sidebar destination. -->
             <StackPanel x:Name="RemoteModePanel" Grid.Column="1" Margin="24" Visibility="Collapsed">
                 <TextBlock Text="📡 Remote Mode" FontSize="20" FontWeight="Bold"/>
@@ -329,6 +342,8 @@
                 <TextBlock Text="Stored encrypted with Windows DPAPI for your user account."
                            FontSize="11" Foreground="Gray" Margin="0,0,0,14"/>
 
+                <TextBlock Text="Recall API key (optional)" FontWeight="Bold"/>
+                <PasswordBox x:Name="FirstRunRecallKey" Margin="0,6,0,14"/>
                 <TextBlock Text="2. Virtual audio cable" FontWeight="Bold"/>
                 <TextBlock x:Name="CableStatus" Margin="0,6,0,2" FontSize="12"/>
                 <TextBlock x:Name="CableHelp" FontSize="11" Foreground="Gray" TextWrapping="Wrap"

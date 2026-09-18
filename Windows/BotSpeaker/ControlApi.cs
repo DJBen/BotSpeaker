@@ -48,6 +48,8 @@ public sealed class ControlApi
         var route = segments[1..];
         try
         {
+            if (route.Length == 2 && route[0] == "recall" && request.Method == "POST")
+                return ControlServer.Response.Ok(await _model.Recall.HandleAsync(route[1], request.Json() ?? new()));
             switch (request.Method, route)
             {
                 case ("GET", ["status"]):

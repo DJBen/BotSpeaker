@@ -4,6 +4,7 @@ import SwiftUI
 struct FirstRunView: View {
     let model: AppModel
     @State private var key = ""
+    @State private var recallKey = ""
     @State private var isSaving = false
     @State private var error: String?
 
@@ -31,6 +32,10 @@ struct FirstRunView: View {
                 BlackHoleStatusView(model: model)
             }
 
+            SecureField("Recall API key (optional)", text: $recallKey)
+                .textFieldStyle(.roundedBorder)
+            Text("Skip to configure Recall later, or use RECALL_API_KEY.").font(.caption).foregroundStyle(.secondary)
+
             if let error {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
@@ -42,7 +47,13 @@ struct FirstRunView: View {
                     isSaving = true
                     error = nil
                     Task {
-                        do { try await model.validateAndSaveAPIKey(key) }
+                        do {
+                            if !recallKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                _ = try await model.recall.handle("configure", ["apiKey": recallKey], model: model)
+                                recallKey = ""
+                            }
+                            try await model.validateAndSaveAPIKey(key)
+                        }
                         catch { self.error = error.localizedDescription }
                         isSaving = false
                     }

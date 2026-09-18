@@ -3,7 +3,9 @@ import Security
 
 struct KeychainStore {
     private let service = "com.botspeaker.app"
-    private let account = "elevenlabs-api-key"
+    private let account: String
+
+    init(account: String = "elevenlabs-api-key") { self.account = account }
 
     func save(_ value: String) throws {
         let data = Data(value.utf8)

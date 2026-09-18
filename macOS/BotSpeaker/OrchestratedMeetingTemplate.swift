@@ -135,9 +135,18 @@ struct OrchestratedScriptTurn: Hashable {
 struct OrchestratedSpeakerConfiguration: Identifiable, Hashable {
     let slot: Int
     let role: String
-    var name: String
+    private(set) var customName: String
+    var name: String {
+        get { customName.isEmpty ? voiceName.components(separatedBy: " — ")[0].components(separatedBy: " - ")[0].trimmingCharacters(in: .whitespacesAndNewlines) : customName }
+        set { customName = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
     var voiceID: String
     var voiceName: String
+
+    init(slot: Int, role: String, name: String, voiceID: String, voiceName: String) {
+        self.slot = slot; self.role = role; self.customName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.voiceID = voiceID; self.voiceName = voiceName
+    }
 
     var id: Int { slot }
     var placeholder: String { "{{speaker_\(slot)}}" }

@@ -11,7 +11,7 @@ using BotSpeaker.Cli;
 try { Console.OutputEncoding = Encoding.UTF8; } catch (IOException) { }
 return await Cli.RunAsync(args);
 
-static class Cli
+static partial class Cli
 {
     /// <summary>The command name as installed (botspeaker-cli.exe on Windows), for help text and hints.</summary>
     public static readonly string Name = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "botspeaker-cli");
@@ -44,6 +44,8 @@ static class Cli
         {
             return command switch
             {
+                "upgrade" or "self-update" => await UpgradeAsync(parsed),
+                "recall" => await RecallAsync(parsed),
                 "speak" => await SpeakAsync(parsed),
                 "play-audio" or "play" => await PlayAudioAsync(parsed),
                 "stop" => await StopAsync(parsed),
@@ -75,6 +77,14 @@ static class Cli
     {
         Console.Error.WriteLine($"error: unknown command \"{command}\". Run `{Name} --help`.");
         return 2;
+    }
+
+    private static async Task<int> UpgradeAsync(Args args)
+    {
+        if (args.Positional.Count != 0) throw new UsageException("upgrade accepts --check and --json.");
+        var result = await CliUpgrade.RunAsync(args.Flag("check"));
+        if (args.Json) Output.Json(result); else Console.WriteLine(result["message"]!.GetValue<string>());
+        return 0;
     }
 
     // speak
@@ -394,6 +404,7 @@ static class Cli
     {
         var help = command switch
         {
+            "upgrade" or "self-update" => $"USAGE: {Name} upgrade [--check] [--json]\nCheck the latest release or update this standalone CLI. Installer-managed CLIs update with the app from its tray menu.",
             "speak" => $"""
                 USAGE: {Name} speak [--target NAME] [--voice NAME] [--wait] [--timeout SECONDS] [--file PATH|-] [--loop | --repeat N] [--json] [--] [TEXT ...]
 
@@ -407,6 +418,7 @@ static class Cli
                   -r, --repeat N       play N times
                       --json           machine-readable output
                 """,
+            "recall" => RecallHelp,
             "play-audio" or "play" => $"""
                 USAGE: {Name} play-audio [--wait] [--timeout SECONDS] [--loop | --repeat N] [--json] FILE
 
@@ -420,6 +432,8 @@ static class Cli
                 USAGE: {Name} <command> [options]
 
                 COMMANDS
+                  upgrade [--check]            check for a release or self-update the standalone CLI
+                  recall                       Recall bot control (recall --help)
                   status                       app, output, voice, session, active speech (default)
                   speak [options] TEXT         speak text on this PC or on a paired attendee
                   play-audio [options] FILE    play a recorded audio file on this PC
@@ -448,7 +462,7 @@ sealed class UsageException(string message) : Exception(message);
 /// <summary>Minimal option parser: --name value, --name=value, -n value, boolean flags, and "--" to end options.</summary>
 sealed class Args(List<string> positional, Dictionary<string, string?> options)
 {
-    private static readonly HashSet<string> BooleanFlags = ["json", "wait", "w", "loop", "l", "refresh", "help", "h"];
+    private static readonly HashSet<string> BooleanFlags = ["json", "wait", "w", "loop", "l", "refresh", "help", "h", "key-stdin", "check"];
 
     public List<string> Positional { get; } = positional;
     private Dictionary<string, string?> Options { get; } = options;

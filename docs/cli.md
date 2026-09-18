@@ -213,6 +213,35 @@ from PowerShell:
 irm https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.ps1 | iex
 ```
 
+The Windows app installer adds its bundled CLI directory to the front of your
+user PATH, keeps it there during updates, and removes that entry on uninstall.
+Open a new terminal after installation. The PowerShell CLI installer also
+updates the current terminal's PATH and prefers the installed app's bundled
+CLI, so app updates keep both versions together. Older copies are left in
+place; `Get-Command botspeaker-cli -All` lists them. A machine-level PATH entry
+can still take precedence over user PATH in a new terminal.
+
+```powershell
+botspeaker-cli --version
+botspeaker-cli upgrade --check --json  # latest release, running version, executable path
+botspeaker-cli upgrade                # self-update a standalone published CLI
+```
+
+Standalone upgrades verify the release ZIP's SHA-256 checksum and launch a
+hidden worker that replaces the invoked executable after the command exits.
+They retain a `.previous` backup and write success or failure to
+`botspeaker-cli.exe.update.log` beside the CLI; `--version` verifies the result.
+Installer-managed CLIs
+update with the app: `upgrade` explains how to use **Check for Updates** and
+**Restart to update** from the tray menu. Checks require access to GitHub;
+normal playback commands do not query GitHub. A newer running app also produces
+an upgrade hint on stderr, including the CLI's path to help find stale copies.
+
+If the running Windows app's discovery file is deleted, it recreates it within
+two seconds, keeping the same port and token. The CLI briefly waits for this
+repair before attempting to launch the app. Discovery failures include the
+searched paths and recovery steps.
+
 Differences from the Mac:
 
 - The command is `botspeaker-cli`, not `botspeaker`: on Windows the app is
@@ -228,8 +257,8 @@ Differences from the Mac:
   (remembered in `%APPDATA%\BotSpeaker\cli.json`), a `BotSpeaker.exe` beside
   the CLI, `%LOCALAPPDATA%\Programs\BotSpeaker`, or the Desktop, in that
   order.
-- There is no `upgrade` subcommand; rerun the install line instead. The app
-  prints a `note:` when it is newer than the CLI.
+- `upgrade` (also `self-update`) supports `--check` and `--json`; it updates
+  standalone release binaries, while installer-managed CLIs update with the app.
 - `play-audio` also accepts `.wma`; `.caf` is Mac-only. Local targets are
   reported as "This PC".
 - A Windows attendee sees host requests on its next poll, about 1.5 seconds
@@ -240,3 +269,9 @@ Differences from the Mac:
 `cli/skills/botspeaker/SKILL.md` is a drop-in skill for Claude Code and similar
 agents. Copy or symlink it into the agent's skills directory
 (for Claude Code: `~/.claude/skills/botspeaker/SKILL.md`).
+
+## Recall meeting bots
+
+Use `botspeaker recall` (`botspeaker-cli recall` on Windows) to configure Recall,
+list/add/remove bots, schedule ElevenLabs speech, repeat/loop, and cancel jobs.
+See [Recall control](recall.md) for setup, commands, scheduling semantics, and limits.

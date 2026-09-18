@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <Compile Include="../BotSpeakerCli/CliUpgrade.cs" Link="CliUpgrade.cs" />
+    <Compile Include="../BotSpeakerCli/ControlClient.cs" Link="ControlClient.cs" />
+    <Compile Include="../BotSpeaker/CliPath.cs" Link="CliPath.cs" />
+    <Compile Include="../BotSpeaker/ControlServer.cs" Link="ControlServer.cs" />
+  </ItemGroup>
+</Project>

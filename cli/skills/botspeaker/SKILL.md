@@ -78,3 +78,24 @@ botspeaker stop                        # cancel everything queued or playing
 - Keep each request to what one person would say in one go; queue several requests for a dialogue.
 - A scripted meeting turn preempts ad hoc speech; if a request ends `cancelled` with a "meeting turn" error, wait and retry.
 - Add `--json` after the subcommand when you need to parse the output. `speak --json` returns `{"ok": true, "request": {"id": ..., "status": ...}}`; `requests --json` returns `{"ok": true, "requests": [...]}`.
+
+## Recall meeting bots
+
+Use `botspeaker recall status --json` for local configuration/jobs and
+`botspeaker recall list --json` for bot IDs and remote status. The Recall Bot GUI
+is before Remote Mode. Configure with `botspeaker recall configure`; it uses
+`RECALL_API_KEY` or `RECALL_AI_API_KEY`, otherwise a hidden prompt. Never put a key
+in chat or a command argument. Settings retains key/region editing when setup is hidden.
+
+- `recall add MEETING_URL --name NAME` joins a bot; lobby admission may be required.
+- `recall remove BOT_ID` leaves the call and cancels local pending jobs.
+- `recall speak BOT_ID TEXT --at now|+SECONDS|ISO8601` prepares ElevenLabs audio then dispatches it.
+- `--voice ID`, `--file PATH`, `--loop` or `--repeat N`, and `--interval SECONDS` are available.
+- `recall cancel JOB_ID` prevents future dispatches; accepted audio cannot be retracted.
+
+Keep the app running and awake. Jobs are not persisted across restarts. Short clips
+only (roughly 85 seconds). Schedule separate bots with gaps for turn-taking.
+`finished_dispatching` is not proof of audible playback; Recall has playback latency
+and this clip API provides no completion acknowledgement. Do not report speech as
+heard without independent evidence. Do not automatically retry uncertain add/speak
+mutations. The local `stop` and `wait` commands do not control Recall jobs.

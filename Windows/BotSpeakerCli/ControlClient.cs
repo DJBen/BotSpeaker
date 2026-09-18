@@ -149,6 +149,25 @@ public sealed class ControlClient
         bool mayLaunch = string.IsNullOrEmpty(noLaunch) || noLaunch == "0";
         if (found.Client is null && mayLaunch)
         {
+            // A live app repairs missing discovery within two seconds. Give it
+            // that opportunity even when we do not yet know its executable path.
+            var processes = Process.GetProcessesByName("BotSpeaker");
+            var hasApp = processes.Length > 0;
+            foreach (var process in processes) process.Dispose();
+            if (hasApp)
+            {
+                var repairDeadline = DateTime.UtcNow.AddSeconds(3);
+                while (found.Client is null && DateTime.UtcNow < repairDeadline)
+                {
+                    await Task.Delay(250);
+                    found = FindRunning();
+                }
+            }
+            if (found.Client is not null)
+            {
+                found.Client.WarnIfAppIsNewer();
+                return found.Client;
+            }
             LaunchApp();
             var deadline = DateTime.UtcNow + LaunchTimeout;
             while (found.Client is null && DateTime.UtcNow < deadline)
@@ -160,7 +179,10 @@ public sealed class ControlClient
             {
                 throw new Failure(2, "app_unreachable",
                     $"Launched BotSpeaker but it did not publish a control file within {(int)LaunchTimeout.TotalSeconds} seconds. "
-                    + "Check that the installed app is 0.4.1 or newer (a build that has the control API), or point BOTSPEAKER_APP at the right BotSpeaker.exe.");
+                    + $"Looked in: {string.Join(", ", DiscoveryCandidates)}. "
+                    + "If BotSpeaker is already running, its discovery file may be missing or unwritable. "
+                    + "End playback/meetings, quit it from the tray, and reopen it. "
+                    + "Otherwise set BOTSPEAKER_APP to the installed BotSpeaker.exe.");
             }
         }
         if (found.Client is ControlClient client)
@@ -228,7 +250,7 @@ public sealed class ControlClient
         if (Found is null || Environment.GetEnvironmentVariable("BOTSPEAKER_NO_UPGRADE_HINT") is not null) return;
         if (Version.TryParse(Found.Version, out var app) && Version.TryParse(CliVersion.Current, out var cli) && cli < app)
         {
-            Console.Error.WriteLine($"note: BotSpeaker app is {Found.Version} but this CLI is {CliVersion.Current}. Rebuild or reinstall the CLI from the matching release.");
+            Console.Error.WriteLine($"note: BotSpeaker app is {Found.Version} but this CLI is {CliVersion.Current} ({Environment.ProcessPath}). Run `botspeaker-cli upgrade`. Use `Get-Command botspeaker-cli -All` to find older copies on PATH.");
         }
     }
 

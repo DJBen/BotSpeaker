@@ -40,6 +40,8 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Recall") { RecallConfigurationView(model: model) }
+
             Section("Audio routing") {
                 Picker("Output device", selection: $model.selectedDeviceUID) {
                     Text("Choose an output…").tag("")

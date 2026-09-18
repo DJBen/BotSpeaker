@@ -4,6 +4,8 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    let recall = RecallController()
+    let recallMeeting = RecallMeetingPlan()
     private(set) var text = ExampleExcerpt.launchRetroProductManager.text
     private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id
     private(set) var customScripts: [CustomSpeechScript] = []
