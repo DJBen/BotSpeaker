@@ -89,6 +89,26 @@ internal static class Program
         speaker.Name = " ";
         Check(speaker.Name == "Brian" && speaker.CustomName == "", "clearing custom name restores the selected voice default");
 
+        var preparedHttp = new FakeHttp();
+        var preparedController = new RecallController(new AppModel(), new HttpClient(preparedHttp));
+        JsonObject PreparedJob(string id) => preparedController.Status()["jobs"]!.AsArray().Single(j => j!["id"]!.GetValue<string>() == id)!.AsObject();
+        await Reject(() => preparedController.HandleAsync("prepare", Speech("ambiguous timing", "+60")), "held preparation rejects a misleading playback timestamp");
+        var readyId = Id(await preparedController.HandleAsync("prepare", new() { ["botId"] = bot, ["text"] = "slow-preloaded" }));
+        await Until(() => PreparedJob(readyId)["status"]!.GetValue<string>() == "prepared");
+        Check(preparedHttp.Sent.Count == 0, "preparing audio never starts remote playback");
+        var heldId = Id(await preparedController.HandleAsync("prepare", new() { ["botId"] = bot, ["text"] = "held" }));
+        await Until(() => PreparedJob(heldId)["status"]!.GetValue<string>() == "prepared");
+        var dispatchClock = System.Diagnostics.Stopwatch.StartNew();
+        await preparedController.HandleAsync("dispatch", new() { ["id"] = readyId });
+        await Until(() => PreparedJob(readyId)["status"]!.GetValue<string>() == "finished_dispatching");
+        Check(dispatchClock.Elapsed < TimeSpan.FromSeconds(1), "prepared zero-duration test clip has no two-second guard");
+        Check(preparedHttp.Sent.SequenceEqual(new[] { "slow-preloaded" }), "only explicitly dispatched prepared clip plays");
+        Check(PreparedJob(readyId)["acceptedAt"] != null && PreparedJob(readyId)["estimatedEndAt"] != null,
+            "dispatch timing is reported as acceptance and estimated end");
+        await preparedController.HandleAsync("cancel", new() { ["id"] = heldId });
+        await Until(() => PreparedJob(heldId)["status"]!.GetValue<string>() == "cancelled");
+        await Reject(() => preparedController.HandleAsync("dispatch", new() { ["id"] = heldId }), "cancelled prepared clip cannot dispatch");
+
         var sentTurns = new List<string>();
         var polls = 0;
         var currentJob = "";
@@ -96,14 +116,21 @@ internal static class Program
         var cancellationSent = false;
         using var stopRun = new CancellationTokenSource();
         var cancelOnPoll = false;
+        var preparedTurns = new Dictionary<string, JsonObject>();
         Task<JsonObject> MeetingRequest(string action, JsonObject body) {
-            if (action == "speak") {
+            if (action == "prepare") {
+                var preparedId = Guid.NewGuid().ToString(); preparedTurns[preparedId] = body;
+                return Task.FromResult(new JsonObject { ["job"] = new JsonObject { ["id"] = preparedId } });
+            }
+            if (action == "dispatch") {
+                Check(preparedTurns.Count >= 2, "all turns prepared before dispatch");
                 Check(currentJob.Length == 0, "next speaker waits for prior clip completion");
-                currentJob = Guid.NewGuid().ToString(); polls = 0;
-                sentTurns.Add(body["botId"]!.GetValue<string>());
+                currentJob = body["id"]!.GetValue<string>(); polls = 0;
+                sentTurns.Add(preparedTurns[currentJob]["botId"]!.GetValue<string>());
                 return Task.FromResult(new JsonObject { ["job"] = new JsonObject { ["id"] = currentJob } });
             }
             if (action == "cancel") { currentJob = ""; cancellationSent = true; return Task.FromResult(new JsonObject()); }
+            if (currentJob.Length == 0) return Task.FromResult(new JsonObject { ["jobs"] = new JsonArray(preparedTurns.Keys.Select(id => (JsonNode)new JsonObject { ["id"] = id, ["status"] = "prepared" }).ToArray()) });
             var id = currentJob;
             var state = fail ? "failed" : ++polls >= 3 ? "finished_dispatching" : "dispatched";
             if (state == "finished_dispatching") currentJob = "";
@@ -127,6 +154,25 @@ internal static class Program
         currentJob = ""; sentTurns.Clear(); fail = false; cancelOnPoll = true;
         try { await RecallTurnRunner.RunAsync(plan, MeetingRequest, _ => {}, stopRun.Token); throw new Exception("Expected cancellation"); }
         catch (OperationCanceledException) { Check(cancellationSent && sentTurns.Count == 1, "stopping cancels active speech and prevents later turns"); }
+
+        var preparingIds = new List<string>();
+        var cleanedIds = new List<string>();
+        var preparationDispatches = 0;
+        Task<JsonObject> FailedPreparation(string action, JsonObject body) {
+            if (action == "prepare") {
+                var id = Guid.NewGuid().ToString(); preparingIds.Add(id);
+                return Task.FromResult(new JsonObject { ["job"] = new JsonObject { ["id"] = id } });
+            }
+            if (action == "cancel") { cleanedIds.Add(body["id"]!.GetValue<string>()); return Task.FromResult(new JsonObject()); }
+            if (action == "dispatch") preparationDispatches++;
+            return Task.FromResult(new JsonObject { ["jobs"] = new JsonArray(preparingIds.Select((id, index) => (JsonNode)new JsonObject {
+                ["id"] = id, ["status"] = index == 0 ? "prepared" : "failed", ["error"] = "Synthesis failed"
+            }).ToArray()) });
+        }
+        try { await RecallTurnRunner.RunAsync(plan, FailedPreparation, _ => {}, default); throw new Exception("Expected preparation failure"); }
+        catch (InvalidOperationException) {
+            Check(preparationDispatches == 0 && cleanedIds.SequenceEqual(preparingIds), "preparation failure cancels every held job without partial playback");
+        }
 
     }
 }

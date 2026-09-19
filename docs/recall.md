@@ -1,5 +1,23 @@
 # Recall bot control
 
+### Timing on Windows
+
+Meeting playback keeps each speaker as a separate bot. Preparing the complete
+script first removes synthesis delays between turns; a failed preparation stops
+the run before any speech is dispatched. Stop cancels both active and prepared
+jobs. This improves pacing but does not guarantee gapless audible transitions:
+Recall's Output Audio endpoint has no documented future playback timestamp,
+and API acceptance is not a playback-start acknowledgment.
+
+For API clients, `POST /v1/recall/prepare` accepts the same speech fields as
+`speak` except `at`, returning a job that becomes `prepared` without playing. Call
+`POST /v1/recall/dispatch` with its `id` to release it, or `cancel` to discard it.
+Prepared jobs use clip duration plus any requested `interval`, without the
+standalone command's two-second guard. Job status includes `durationSeconds`,
+`dispatchStartedAt`, `acceptedAt`, and `estimatedEndAt`; these describe local
+dispatch and estimates, not measured audio in the meeting. These actions are
+currently Windows-only.
+
 Use `botspeaker-cli recall` on Windows or `botspeaker recall` on macOS. The CLI
 talks to the local app, which owns bot requests and speech schedules. The Recall
 Bot sidebar entry appears before Remote Mode; the same controls are available
@@ -130,7 +148,7 @@ ordering, repeats, cancellation, removal, and error handling.
 
 Choose **Host in Recall.ai** beside **Host this transcript** on an orchestrated script. The flow remembers the meeting link, then offers one bot per configured speaker. Set names and voices before adding bots; each bot joins with that speaker's name. Remove and re-add a bot to change its meeting display name. Bot status refreshes every ten seconds while the setup is visible.
 
-Choose **Arrange turns** to add any missing speaker bots automatically and open the turn preview. Existing bots are reused; if an addition fails, successful additions are retained for retry. The preview shows each bot status and lets you edit speech, assign speakers, reorder, add, or remove turns. **Start meeting** requires all bots to be in `in_call_recording`. Turns dispatch sequentially, advancing after the previous clip's measured duration plus a two-second pause. This is estimated playback pacing, not a remote playback acknowledgment. There is no schedule/repeat UI in this flow. A failed turn stops subsequent turns. **Stop meeting** cancels the current local speech job and remaining turns; audio already sent may finish. Bots stay in the call until removed from **Back to bots**.
+Choose **Arrange turns** to add any missing speaker bots automatically and open the turn preview. Existing bots are reused; if an addition fails, successful additions are retained for retry. The preview shows each bot status and lets you edit speech, assign speakers, reorder, add, or remove turns. **Start meeting** requires all bots to be in `in_call_recording`. On Windows, all turn audio is synthesized and loaded before the first dispatch. Turns then advance after the previous clip's measured duration, with no added two-second pause and no synthesis between speakers. The preparation screen remains cancellable. The macOS flow still uses the previous duration-plus-two-second pacing. This is estimated playback pacing, not a remote playback acknowledgment. There is no schedule/repeat UI in this flow. A failed turn stops subsequent turns. **Stop meeting** cancels the current local speech job and remaining turns; audio already sent may finish. Bots stay in the call until removed from **Back to bots**.
 
 Navigation preserves the current plan and active run for this app session. Return via **Host in Recall.ai** on an orchestrated script. To choose a different script or meeting, remove the speaker bots, choose **Change meeting**, then **Back to scripts** (Back on macOS). Plans and active speech do not survive app shutdown.
 

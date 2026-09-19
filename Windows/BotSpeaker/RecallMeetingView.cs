@@ -151,7 +151,7 @@ public sealed class RecallMeetingView : UserControl
             })); body.Children.Add(footer);
             return;
         }
-        body.Children.Add(new TextBlock { Text = "Turns play in order. Timing uses clip duration plus a short pause; Recall does not confirm when playback ends.", TextWrapping = TextWrapping.Wrap });
+        body.Children.Add(new TextBlock { Text = "All speech is prepared before playback. Turns then run with no added pause. Separate bots may still have small gaps or overlap because Recall does not confirm playback timing.", TextWrapping = TextWrapping.Wrap });
         for (int i = 0; i < speakers.Count; i++) {
             var status = new TextBlock { Text = speakers[i].Name + ": " + speakers[i].Status, Margin = new(0,2,0,2) };
             statuses[i] = status; body.Children.Add(status);
@@ -205,6 +205,7 @@ public sealed class RecallMeetingView : UserControl
         var stop = new Button { Content = "Stop meeting", Padding = new(12,5,12,5), HorizontalAlignment = HorizontalAlignment.Left };
         bool skipRequested = false;
         var skip = new Button { Content = "Skip turn", Padding = new(12,5,12,5), Margin = new(0,0,8,0) };
+        skip.IsEnabled = false;
         skip.Click += (_, _) => { skipRequested = true; skip.IsEnabled = false; };
         stop.Click += (_, _) => { run?.Cancel(); stop.IsEnabled = false; skip.IsEnabled = false; };
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
@@ -215,7 +216,9 @@ public sealed class RecallMeetingView : UserControl
             await RecallTurnRunner.RunAsync(plan, model.Recall.HandleAsync, index => {
                 skipRequested = false; skip.IsEnabled = true;
                 message.Text = $"Turn {index+1} of {plan.Length} · {speakers[turns[index].SpeakerIndex].Name}\n\n{plan[index].Text}";
-            }, run.Token, () => skipRequested);
+            }, run.Token, () => skipRequested, index => {
+                message.Text = $"Preparing speech {index+1} of {plan.Length} before playback…";
+            });
             message.Text = "All turns dispatched. Bots remain in the meeting; use Back to bots to remove them.";
         }
         catch (OperationCanceledException) { message.Text = "Stopped. Audio already sent may finish playing. Bots remain available in Back to bots."; }

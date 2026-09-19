@@ -15,6 +15,7 @@ public sealed class RecallController
     private readonly HttpClient http;
     private readonly Dictionary<string, (JsonObject State, CancellationTokenSource Cancel)> jobs = [];
     private readonly Dictionary<string, SemaphoreSlim> botLocks = [];
+    private readonly Dictionary<string, TaskCompletionSource> preparedStarts = [];
     private readonly Dictionary<string, string> knownMeetingUrls = [];
     public static readonly string[] Regions = ["us-east-1", "us-west-2", "eu-central-1", "ap-northeast-1"];
     private string RegionPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BotSpeaker", "recall-region.txt");
@@ -104,12 +105,25 @@ public sealed class RecallController
                 pending.Cancel.Cancel();
                 return Status();
             case "speak": return Schedule(body);
+            case "prepare": return Schedule(body, prepareOnly: true);
+            case "dispatch":
+                var preparedId = Required(body, "id");
+                if (!jobs.TryGetValue(preparedId, out var prepared) || prepared.Cancel.IsCancellationRequested
+                    || prepared.State["status"]?.GetValue<string>() != "prepared"
+                    || !preparedStarts.TryGetValue(preparedId, out var start))
+                    throw new AppException("Speech is not ready to dispatch.");
+                prepared.State["status"] = "queued";
+                prepared.State["held"] = false;
+                start.TrySetResult();
+                return new JsonObject { ["ok"] = true, ["job"] = prepared.State.DeepClone() };
             default: throw new AppException("Unknown Recall action.");
         }
     }
-    private JsonObject Schedule(JsonObject body)
+    private JsonObject Schedule(JsonObject body, bool prepareOnly = false)
     {
         if (!Configured) throw new AppException("Configure Recall first.");
+        if (prepareOnly && body["at"] is not null)
+            throw new AppException("Prepared speech is held until dispatch; omit at.");
         var botId = BotId(body);
         var text = Required(body, "text");
         var at = ParseTime(body["at"]?.GetValue<string>() ?? "now");
@@ -121,7 +135,15 @@ public sealed class RecallController
         var state = new JsonObject { ["id"] = id, ["botId"] = botId, ["text"] = text, ["at"] = at.ToString("O"), ["status"] = "preparing", ["sequence"] = jobs.Count, ["dispatched"] = 0, ["loop"] = loop };
         var cancel = new CancellationTokenSource();
         jobs.Add(id, (state, cancel));
-        _ = RunAsync(state, cancel.Token, body["voice"]?.GetValue<string>() ?? model.VoiceId, loop ? null : repeat, interval, at, Key!, Region);
+        Task? start = null;
+        if (prepareOnly)
+        {
+            var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            preparedStarts.Add(id, signal);
+            start = signal.Task;
+            state["held"] = true;
+        }
+        _ = RunAsync(state, cancel.Token, body["voice"]?.GetValue<string>() ?? model.VoiceId, loop ? null : repeat, interval, at, Key!, Region, start);
         return new JsonObject { ["ok"] = true, ["job"] = state.DeepClone() };
     }
     public static DateTimeOffset ParseTime(string value)
@@ -132,7 +154,7 @@ public sealed class RecallController
         if ((value.EndsWith('Z') || System.Text.RegularExpressions.Regex.IsMatch(value, @"[+-]\d{2}:\d{2}$")) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) && date > now && date < now.AddDays(30)) return date;
         throw new AppException("Use now, +SECONDS, or a future ISO 8601 timestamp with timezone (within 30 days).");
     }
-    private async Task RunAsync(JsonObject state, CancellationToken token, string voice, int? repeat, double gap, DateTimeOffset at, string recallKey, string recallRegion)
+    private async Task RunAsync(JsonObject state, CancellationToken token, string voice, int? repeat, double gap, DateTimeOffset at, string recallKey, string recallRegion, Task? start)
     {
         SemaphoreSlim? gate = null;
         bool acquired = false;
@@ -144,6 +166,14 @@ public sealed class RecallController
             if (data.Length > 1835008) throw new AppException("Recall clips must be shorter than about 85 seconds. Split this speech into shorter jobs.");
             double duration;
             using (var reader = new NAudio.Wave.Mp3FileReader(clip.AudioPath)) duration = reader.TotalTime.TotalSeconds;
+            state["durationSeconds"] = duration;
+            if (start is not null)
+            {
+                state["status"] = "prepared";
+                await start.WaitAsync(token);
+                at = DateTimeOffset.UtcNow;
+                state["at"] = at.ToString("O");
+            }
             state["status"] = "scheduled";
             if (at > DateTimeOffset.UtcNow) await Task.Delay(at - DateTimeOffset.UtcNow, token);
             var bot = state["botId"]!.GetValue<string>();
@@ -151,6 +181,7 @@ public sealed class RecallController
             state["status"] = "queued";
             // Preserve due-time order even when a later job finishes synthesis first.
             while (jobs.Values.Any(j => j.State != state && j.State["botId"]!.GetValue<string>() == bot
+                && j.State["held"]?.GetValue<bool>() != true
                 && !new[] { "failed", "cancelled", "finished_dispatching" }.Contains(j.State["status"]!.GetValue<string>())
                 && (DateTimeOffset.Parse(j.State["at"]!.GetValue<string>(), CultureInfo.InvariantCulture) < at
                     || (DateTimeOffset.Parse(j.State["at"]!.GetValue<string>(), CultureInfo.InvariantCulture) == at && j.State["sequence"]!.GetValue<int>() < state["sequence"]!.GetValue<int>()))))
@@ -160,16 +191,27 @@ public sealed class RecallController
             {
                 token.ThrowIfCancellationRequested();
                 state["status"] = "dispatching";
+                state["dispatchStartedAt"] = DateTimeOffset.UtcNow.ToString("O");
                 await SendAsync("POST", $"bot/{bot}/output_audio/", new JsonObject { ["kind"] = "mp3", ["b64_data"] = data }, token, recallKey, recallRegion);
+                var accepted = DateTimeOffset.UtcNow;
+                state["acceptedAt"] = accepted.ToString("O");
+                // Prepared meeting turns have no artificial pause. Keep the
+                // conservative guard for standalone clip/repeat requests.
+                var waitSeconds = duration + (start is null ? 2 : 0) + gap;
+                state["estimatedEndAt"] = accepted.AddSeconds(waitSeconds).ToString("O");
                 state["dispatched"] = pass + 1;
                 state["status"] = "dispatched";
-                await Task.Delay(TimeSpan.FromSeconds(duration + 2 + gap), token);
+                await Task.Delay(TimeSpan.FromSeconds(waitSeconds), token);
             }
             state["status"] = "finished_dispatching";
         }
         catch (OperationCanceledException) { state["status"] = "cancelled"; }
         catch (Exception error) { state["status"] = "failed"; state["error"] = error.Message; }
-        finally { if (acquired) gate!.Release(); }
+        finally
+        {
+            preparedStarts.Remove(state["id"]!.GetValue<string>());
+            if (acquired) gate!.Release();
+        }
     }
     internal static string? JoinUrl(JsonNode? value)
     {
