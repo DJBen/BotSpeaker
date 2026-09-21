@@ -342,8 +342,16 @@
                 <TextBlock Text="Stored encrypted with Windows DPAPI for your user account."
                            FontSize="11" Foreground="Gray" Margin="0,0,0,14"/>
 
-                <TextBlock Text="Recall API key (optional)" FontWeight="Bold"/>
-                <PasswordBox x:Name="FirstRunRecallKey" Margin="0,6,0,14"/>
+                <TextBlock Text="Recall API key" FontWeight="Bold"/>
+                <Grid Margin="0,6,0,14">
+                    <PasswordBox x:Name="FirstRunRecallKey" AutomationProperties.Name="Recall API key"/>
+                    <DockPanel x:Name="FirstRunRecallConfigured" Visibility="Collapsed">
+                        <Button Content="Change" DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
+                                Click="OnChangeFirstRunRecallKeyClick"/>
+                        <TextBox Text="••••••••••••" IsReadOnly="True" IsTabStop="False" Padding="4"
+                                 AutomationProperties.Name="Recall API key already configured"/>
+                    </DockPanel>
+                </Grid>
                 <TextBlock Text="2. Virtual audio cable" FontWeight="Bold"/>
                 <TextBlock x:Name="CableStatus" Margin="0,6,0,2" FontSize="12"/>
                 <TextBlock x:Name="CableHelp" FontSize="11" Foreground="Gray" TextWrapping="Wrap"

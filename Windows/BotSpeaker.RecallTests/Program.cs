@@ -43,9 +43,44 @@ internal static class Program
         handler.HostileNext = true;
         await Reject(() => controller.HandleAsync("list", new()), "foreign pagination host rejected before credentials leave Recall");
         handler.HostileNext = false;
+        var invite = "https://teams.microsoft.com/meet/9396832529251?p=test%20pass%26code";
+        Check(await controller.ResolveMeetingUrlAsync("  " + invite + "  ") == invite, "setup preserves the full Teams invite and encoded passcode");
+        await Reject(() => controller.ResolveMeetingUrlAsync("939 683 252 925 1"), "setup rejects the reported unknown Teams ID before showing bot controls");
+        await Reject(() => controller.ResolveMeetingUrlAsync(" "), "setup rejects an empty meeting");
+        await Reject(() => controller.ResolveMeetingUrlAsync("http://teams.microsoft.com/meet/9396832529251"), "setup rejects insecure invite URLs");
+        Check(handler.Created == null, "checking join details does not create a bot");
+        const string pastedInvitation = """
+
+                Microsoft Teams meeting
+
+                  Join on your computer, mobile app or room device
+                Click here to join the meeting
+
+                    Meeting ID: 123 456 789 012 3
+
+                    Passcode:   Ab73XY
+
+                Download Teams | Join on the web
+
+                Learn More  | Meeting options
+
+            """;
+        var parsedInvitation = RecallController.ParseMeetingInput(pastedInvitation);
+        Check(parsedInvitation == ("1234567890123", "Ab73XY"), "clipboard invitation extracts ID and case-sensitive passcode without surrounding text");
+        Check(await controller.ResolveMeetingUrlAsync(pastedInvitation) == "https://teams.microsoft.com/meet/1234567890123?p=Ab73XY", "full pasted invitation resolves without saved meeting history");
+        Check(await controller.ResolveMeetingUrlAsync("123\u00a0456 789 012 3 &#x20;", "  aB&+?  ") == "https://teams.microsoft.com/meet/1234567890123?p=aB%26%2B%3F", "separate passcode is trimmed and URL encoded with Unicode and HTML whitespace in ID");
+        Check(await controller.ResolveMeetingUrlAsync(pastedInvitation, "Replacement") == "https://teams.microsoft.com/meet/1234567890123?p=Replacement", "explicit passcode overrides invitation passcode");
+        Check(RecallController.ParseMeetingInput("Microsoft Teams meeting\r\nMeeting ID:\t123 456\r\nPasscode:\tABC\r\nDownload Teams") == ("123456", "ABC"), "Windows line endings and tabs are accepted");
+        Check(RecallController.ParseMeetingInput("Meeting ID: 123 456\nPasscode: ABC\nJoin " + invite).Meeting == invite, "embedded Teams join link takes precedence over numeric details");
+        await Reject(() => controller.ResolveMeetingUrlAsync("Microsoft Teams meeting\nMeeting ID: 123 456"), "invitation without passcode requires saved join details");
+        await Reject(() => controller.ResolveMeetingUrlAsync("not-a-meeting-id", "ABC"), "passcode cannot turn arbitrary text into a Teams URL");
+        Check(handler.Created == null, "parsing invitations never creates a bot");
+        await controller.HandleAsync("add", new() { ["meetingUrl"] = pastedInvitation });
+        Check(handler.Created?["meeting_url"]?.GetValue<string>() == "https://teams.microsoft.com/meet/1234567890123?p=Ab73XY", "bot creation sends the resolved invitation URL");
         await controller.HandleAsync("add", new() { ["meetingUrl"] = "https://teams.example.test/meeting", ["name"] = "Test" });
         Check(handler.Created?["automatic_audio_output"]?["in_call_recording"]?["data"]?["kind"]?.GetValue<string>() == "mp3", "new bots enable audio output");
         handler.MeetingData = new JsonObject { ["platform"] = "microsoft_teams_live", ["meeting_id"] = "93274648695510", ["meeting_password"] = "test pass&code" };
+        Check(await controller.ResolveMeetingUrlAsync("932 746 486 955 10") == "https://teams.live.com/meet/93274648695510?p=test%20pass%26code", "setup resolves a known ID with its saved passcode");
         await controller.HandleAsync("add", new() { ["meetingUrl"] = "932 746 486 955 10", ["name"] = "Resolved" });
         Check(handler.Created?["meeting_url"]?.GetValue<string>() == "https://teams.live.com/meet/93274648695510?p=test%20pass%26code", "add resolves spaced known ID and preserves encoded passcode");
         Check(!controller.Status().ToJsonString().Contains("test pass"), "join passcode not exposed in status");

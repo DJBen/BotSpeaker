@@ -3,6 +3,8 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Globalization;
+using System.Text.RegularExpressions;
+using System.Net;
 
 namespace BotSpeaker;
 
@@ -72,16 +74,7 @@ public sealed class RecallController
                 return new JsonObject { ["ok"] = true, ["bots"] = results };
             case "add":
             {
-                var url = Required(body, "meetingUrl");
-                if (!Uri.TryCreate(url, UriKind.Absolute, out var meeting) || meeting.Scheme != "https")
-                {
-                    var requestedMeetingId = MeetingId(url);
-                    // Refresh metadata, including completed bots, to recover join credentials without guessing.
-                    await HandleAsync("list", new());
-                    if (!knownMeetingUrls.TryGetValue(Region + ":" + requestedMeetingId, out var resolved))
-                        throw new AppException("No saved join details were found for this meeting ID. Use Change meeting to paste its invite link once; the link includes any required passcode.");
-                    url = resolved;
-                }
+                var url = await ResolveMeetingUrlAsync(Required(body, "meetingUrl"), body["passcode"]?.GetValue<string>());
                 // A silent MP3 enables Recall's prerecorded clip endpoint without an audible join sound.
                 using var silenceStream = typeof(RecallController).Assembly.GetManifestResourceStream("BotSpeaker.recall-silence.mp3")
                     ?? throw new InvalidOperationException("Bundled Recall audio is missing.");
@@ -213,6 +206,40 @@ public sealed class RecallController
             if (acquired) gate!.Release();
         }
     }
+    internal static (string Meeting, string Passcode) ParseMeetingInput(string value)
+    {
+        var text = WebUtility.HtmlDecode(value).Trim();
+        // Only extract Teams join links, never download/help/options links in an invitation.
+        var link = Regex.Match(text, @"https://teams\.(?:microsoft|live)\.com/(?:meet/|l/meetup-join/)[^\s<>""']+", RegexOptions.IgnoreCase);
+        if (link.Success) return (link.Value, "");
+        var id = Regex.Match(text, @"\bMeeting\s+ID\s*:\s*([0-9](?:[0-9\s]*[0-9])?)", RegexOptions.IgnoreCase);
+        if (!id.Success) return (text, "");
+        var passcode = Regex.Match(text, @"\bPasscode\s*:\s*([^\s<>]+)", RegexOptions.IgnoreCase);
+        return (MeetingId(id.Groups[1].Value), passcode.Success ? passcode.Groups[1].Value : "");
+    }
+
+    public async Task<string> ResolveMeetingUrlAsync(string value, string? passcode = null)
+    {
+        var parsed = ParseMeetingInput(value);
+        value = parsed.Meeting;
+        passcode = string.IsNullOrWhiteSpace(passcode) ? parsed.Passcode : passcode.Trim();
+        if (value.Length == 0) throw new AppException("Enter a meeting invite link or a previously used meeting ID.");
+        if (Uri.TryCreate(value, UriKind.Absolute, out var url) && url.Scheme == "https") return value;
+        if (value.Contains("://")) throw new AppException("Use an HTTPS meeting invite link.");
+
+        if (!string.IsNullOrEmpty(passcode))
+        {
+            var id = MeetingId(value);
+            if (!id.All(char.IsAsciiDigit)) throw new AppException("Enter a numeric Teams meeting ID with the passcode, or paste the full invitation.");
+            return $"https://teams.microsoft.com/meet/{id}?p={Uri.EscapeDataString(passcode)}";
+        }
+
+        // Refresh metadata, including completed bots, to recover join credentials without guessing.
+        await HandleAsync("list", new());
+        if (knownMeetingUrls.TryGetValue(Region + ":" + MeetingId(value), out var resolved)) return resolved;
+        throw new AppException("Enter the Teams passcode for this meeting ID, or paste the full invitation or join link.");
+    }
+
     internal static string? JoinUrl(JsonNode? value)
     {
         if (value is JsonValue raw && raw.TryGetValue<string>(out var link))

@@ -17,6 +17,7 @@ public sealed class RecallView : UserControl
     private readonly bool settingsOnly;
     public event EventHandler? SettingsRequested;
     private readonly PasswordBox key = new() { Padding = new Thickness(5), MinHeight = 28 };
+    private readonly PasswordBox meetingPasscode = new() { Padding = new Thickness(5), MinHeight = 28 };
     private readonly ComboBox region = new() { ItemsSource = RecallController.Regions };
     private readonly TextBlock message = new() { TextWrapping = TextWrapping.Wrap }, scopeHint = new(), voiceHint = new() { TextWrapping = TextWrapping.Wrap };
     private readonly DataGrid bots = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.FullRow, Height = 125, HeadersVisibility = DataGridHeadersVisibility.Column, Margin = new Thickness(0, 6, 0, 4) };
@@ -64,12 +65,28 @@ public sealed class RecallView : UserControl
         configuration.Children.Add(MakeButton("Validate & save key", async () => { await controller.HandleAsync("configure", new() { ["apiKey"] = key.Password, ["region"] = region.SelectedItem?.ToString() }); key.Clear(); Render(); }));
         root.Children.Add(message); root.Children.Add(setup); root.Children.Add(controls);
         setup.Children.Add(new TextBlock { Text = "Choose a meeting", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,18,0,8) });
-        Field(setup, "Meeting URL or ID", meeting);
-        setup.Children.Add(new TextBlock { Text = "Enter a meeting URL or a previously used meeting ID. Known IDs reuse their saved join details.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,6,0,10) });
+        Field(setup, "Meeting link, ID, or invitation", meeting);
+        meeting.AcceptsReturn = true;
+        meeting.TextWrapping = TextWrapping.Wrap;
+        meeting.MaxHeight = 100;
+        meeting.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        meeting.TextChanged += (_, _) => meetingPasscode.Clear();
+        DataObject.AddPastingHandler(meeting, (_, e) => {
+            if (e.DataObject.GetData(DataFormats.UnicodeText) is string pasted)
+            {
+                ApplyMeetingPaste(pasted);
+                e.CancelCommand();
+            }
+        });
+        setup.Children.Add(MakeButton("Paste invitation", () => {
+            if (!Clipboard.ContainsText()) throw new AppException("Copy a meeting invitation or join link first.");
+            ApplyMeetingPaste(Clipboard.GetText());
+            return Task.CompletedTask;
+        }));
+        Field(setup, "Teams passcode", meetingPasscode);
+        setup.Children.Add(new TextBlock { Text = "Paste the entire Teams invitation to fill in its meeting ID and passcode, or enter them separately. Join links already include the required details.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,6,0,10) });
         setup.Children.Add(MakeButton("Continue", async () => {
-            if (string.IsNullOrWhiteSpace(meeting.Text)) throw new AppException("Enter a meeting URL or ID.");
-            var value = meeting.Text.Trim();
-            if (value.Contains("://") && (!Uri.TryCreate(value, UriKind.Absolute, out var url) || url.Scheme != "https")) throw new AppException("Use an HTTPS meeting URL.");
+            var value = await controller.ResolveMeetingUrlAsync(meeting.Text, meetingPasscode.Password);
             model.Settings.LastRecallMeeting = value; model.Settings.Save();
             selectedMeeting = value; meetingReady = true;
             meetingSummary.Text = "Meeting " + RecallController.MeetingId(selectedMeeting);
@@ -141,6 +158,14 @@ public sealed class RecallView : UserControl
         return dialog.ShowDialog() == true ? input.Text.Trim() : null;
     }
     private static string Starter(string botName) => $"Hi I am {botName}, {Sentences[Random.Shared.Next(Sentences.Length)]}";
+    private void ApplyMeetingPaste(string text)
+    {
+        var parsed = RecallController.ParseMeetingInput(text);
+        meeting.Text = parsed.Meeting;
+        meetingPasscode.Password = parsed.Passcode;
+        message.Text = "";
+    }
+
     private BotRow SelectedBot() => bots.SelectedItem as BotRow ?? throw new AppException("Select a bot in this meeting first.");
     private string DispatchTime()
     {

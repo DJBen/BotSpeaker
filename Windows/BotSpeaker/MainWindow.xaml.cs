@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
+    private bool _isChangingFirstRunRecallKey;
     private ScriptEditorWindow? _scriptEditor;
     private SettingsWindow? _settingsWindow;
     private readonly OrchestrationView _orchestrationView;
@@ -138,6 +139,9 @@ public partial class MainWindow : Window
         try
         {
             FirstRunPanel.Visibility = _model.HasApiKey ? Visibility.Collapsed : Visibility.Visible;
+            var showConfiguredRecallKey = _model.Recall.Configured && !_isChangingFirstRunRecallKey;
+            FirstRunRecallConfigured.Visibility = showConfiguredRecallKey ? Visibility.Visible : Visibility.Collapsed;
+            FirstRunRecallKey.Visibility = showConfiguredRecallKey ? Visibility.Collapsed : Visibility.Visible;
             bool inSession = _orchestration.IsActive;
             bool hostCanChooseRun = _orchestration.IsHost
                 && ((_orchestration.SessionStatus == OrchestrationSessionStatus.Lobby && _orchestration.Turns.Count == 0)
@@ -1278,13 +1282,26 @@ public partial class MainWindow : Window
         CableHelp.Visibility = hasCable ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    private void OnChangeFirstRunRecallKeyClick(object sender, RoutedEventArgs e)
+    {
+        _isChangingFirstRunRecallKey = true;
+        UpdateAll();
+        FirstRunRecallKey.Focus();
+    }
+
     private async void OnValidateKeyClick(object sender, RoutedEventArgs e)
     {
         FirstRunContinueButton.IsEnabled = false;
         FirstRunError.Visibility = Visibility.Collapsed;
         try
         {
-            if (!string.IsNullOrWhiteSpace(FirstRunRecallKey.Password)) { await _model.Recall.HandleAsync("configure", new() { ["apiKey"] = FirstRunRecallKey.Password }); FirstRunRecallKey.Clear(); }
+            if (!string.IsNullOrWhiteSpace(FirstRunRecallKey.Password))
+            {
+                await _model.Recall.HandleAsync("configure", new() { ["apiKey"] = FirstRunRecallKey.Password });
+                FirstRunRecallKey.Clear();
+                _isChangingFirstRunRecallKey = false;
+                UpdateAll();
+            }
             await _model.ValidateAndSaveApiKeyAsync(FirstRunKeyBox.Password);
             FirstRunKeyBox.Clear();
         }

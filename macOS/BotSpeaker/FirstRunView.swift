@@ -5,6 +5,8 @@ struct FirstRunView: View {
     let model: AppModel
     @State private var key = ""
     @State private var recallKey = ""
+    @State private var isChangingRecallKey = false
+    @FocusState private var isRecallKeyFocused: Bool
     @State private var isSaving = false
     @State private var error: String?
 
@@ -32,8 +34,22 @@ struct FirstRunView: View {
                 BlackHoleStatusView(model: model)
             }
 
-            SecureField("Recall API key (optional)", text: $recallKey)
-                .textFieldStyle(.roundedBorder)
+            HStack {
+                if model.recall.configured && !isChangingRecallKey {
+                    TextField("Recall API key", text: .constant("••••••••••••"))
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(true)
+                        .accessibilityLabel("Recall API key already configured")
+                    Button("Change") {
+                        isChangingRecallKey = true
+                        isRecallKeyFocused = true
+                    }
+                } else {
+                    SecureField("Recall API key", text: $recallKey)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isRecallKeyFocused)
+                }
+            }
             Text("Skip to configure Recall later, or use RECALL_API_KEY.").font(.caption).foregroundStyle(.secondary)
 
             if let error {
@@ -51,6 +67,7 @@ struct FirstRunView: View {
                             if !recallKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 _ = try await model.recall.handle("configure", ["apiKey": recallKey], model: model)
                                 recallKey = ""
+                                isChangingRecallKey = false
                             }
                             try await model.validateAndSaveAPIKey(key)
                         }
