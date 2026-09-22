@@ -137,7 +137,7 @@ struct OrchestratedSpeakerConfiguration: Identifiable, Hashable {
     let role: String
     private(set) var customName: String
     var name: String {
-        get { customName.isEmpty ? voiceName.components(separatedBy: " — ")[0].components(separatedBy: " - ")[0].trimmingCharacters(in: .whitespacesAndNewlines) : customName }
+        get { customName.isEmpty ? ElevenLabsVoice.shortName(from: voiceName) : customName }
         set { customName = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
     var voiceID: String

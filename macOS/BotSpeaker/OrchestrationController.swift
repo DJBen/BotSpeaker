@@ -223,6 +223,7 @@ final class OrchestrationController {
     }
 
     func applyDefaultTemplateVoices() {
+        refreshSpeakerVoiceNames()
         guard defaultVoicesAppliedForTemplateID != selectedTemplate.id,
               let voices = model?.voices,
               !voices.isEmpty else { return }
@@ -247,6 +248,22 @@ final class OrchestrationController {
         }
         defaultVoicesAppliedForTemplateID = selectedTemplate.id
         persistSpeakerConfigurations()
+    }
+
+    /// Keeps each speaker's stored voice name matching the voice its picker
+    /// shows. A speaker with no name of its own is named after that voice, so a
+    /// stale or missing stored name would leave the row, the script preview and
+    /// the prepared turns falling back to the `{{speaker_n}}` placeholder.
+    func refreshSpeakerVoiceNames() {
+        guard let voices = model?.voices, !voices.isEmpty else { return }
+        var didChange = false
+        for index in speakerConfigurations.indices {
+            guard let voice = voices.first(where: { $0.id == speakerConfigurations[index].voiceID }),
+                  voice.name != speakerConfigurations[index].voiceName else { continue }
+            speakerConfigurations[index].voiceName = voice.name
+            didChange = true
+        }
+        if didChange { persistSpeakerConfigurations() }
     }
 
     func updateConfiguredVoice(slot: Int, voiceID: String) {

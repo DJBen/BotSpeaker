@@ -9,7 +9,21 @@ final class AppModel {
     private(set) var text = ExampleExcerpt.launchRetroProductManager.text
     private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id
     private(set) var customScripts: [CustomSpeechScript] = []
-    var templateSpeakerName = ""
+    /// Name typed into the role template's speaker field. Empty means the
+    /// field follows the selected voice, so picking another voice renames the
+    /// speaker; once a name is typed, the voice no longer changes it.
+    private var customTemplateSpeakerName = ""
+    var templateSpeakerName: String {
+        get { customTemplateSpeakerName.isEmpty ? defaultTemplateSpeakerName : customTemplateSpeakerName }
+        // Bound straight to a text field, so the value is stored as typed;
+        // call sites trim it.
+        set { customTemplateSpeakerName = newValue }
+    }
+
+    /// The bare name of the selected voice, or empty until voices have loaded.
+    var defaultTemplateSpeakerName: String {
+        voices.first(where: { $0.id == voiceID })?.shortName ?? ""
+    }
     var scriptDraftTitle = ""
     var scriptDraftText = ""
     private(set) var editingCustomScriptID: UUID?
@@ -340,7 +354,7 @@ final class AppModel {
             )
         )
         persistCustomScripts()
-        templateSpeakerName = ""
+        customTemplateSpeakerName = ""
         selectScript(id: "custom:\(id.uuidString)")
     }
 

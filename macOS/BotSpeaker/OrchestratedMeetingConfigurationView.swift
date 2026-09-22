@@ -303,9 +303,7 @@ struct OrchestratedMeetingConfigurationView: View {
     private func selectedVoiceName(for configuration: OrchestratedSpeakerConfiguration) -> String {
         let current = controller.speakerConfigurations.first(where: { $0.slot == configuration.slot }) ?? configuration
         let fullName = model.voices.first(where: { $0.id == current.voiceID })?.name ?? current.voiceName
-        return fullName
-            .components(separatedBy: " — ").first?
-            .components(separatedBy: " - ").first ?? fullName
+        return ElevenLabsVoice.shortName(from: fullName)
     }
 
     private func attendeeChipName(_ attendee: OrchestrationParticipant) -> String {
