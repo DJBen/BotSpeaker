@@ -20,7 +20,7 @@ public partial class MainWindow : Window
     private bool _showSpeak;
     private bool _showRecall;
     private RecallView _recallView = null!;
-    private RecallMeetingView? _recallMeetingView;
+    private readonly Dictionary<string, RecallMeetingView> _recallMeetingViews = [];
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
@@ -476,12 +476,16 @@ public partial class MainWindow : Window
             templateItems.AddRange(scenario.Excerpts.Select(e => BuildSidebarItem(e.SpeechScript, isTemplate: true)));
         }
         TemplateList.ItemsSource = templateItems;
-        bool showingPage = _showSpeak || _showRemoteMode;
-        bool showingMeeting = _showOrchestrationConfiguration || (_showOrchestrationSession && _orchestration.IsHost);
+        bool showingRecallMeeting = _showRecall && RecallHost.Content is RecallMeetingView;
+        bool showingPage = _showSpeak || _showRemoteMode || (_showRecall && !showingRecallMeeting);
+        bool showingMeeting = showingRecallMeeting || _showOrchestrationConfiguration || (_showOrchestrationSession && _orchestration.IsHost);
+        var selectedMeetingTemplateId = showingRecallMeeting
+            ? ((RecallMeetingView)RecallHost.Content).TemplateId
+            : _orchestration.SelectedTemplate.Id;
         TemplateList.SelectedItem = showingPage
             ? null
             : showingMeeting
-                ? templateItems.FirstOrDefault(i => i.Tag as string == "orchestrated:" + _orchestration.SelectedTemplate.Id)
+                ? templateItems.FirstOrDefault(i => i.Tag as string == "orchestrated:" + selectedMeetingTemplateId)
                 : templateItems.FirstOrDefault(i => i.Tag as string == _model.SelectedScriptId);
 
         var custom = _model.PlayableScripts;
@@ -597,6 +601,12 @@ public partial class MainWindow : Window
                 var templateId = id["orchestrated:".Length..];
                 var template = OrchestratedMeetingTemplate.All.FirstOrDefault(item => item.Id == templateId);
                 if (template is null) return;
+                if (_recallMeetingViews.TryGetValue(templateId, out var existingMeeting))
+                {
+                    _orchestration.SelectTemplate(template);
+                    ShowRecallMeeting(existingMeeting);
+                    return;
+                }
                 _showRemoteMode = false;
                 _showSpeak = false;
                 _showRecall = false;
@@ -674,16 +684,29 @@ public partial class MainWindow : Window
     private void OnRecallMeetingClick(object sender, RoutedEventArgs e)
     {
         try {
-            if (_recallMeetingView == null) {
-                _recallMeetingView = new RecallMeetingView(_model, _orchestration);
-                _recallMeetingView.ChooseScriptRequested += (_, _) => {
-                    _recallMeetingView = null; RecallHost.Content = _recallView;
+            var templateId = _orchestration.SelectedTemplate.Id;
+            if (!_recallMeetingViews.TryGetValue(templateId, out var meetingView)) {
+                meetingView = new RecallMeetingView(_model, _orchestration);
+                _recallMeetingViews.Add(templateId, meetingView);
+                meetingView.ChooseScriptRequested += (_, _) => {
+                    _recallMeetingViews.Remove(templateId);
+                    RecallHost.Content = _recallView;
                     _showRecall = false; _showOrchestrationConfiguration = true; UpdateAll();
                 };
             }
-            OnRecallClick(sender, e);
-            RecallHost.Content = _recallMeetingView;
+            ShowRecallMeeting(meetingView);
         } catch (Exception error) { MessageBox.Show(this, error.Message, "Recall meeting"); }
+    }
+
+    private void ShowRecallMeeting(RecallMeetingView meetingView)
+    {
+        RecallHost.Content = meetingView;
+        _showRecall = true;
+        _showSpeak = false;
+        _showRemoteMode = false;
+        _showOrchestrationConfiguration = false;
+        _showOrchestrationSession = false;
+        UpdateAll();
     }
 
     private void OnRecallClick(object sender, RoutedEventArgs e) { RecallHost.Content = _recallView; _showRecall = true; _showSpeak = false; _showRemoteMode = false; _showOrchestrationConfiguration = false; _showOrchestrationSession = false; UpdateAll(); }

@@ -12,6 +12,7 @@ public sealed class RecallMeetingView : UserControl
     private readonly AppModel model;
     private readonly OrchestrationController source;
     private readonly string templateId;
+    public string TemplateId => templateId;
     private readonly StackPanel root = new(), body = new();
     private readonly TextBlock message = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0,8,0,8) };
     private readonly TextBox meeting = new() { MinHeight = 28, Padding = new(5) };
@@ -124,18 +125,7 @@ public sealed class RecallMeetingView : UserControl
             var footer = new WrapPanel();
             if (speakers.All(s => s.Bot.Length == 0)) footer.Children.Add(Button("Change meeting", () => { step = 0; return Task.CompletedTask; }));
             footer.Children.Add(Button("Refresh bots", Refresh));
-            var removeAll = Button("Remove all bots", async () => {
-                var failures = new List<string>();
-                foreach (var speaker in speakers.Where(s => s.Bot.Length > 0)) {
-                    try {
-                        await model.Recall.HandleAsync("remove", new() { ["botId"] = speaker.Bot });
-                        speaker.Bot = ""; speaker.Status = "Not added";
-                    } catch (Exception error) { failures.Add(speaker.Name + ": " + error.Message); }
-                }
-                message.Text = failures.Count == 0 ? "All speaker bots removed." : "Some bots could not be removed. Retry Remove all bots.\n" + string.Join("\n", failures);
-            });
-            removeAll.IsEnabled = !busy && speakers.Any(s => s.Bot.Length > 0);
-            footer.Children.Add(removeAll);
+            footer.Children.Add(RemoveAllBotsButton());
 
             footer.Children.Add(Button("Arrange turns", async () => {
                 if (speakers.Any(s => string.IsNullOrWhiteSpace(s.Name) || string.IsNullOrWhiteSpace(s.Voice))) throw new AppException("Enter a name and choose a voice for every speaker.");
@@ -158,6 +148,7 @@ public sealed class RecallMeetingView : UserControl
         }
         var buttons = new WrapPanel();
         buttons.Children.Add(Button("Back to bots", () => { step = 1; return Task.CompletedTask; }));
+        buttons.Children.Add(RemoveAllBotsButton());
         buttons.Children.Add(Button("Add turn", () => { turns.Add(new(0,"Enter speech here.")); return Task.CompletedTask; }));
         buttons.Children.Add(Button("Start meeting", Start)); body.Children.Add(buttons);
         for (int i = 0; i < turns.Count; i++)
@@ -179,6 +170,24 @@ public sealed class RecallMeetingView : UserControl
         }
 
     }
+    private Button RemoveAllBotsButton()
+    {
+        var button = Button("Remove all bots", async () => {
+            var failures = new List<string>();
+            foreach (var speaker in speakers.Where(s => s.Bot.Length > 0)) {
+                try {
+                    await model.Recall.HandleAsync("remove", new() { ["botId"] = speaker.Bot });
+                    speaker.Bot = ""; speaker.Status = "Not added";
+                } catch (Exception error) { failures.Add(speaker.Name + ": " + error.Message); }
+            }
+            // Return to bot setup so a new run recreates removed speakers.
+            step = 1;
+            message.Text = failures.Count == 0 ? "All speaker bots removed." : "Some bots could not be removed. Retry Remove all bots.\n" + string.Join("\n", failures);
+        });
+        button.IsEnabled = !busy && run == null && speakers.Any(s => s.Bot.Length > 0);
+        return button;
+    }
+
     private string Resolve(string text) { for (int i=0; i<speakers.Count; i++) text = text.Replace($"{{{{speaker_{i+1}}}}}", speakers[i].Name); return text; }
     private async Task Refresh()
     {
@@ -219,9 +228,9 @@ public sealed class RecallMeetingView : UserControl
             }, run.Token, () => skipRequested, index => {
                 message.Text = $"Preparing speech {index+1} of {plan.Length} before playback…";
             });
-            message.Text = "All turns dispatched. Bots remain in the meeting; use Back to bots to remove them.";
+            message.Text = "All turns dispatched. Use Remove all bots to disconnect the speaker bots from the meeting.";
         }
-        catch (OperationCanceledException) { message.Text = "Stopped. Audio already sent may finish playing. Bots remain available in Back to bots."; }
+        catch (OperationCanceledException) { message.Text = "Stopped. Audio already sent may finish playing. Use Remove all bots to disconnect the speaker bots from the meeting."; }
         finally { run.Dispose(); run = null; }
     }
 }
