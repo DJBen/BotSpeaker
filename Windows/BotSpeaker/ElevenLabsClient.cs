@@ -200,7 +200,14 @@ public sealed record ElevenLabsVoice(
     public string DisplayName => Detail.Length == 0 ? Name : $"{Name} — {Detail}";
 
     /// <summary>ElevenLabs voice names often embed descriptors after " - "; keep just the given name.</summary>
-    public string ShortName => Name.Split(" — ")[0].Split(" - ")[0].Trim();
+    public string ShortName => ShortNameFrom(Name);
+
+    /// <summary>
+    /// The bare speaker name from a voice name, used as the default name wherever a speaker is
+    /// named after the voice chosen for it. Stored names may also carry the " — detail" suffix
+    /// the pickers display; both suffixes are dropped.
+    /// </summary>
+    public static string ShortNameFrom(string fullName) => fullName.Split(" — ")[0].Split(" - ")[0].Trim();
 }
 
 public sealed record TimedTextSpan(double StartTime, double EndTime, int Location, int Length);

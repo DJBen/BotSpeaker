@@ -126,7 +126,10 @@ public sealed class RecallMeetingView : UserControl
                     if (voice.SelectedValue is not string value) return;
                     if (speaker.Bot.Length > 0 && speaker.Configuration.CustomName.Length == 0) speaker.Name = speaker.Name;
                     speaker.Voice = value;
-                    speaker.Configuration.VoiceName = model.Voices.FirstOrDefault(v => v.Id == value)?.Name ?? "";
+                    // Never blank the stored name: an unnamed speaker is named after its voice,
+                    // and an empty name falls back to the {{speaker_n}} placeholder.
+                    speaker.Configuration.VoiceName = model.Voices.FirstOrDefault(v => v.Id == value)?.Name
+                        ?? $"Voice ID {value[..Math.Min(8, value.Length)]}…";
                     source.SaveRecallSpeakerConfiguration(templateId, speaker.Configuration);
                     updatingName = true; name.Text = speaker.Name; updatingName = false;
                 };

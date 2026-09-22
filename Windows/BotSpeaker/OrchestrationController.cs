@@ -234,6 +234,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
 
     public void ApplyDefaultTemplateVoices()
     {
+        RefreshSpeakerVoiceNames();
         if (_defaultVoicesAppliedForTemplateId == SelectedTemplate.Id || _model.Voices.Count == 0) return;
         var usedVoiceIds = new HashSet<string>(StringComparer.Ordinal);
         for (int index = 0; index < SpeakerConfigurations.Count; index++)
@@ -255,6 +256,28 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
             usedVoiceIds.Add(selectedVoice.Id);
         }
         _defaultVoicesAppliedForTemplateId = SelectedTemplate.Id;
+        PersistSpeakerConfigurations();
+        NotifySpeakerConfigurationChanged();
+    }
+
+    /// <summary>
+    /// Keeps each speaker's stored voice name matching the voice its picker shows. A speaker with
+    /// no name of its own is named after that voice, so a stale or missing stored name would leave
+    /// the row, the script preview and the prepared turns falling back to the {{speaker_n}}
+    /// placeholder.
+    /// </summary>
+    public void RefreshSpeakerVoiceNames()
+    {
+        if (_model.Voices.Count == 0) return;
+        bool didChange = false;
+        foreach (var configuration in SpeakerConfigurations)
+        {
+            var voice = _model.Voices.FirstOrDefault(item => item.Id == configuration.VoiceId);
+            if (voice is null || voice.Name == configuration.VoiceName) continue;
+            configuration.VoiceName = voice.Name;
+            didChange = true;
+        }
+        if (!didChange) return;
         PersistSpeakerConfigurations();
         NotifySpeakerConfigurationChanged();
     }
