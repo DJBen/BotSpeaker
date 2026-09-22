@@ -465,7 +465,7 @@ sealed class Args(List<string> positional, Dictionary<string, string?> options)
     private static readonly HashSet<string> BooleanFlags = ["json", "wait", "w", "loop", "l", "refresh", "help", "h", "key-stdin", "check"];
 
     public List<string> Positional { get; } = positional;
-    private Dictionary<string, string?> Options { get; } = options;
+    public Dictionary<string, string?> Options { get; } = options;
 
     public bool Json => Flag("json");
     public bool Wait => Flag("wait") || Flag("w");

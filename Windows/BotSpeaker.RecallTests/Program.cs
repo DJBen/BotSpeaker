@@ -20,6 +20,19 @@ internal static class Program
     static async Task Until(Func<bool> predicate) { for (int i = 0; i < 150 && !predicate(); i++) await Task.Delay(50); if (!predicate()) throw new Exception("Timed out"); }
     static async Task Run()
     {
+        await RecallCoverage.Run();
+        var bulkHttp = new FakeHttp { Bots = new JsonArray() };
+        var bulkController = new RecallController(new AppModel(), new HttpClient(bulkHttp));
+        var bulkIds = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid().ToString()).ToArray();
+        for (var i = 0; i < bulkIds.Length; i++) bulkHttp.Bots.Add(new JsonObject {
+            ["id"] = bulkIds[i], ["meeting_url"] = new JsonObject { ["meeting_id"] = i == 2 ? "other" : "target" },
+            ["status_changes"] = new JsonArray(new JsonObject { ["code"] = i == 3 ? "done" : "in_call_recording" }) });
+        bulkHttp.FailLeave = bulkIds[0];
+        var bulk = await bulkController.HandleAsync("remove-all", new() { ["meetingId"] = "target" });
+        Check(bulk["ok"]!.GetValue<bool>() == false && bulk["failures"]!.AsArray().Count == 1 && bulk["removed"]!.AsArray().Count == 1,
+            "bulk removal reports partial failure and continues removing remaining bots");
+        Check(bulkHttp.Leaves.SequenceEqual(bulkIds.Take(2)), "bulk removal excludes other meetings and finished bots");
+        await Reject(() => bulkController.HandleAsync("remove-all", new()), "bulk removal requires a meeting scope");
         var handler = new FakeHttp();
         var controller = new RecallController(new AppModel(), new HttpClient(handler));
         string bot = Guid.NewGuid().ToString();
@@ -226,6 +239,9 @@ internal static class Program
 
 sealed class FakeHttp : HttpMessageHandler
 {
+    public JsonArray? Bots;
+    public string? FailLeave;
+    public List<string> Leaves = [];
     public bool HostileNext, FailAudio, Left;
     public JsonObject? Created;
     public JsonObject? MeetingData;
@@ -236,6 +252,7 @@ sealed class FakeHttp : HttpMessageHandler
         var path = request.RequestUri!.AbsolutePath;
         if (request.Method == HttpMethod.Get)
         {
+            if (Bots != null) return Ok(new() { ["results"] = Bots.DeepClone() });
             var next = request.RequestUri.Query.Contains("cursor") ? null : HostileNext ? "https://evil.example/api/v1/bot/" : request.RequestUri.GetLeftPart(UriPartial.Authority) + "/api/v1/bot/?cursor=2";
             return Ok(new JsonObject { ["results"] = new JsonArray(new JsonObject { ["id"] = Guid.NewGuid().ToString(), ["meeting_url"] = MeetingData?.DeepClone() ?? new JsonObject { ["meeting_id"] = request.RequestUri.Query.Contains("cursor") ? "meeting-two" : "meeting-one" } }), ["next"] = next });
         }
@@ -245,7 +262,11 @@ sealed class FakeHttp : HttpMessageHandler
             if (FailAudio) return new(HttpStatusCode.TooManyRequests) { Content = new StringContent("test-secret") };
             Sent.Add(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(body["b64_data"]!.GetValue<string>())));
         }
-        else if (path.EndsWith("leave_call/")) Left = true;
+        else if (path.EndsWith("leave_call/")) {
+            Left = true;
+            var id = path.Split('/')[4]; Leaves.Add(id);
+            if (id == FailLeave) return new(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("temporary failure") };
+        }
         else Created = body;
         return Ok(new() { ["id"] = Guid.NewGuid().ToString() });
     }

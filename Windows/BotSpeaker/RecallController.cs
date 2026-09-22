@@ -15,11 +15,13 @@ public sealed class RecallController
     private readonly CredentialStore credentials = new("recall-credentials.bin");
     private static readonly HttpClient defaultHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly HttpClient http;
+    private readonly RecallRunManager meetings;
     private readonly Dictionary<string, (JsonObject State, CancellationTokenSource Cancel)> jobs = [];
     private readonly List<Task> runningJobs = [];
-    public bool HasPendingJobs => runningJobs.Any(task => !task.IsCompleted);
+    public bool HasPendingJobs => meetings.HasActiveRuns || runningJobs.Any(task => !task.IsCompleted);
     public async Task CancelPendingJobsAsync()
     {
+        await meetings.StopAllAsync();
         foreach (var job in jobs.Values) job.Cancel.Cancel();
         await Task.WhenAll(runningJobs);
     }
@@ -32,15 +34,17 @@ public sealed class RecallController
     public RecallController(AppModel model, HttpClient? httpClient = null)
     {
         this.model = model;
+        meetings = new(HandleAsync);
         http = httpClient ?? defaultHttp;
         if (File.Exists(RegionPath) && Regions.Contains(File.ReadAllText(RegionPath).Trim())) Region = File.ReadAllText(RegionPath).Trim();
     }
     private string? Key => credentials.Read() ?? Env("RECALL_API_KEY") ?? Env("RECALL_AI_API_KEY");
     private static string? Env(string name) => new[] { Environment.GetEnvironmentVariable(name), Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User) }.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
     public bool Configured => !string.IsNullOrWhiteSpace(Key);
-    public JsonObject Status() => new() { ["ok"] = true, ["configured"] = Configured, ["region"] = Region, ["jobs"] = new JsonArray(jobs.Values.Select(j => (JsonNode)j.State.DeepClone()).ToArray()) };
+    public JsonObject Status() => new() { ["ok"] = true, ["configured"] = Configured, ["region"] = Region, ["jobs"] = new JsonArray(jobs.Values.Select(j => (JsonNode)j.State.DeepClone()).ToArray()), ["meetings"] = meetings.Snapshots() };
     public async Task<JsonObject> HandleAsync(string action, JsonObject body)
     {
+        if (action.StartsWith("meeting-", StringComparison.Ordinal)) return await meetings.HandleAsync(action, body);
         switch (action)
         {
             case "status": return Status();
@@ -96,9 +100,22 @@ public sealed class RecallController
             }
             case "remove":
                 var botId = BotId(body);
+                await meetings.StopForBotsAsync([botId]);
                 foreach (var job in jobs.Values.Where(j => j.State["botId"]!.GetValue<string>() == botId)) job.Cancel.Cancel();
                 await SendAsync("POST", $"bot/{botId}/leave_call/", new());
                 return new JsonObject { ["ok"] = true };
+            case "remove-all":
+                var meetingId = MeetingId(Required(body, "meetingId"));
+                var listed = await HandleAsync("list", new() { ["meetingId"] = meetingId });
+                var removed = new JsonArray();
+                var failures = new JsonArray();
+                foreach (var bot in listed["bots"]!.AsArray().Where(bot => bot?["status"]?.GetValue<string>() is not ("done" or "fatal")))
+                {
+                    var removeId = bot!["id"]!.GetValue<string>();
+                    try { await HandleAsync("remove", new() { ["botId"] = removeId }); removed.Add(removeId); }
+                    catch (Exception error) { failures.Add(new JsonObject { ["botId"] = removeId, ["error"] = error.Message }); }
+                }
+                return new() { ["ok"] = failures.Count == 0, ["removed"] = removed, ["failures"] = failures };
             case "cancel":
                 var id = Required(body, "id");
                 if (!jobs.TryGetValue(id, out var pending)) throw new AppException("Unknown Recall job.");

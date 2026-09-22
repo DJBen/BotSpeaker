@@ -124,6 +124,66 @@ completion callbacks. The short-clip implementation uses
 
 ## Local control API
 
+### Windows CLI controls (0.5.5)
+
+Windows supports meeting-scoped cleanup, Teams invitations, prepared speech,
+and app-owned meeting plans:
+
+```powershell
+botspeaker-cli recall add "939 683 252 925 1" --passcode CODE --name "Speaker One"
+Get-Clipboard -Raw | botspeaker-cli recall add --file - --name "Speaker One"
+botspeaker-cli recall list --meeting MEETING_URL_OR_ID
+botspeaker-cli recall remove-all --meeting MEETING_URL_OR_ID
+botspeaker-cli recall prepare BOT_ID "Hello" --voice VOICE_ID --wait
+botspeaker-cli recall dispatch JOB_ID --wait
+botspeaker-cli recall wait JOB_ID --timeout 600
+```
+
+`add --file invite.txt` also accepts a full Teams invitation. `remove-all`
+requires a meeting scope, skips finished/failed bots, stops CLI plans using the
+removed bots, and cancels their pending speech. It reports each removal failure,
+continues with the other bots, and exits nonzero on partial failure. It leaves
+recordings and meeting history intact.
+
+Create `plan.json` using bot IDs from `add` or `list` and ElevenLabs voice IDs:
+
+```json
+{
+  "turns": [
+    {"botId": "BOT_UUID_1", "voice": "VOICE_ID_1", "text": "First speaker."},
+    {"botId": "BOT_UUID_2", "voice": "VOICE_ID_2", "text": "Second speaker."}
+  ]
+}
+```
+
+```powershell
+botspeaker-cli recall meeting-create --file plan.json
+botspeaker-cli recall meeting-start PLAN_ID
+botspeaker-cli recall meeting-status PLAN_ID
+botspeaker-cli recall meeting-skip PLAN_ID
+botspeaker-cli recall meeting-stop PLAN_ID
+botspeaker-cli recall meeting-wait PLAN_ID --timeout 600
+```
+
+Plans contain 1–450 turns. Admit all bots before starting; each must be
+`in_call_recording`. All clips prepare before playback. A bot cannot participate
+in two active CLI plans. Status reports `starting`, `preparing`, `running`,
+`finished`, `stopped`, or `failed`, with a zero-based `turnIndex` (-1 before
+preparation) and `turnCount`. Starting a completed or stopped plan restarts it
+from the first turn. Stop cancels remaining work but leaves bots joined; use
+`remove-all` to make them leave. Skip applies to the current playing turn.
+
+`speak`, `prepare`, `dispatch`, and `meeting-start` support `--wait` and
+`--timeout SECONDS` (default 600). Failure, cancellation, or timeout exits
+nonzero. Timeout stops waiting; app-owned work continues. `prepare --wait`
+waits until the clip is ready; speech/dispatch waits use estimated completion.
+
+These CLI plans are separate from sidebar orchestration sessions. Their state
+survives CLI exit, but not app restart. `recall status` includes all CLI plans
+under `meetings`. The extra commands in this section are Windows-only.
+
+### Routes
+
 All routes use the existing authenticated loopback control server:
 `POST /v1/recall/{configure|status|list|add|remove|speak|cancel}`.
 
@@ -131,6 +191,13 @@ All routes use the existing authenticated loopback control server:
 `{ok, job}`. `cancel` takes `{id}`; `remove` takes `{botId}`; `add` takes
 `{meetingUrl, name?}`; `configure` takes `{apiKey?, region?}`. Status includes
 `configured`, `region`, and `jobs`. CLI output is JSON for all Recall actions.
+
+Windows also supports `prepare`, `dispatch`, `remove-all`, `meeting-create`,
+`meeting-start`, `meeting-status`, `meeting-skip`, and `meeting-stop` under the
+same route prefix. `list` accepts `{meetingId?}`; `remove-all` requires
+`{meetingId}`; `add` also accepts `passcode`. `meeting-create` takes the JSON
+plan above; other meeting actions take `{id}`. `wait` and `meeting-wait` are
+CLI polling operations, not separate API routes.
 
 ## Validation
 
@@ -142,7 +209,10 @@ dotnet run --project Windows/BotSpeaker.RecallTests/BotSpeaker.RecallTests.cspro
 
 The tests replace paid speech generation, credential storage, and remote HTTP.
 They exercise the production Windows controller's pagination, validation,
-ordering, repeats, cancellation, removal, and error handling.
+ordering, repeats, cancellation, removal, and error handling. They also run the
+real Windows CLI against an isolated local HTTP fixture to check request bodies,
+invitation files/stdin, waits, validation, and exit codes, and exercise meeting
+startup, stop, skip, failure, and cleanup without joining real calls.
 
 ## Orchestrated meetings
 

@@ -126,11 +126,15 @@ botspeaker-cli targets                                   # attendees paired to t
 botspeaker-cli speak --target "Sihao's Mac" --wait "Hi"  # plays on that attendee
 ```
 
-Commands, flags, JSON output, and exit codes match the macOS CLI; see the
+Core commands, JSON output, and exit codes match the macOS CLI; see the
 [CLI guide](../docs/cli.md). The app publishes its loopback URL and per-launch
 token in `%APPDATA%\BotSpeaker\control.json`, so `curl` or any HTTP client can
 use the same API. Set `ControlPort` in `settings.json` to change the preferred
 port (`47311`).
+
+Windows 0.5.5 adds Recall meeting plans, scoped bulk removal, invitation input,
+prepared speech, and job waits. See [Recall CLI controls](../docs/recall.md#windows-cli-controls-055)
+for commands and examples.
 
 ## Storage locations
 
