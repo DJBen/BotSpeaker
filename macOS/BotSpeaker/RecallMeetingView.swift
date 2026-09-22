@@ -46,7 +46,10 @@ final class RecallMeetingPlan {
             let joinedName = speakers[index].name; speakers[index].name = joinedName
         }
         speakers[index].voice = voice
-        speakers[index].configuration.voiceName = model.voices.first { $0.id == voice }?.name ?? ""
+        // Never blank the stored name: an unnamed speaker is named after its
+        // voice, and an empty name falls back to the {{speaker_n}} placeholder.
+        speakers[index].configuration.voiceName = model.voices.first { $0.id == voice }?.name
+            ?? "Voice ID \(voice.prefix(8))…"
     }
     func perform(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy && !running else { return }

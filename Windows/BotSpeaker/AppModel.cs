@@ -115,7 +115,11 @@ public sealed class AppModel : INotifyPropertyChanged
     public string VoiceId
     {
         get => Settings.VoiceId;
-        set { Settings.VoiceId = value; Settings.Save(); Notify(); Notify(nameof(SelectedVoiceName)); }
+        set
+        {
+            Settings.VoiceId = value; Settings.Save();
+            Notify(); Notify(nameof(SelectedVoiceName)); Notify(nameof(DefaultTemplateSpeakerName));
+        }
     }
 
     public static readonly string[] ModelIds = ["eleven_flash_v2", "eleven_v3"];
@@ -165,6 +169,13 @@ public sealed class AppModel : INotifyPropertyChanged
     public string SelectedVoiceName =>
         Voices.FirstOrDefault(v => v.Id == VoiceId)?.Name
         ?? $"Voice ID {VoiceId[..Math.Min(8, VoiceId.Length)]}…";
+
+    /// <summary>
+    /// The speaker name a role template starts with: the bare name of the selected voice, or
+    /// empty until the voice catalog has loaded. Typing a name of your own overrides it.
+    /// </summary>
+    public string DefaultTemplateSpeakerName =>
+        Voices.FirstOrDefault(v => v.Id == VoiceId)?.ShortName ?? "";
 
     public string SelectedDeviceName =>
         Devices.OutputDevices.FirstOrDefault(d => d.Id == SelectedDeviceId)?.Name ?? "Output unavailable";
@@ -273,6 +284,7 @@ public sealed class AppModel : INotifyPropertyChanged
         {
             IsLoadingVoices = false;
             Notify(nameof(SelectedVoiceName));
+            Notify(nameof(DefaultTemplateSpeakerName));
         }
     }
 

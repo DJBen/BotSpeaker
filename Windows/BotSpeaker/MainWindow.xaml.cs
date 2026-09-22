@@ -29,6 +29,8 @@ public partial class MainWindow : Window
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
+    /// <summary>Set once a speaker name is typed by hand, which stops the voice renaming it.</summary>
+    private bool _hasCustomTemplateSpeakerName;
     private bool _isChangingFirstRunRecallKey;
     private ScriptEditorWindow? _scriptEditor;
     private SettingsWindow? _settingsWindow;
@@ -206,6 +208,12 @@ public partial class MainWindow : Window
             // Templates are not playable; they show the speaker-name entry instead.
             bool isCustom = script.IsCustom;
             TemplateNamePanel.Visibility = isCustom ? Visibility.Collapsed : Visibility.Visible;
+            // An untouched speaker name follows the selected voice, so choosing another voice
+            // renames the speaker until someone types a name of their own.
+            if (!_hasCustomTemplateSpeakerName && SpeakerNameBox.Text != _model.DefaultTemplateSpeakerName)
+            {
+                SpeakerNameBox.Text = _model.DefaultTemplateSpeakerName;
+            }
             TransportPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
             TimelinePanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
             LegendPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
@@ -1214,6 +1222,13 @@ public partial class MainWindow : Window
 
     private void OnCreateScriptClick(object sender, RoutedEventArgs e) => CreateNamedScript();
 
+    private void OnSpeakerNameChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressUiEvents) return;
+        // Clearing the box hands the name back to the selected voice.
+        _hasCustomTemplateSpeakerName = SpeakerNameBox.Text.Trim().Length > 0;
+    }
+
     private void OnSpeakerNameKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
@@ -1227,6 +1242,7 @@ public partial class MainWindow : Window
         {
             _model.CreateNamedScriptFromSelectedTemplate(SpeakerNameBox.Text);
             SpeakerNameBox.Clear();
+            _hasCustomTemplateSpeakerName = false;
             TemplateHint.Text = "Replaces {{name}} once and creates an independent, playable copy.";
             TemplateHint.Foreground = Brushes.Gray;
         }

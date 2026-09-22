@@ -10,7 +10,7 @@ public sealed class OrchestratedSpeakerConfiguration
     public required string Role { get; init; }
     private string customName = "";
     public string CustomName => customName;
-    public string Name { get => string.IsNullOrWhiteSpace(customName) ? VoiceName.Split(" — ")[0].Split(" - ")[0].Trim() : customName; set => customName = value.Trim(); }
+    public string Name { get => string.IsNullOrWhiteSpace(customName) ? ElevenLabsVoice.ShortNameFrom(VoiceName) : customName; set => customName = value.Trim(); }
     public string VoiceId { get; set; } = "";
     public string VoiceName { get; set; } = "";
     public string Placeholder => $"{{{{speaker_{Slot}}}}}";

@@ -295,6 +295,20 @@ struct ElevenLabsVoice: Identifiable, Hashable, Decodable {
             .joined(separator: " · ")
     }
 
+    /// The bare speaker name for this voice, used as the default name wherever
+    /// a speaker is named after the voice profile chosen for it.
+    var shortName: String { ElevenLabsVoice.shortName(from: name) }
+
+    /// Catalog names carry a descriptive suffix ("Alice - Clear, Engaging
+    /// Educator"), and stored names may also carry the ` — detail` suffix the
+    /// pickers display. Both are dropped.
+    static func shortName(from fullName: String) -> String {
+        fullName
+            .components(separatedBy: " — ")[0]
+            .components(separatedBy: " - ")[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id = "voice_id"
         case name, category, description, labels

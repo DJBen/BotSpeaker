@@ -151,7 +151,8 @@
                                 Padding="10,3" Margin="8,0,0,0" FontWeight="Bold"
                                 Background="#FF2E6BD6" Foreground="White" BorderThickness="0"
                                 Click="OnCreateScriptClick"/>
-                        <TextBox x:Name="SpeakerNameBox" Padding="3" KeyDown="OnSpeakerNameKeyDown"/>
+                        <TextBox x:Name="SpeakerNameBox" Padding="3" KeyDown="OnSpeakerNameKeyDown"
+                                 TextChanged="OnSpeakerNameChanged"/>
                     </DockPanel>
                     <TextBlock x:Name="TemplateHint" FontSize="11" Foreground="Gray" Margin="90,4,0,0"
                                TextWrapping="Wrap"
