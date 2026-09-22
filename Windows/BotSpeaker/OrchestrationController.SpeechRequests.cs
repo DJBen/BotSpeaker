@@ -259,7 +259,7 @@ public sealed partial class OrchestrationController
     /// </summary>
     private void PumpSpeechRequestQueue()
     {
-        if (_activeSpeechRequestId is not null || _activeExecutionTurnId is not null) return;
+        if (_isExiting || _activeSpeechRequestId is not null || _activeExecutionTurnId is not null) return;
         var next = SpeechRequests.FirstOrDefault(request =>
             request.Status == SpeechRequestStatus.Queued
             && (!request.IsRemote || (ActiveMode == OrchestrationMode.Remote && request.TargetUid == _userId)));
@@ -450,6 +450,13 @@ public sealed partial class OrchestrationController
         catch (Exception reportError)
         {
             ErrorMessage = reportError.Message;
+            if (_isExiting)
+            {
+                // Keep the request retryable if quit could not notify the remote peer.
+                _speechRequestsById[id] = request;
+                PublishSpeechRequests();
+                throw;
+            }
         }
     }
 

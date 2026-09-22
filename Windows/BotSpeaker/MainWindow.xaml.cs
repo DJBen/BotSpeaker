@@ -21,6 +21,11 @@ public partial class MainWindow : Window
     private bool _showRecall;
     private RecallView _recallView = null!;
     private readonly Dictionary<string, RecallMeetingView> _recallMeetingViews = [];
+    public bool HasRecallMeetingWork => _recallMeetingViews.Values.Any(view => view.HasPendingWork);
+    public async Task PrepareRecallMeetingsForExitAsync()
+    {
+        foreach (var view in _recallMeetingViews.Values) await view.PrepareForExitAsync();
+    }
     private bool _showOrchestrationSession;
     private bool _isScrubbing;
     private bool _suppressUiEvents;
@@ -122,9 +127,11 @@ public partial class MainWindow : Window
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        // Behave like the macOS menu-bar app: closing the window keeps the app in the tray.
+        var app = (App)Application.Current;
+        if (app.IsShuttingDown) return;
         e.Cancel = true;
-        Hide();
+        // Complete the Closing event before a fast, idle shutdown closes this window again.
+        Dispatcher.BeginInvoke(new Action(async () => await app.ExitApplicationAsync()));
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e) =>
@@ -1339,8 +1346,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnQuitClick(object sender, RoutedEventArgs e) =>
-        ((App)Application.Current).ExitApplication();
+    private async void OnQuitClick(object sender, RoutedEventArgs e) =>
+        await ((App)Application.Current).ExitApplicationAsync();
 
     private void OnLinkNavigate(object sender, RequestNavigateEventArgs e)
     {

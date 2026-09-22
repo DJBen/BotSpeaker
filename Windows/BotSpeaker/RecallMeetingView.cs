@@ -13,6 +13,23 @@ public sealed class RecallMeetingView : UserControl
     private readonly OrchestrationController source;
     private readonly string templateId;
     public string TemplateId => templateId;
+    public bool HasPendingWork => busy || run != null || speakers.Any(speaker => speaker.Bot.Length > 0);
+    public async Task PrepareForExitAsync()
+    {
+        while (busy || run != null)
+        {
+            run?.Cancel();
+            await Task.Delay(100);
+        }
+        foreach (var speaker in speakers.Where(speaker => speaker.Bot.Length > 0))
+        {
+            await model.Recall.HandleAsync("remove", new() { ["botId"] = speaker.Bot });
+            speaker.Bot = "";
+            speaker.Status = "Not added";
+        }
+        step = Math.Min(step, 1);
+        Render();
+    }
     private readonly StackPanel root = new(), body = new();
     private readonly TextBlock message = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0,8,0,8) };
     private readonly TextBox meeting = new() { MinHeight = 28, Padding = new(5) };

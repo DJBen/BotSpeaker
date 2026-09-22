@@ -29,7 +29,7 @@ Feature parity with the macOS app:
   hosting, on any paired attendee; attendees get the same box in Remote Mode.
   Script templates stay available while hosting
 - Optional looping, disabled by default
-- System-tray icon with Play/Pause, Stop, and Quit; closing the window keeps the app running in the tray
+- System-tray icon with Play/Pause, Stop, and Quit. Closing the main window fully quits; active playback or meetings require confirmation, then pending speech is cancelled and sessions are closed before exit.
 - Installed builds check for updates on launch and every six hours, download in the background, and offer **Restart to update** in the tray menu
 
 ## Requirements

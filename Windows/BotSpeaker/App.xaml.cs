@@ -17,6 +17,8 @@ public partial class App : Application
     private WindowsUpdater? _updater;
     private Forms.ToolStripMenuItem? _checkUpdateItem;
     private Forms.ToolStripMenuItem? _restartUpdateItem;
+    private bool _exitRequested;
+    public bool IsShuttingDown { get; private set; }
 
     [STAThread]
     public static void Main()
@@ -53,7 +55,9 @@ public partial class App : Application
         // Loopback control API for the botspeaker CLI; started before the
         // window so a CLI that launched us finds the discovery file quickly.
         var api = new ControlApi(Model, Orchestration, Version);
-        _controlServer = new ControlServer(Dispatcher, Version, api.HandleAsync);
+        _controlServer = new ControlServer(Dispatcher, Version, request => _exitRequested
+            ? Task.FromResult(ControlServer.Response.Error(503, "Bot Speaker is quitting."))
+            : api.HandleAsync(request));
         _controlServer.Start(Model.Settings.ControlPort);
 
         _mainWindow = new MainWindow(Model, Orchestration);
@@ -102,7 +106,7 @@ public partial class App : Application
         var stopItem = new Forms.ToolStripMenuItem("Stop");
         stopItem.Click += (_, _) => Model.StopPlayback();
         var exitItem = new Forms.ToolStripMenuItem("Quit");
-        exitItem.Click += (_, _) => ExitApplication();
+        exitItem.Click += async (_, _) => await ExitApplicationAsync();
         _checkUpdateItem = new Forms.ToolStripMenuItem("Check for Updates…");
         _checkUpdateItem.Click += async (_, _) =>
         {
@@ -112,7 +116,7 @@ public partial class App : Application
                 MessageBox.Show(message, "BotSpeaker Updates", MessageBoxButton.OK, MessageBoxImage.Information);
         };
         _restartUpdateItem = new Forms.ToolStripMenuItem("Restart to update") { Visible = false };
-        _restartUpdateItem.Click += (_, _) => RestartToUpdate();
+        _restartUpdateItem.Click += async (_, _) => await RestartToUpdateAsync();
         menu.Opening += (_, _) => RefreshUpdateMenu();
         menu.Items.AddRange([openItem, _playPauseItem, stopItem, new Forms.ToolStripSeparator(),
             _checkUpdateItem, _restartUpdateItem, new Forms.ToolStripSeparator(), exitItem]);
@@ -143,7 +147,8 @@ public partial class App : Application
     }
 
     private bool CanRestartForUpdate => !Model.IsGenerating && !Model.Player.IsPlaying
-        && !Model.Player.IsBuffering && !Orchestration.IsActive && !Orchestration.IsBusy;
+        && !Model.Player.IsBuffering && !Orchestration.IsActive && !Orchestration.IsBusy
+        && !Model.Recall.HasPendingJobs && _mainWindow?.HasRecallMeetingWork != true && !_exitRequested;
 
     private void RefreshUpdateMenu()
     {
@@ -160,7 +165,7 @@ public partial class App : Application
         _restartUpdateItem.Text = CanRestartForUpdate ? "Restart to update" : "Restart to update (end playback / leave meeting first)";
     }
 
-    private void RestartToUpdate()
+    private async Task RestartToUpdateAsync()
     {
         // Recheck at click time: meeting/playback state may have changed since opening the menu.
         if (_updater is null || _updater.IsBusy || _updater.PendingUpdate is null || !CanRestartForUpdate) return;
@@ -183,7 +188,7 @@ public partial class App : Application
                 foreach (var process in instances) process.Dispose();
             }
             _updater.ApplyAndRestart();
-            ExitApplication();
+            await ExitApplicationAsync();
         }
         catch (Exception error)
         {
@@ -199,7 +204,56 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    public void ExitApplication()
+    public async Task ExitApplicationAsync()
+    {
+        if (_exitRequested || IsShuttingDown) return;
+        _exitRequested = true;
+        var windows = Windows.Cast<Window>().ToArray();
+        try
+        {
+            if (Model.IsGenerating || Model.Player.IsPlaying || Model.Player.IsBuffering
+                || Orchestration.IsActive || Orchestration.IsBusy
+                || Model.Recall.HasPendingJobs || _mainWindow?.HasRecallMeetingWork == true
+                || Orchestration.SpeechRequests.Any(request => !request.Status.IsTerminal()))
+            {
+                ShowMainWindow();
+                var detail = Orchestration.IsHost
+                    ? "Quitting will stop playback, end the hosted meeting, and disconnect its participants."
+                    : Orchestration.IsActive
+                        ? "Quitting will stop playback and leave the remote meeting. The host will be notified."
+                        : "Quitting will stop playback, cancel pending speech, and remove orchestration speaker bots.";
+                if (MessageBox.Show(_mainWindow!, detail + "\n\nQuit Bot Speaker?", "Quit Bot Speaker?",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            }
+            foreach (var window in windows) window.IsEnabled = false;
+            if (_trayIcon?.ContextMenuStrip is { } menu) menu.Enabled = false;
+            if (_mainWindow is not null) _mainWindow.Title = "Bot Speaker — Finishing session and quitting…";
+            await Orchestration.PrepareForExitAsync();
+            if (_mainWindow is not null) await _mainWindow.PrepareRecallMeetingsForExitAsync();
+            await Model.Recall.CancelPendingJobsAsync();
+            Model.StopPlayback();
+            IsShuttingDown = true;
+            FinishShutdown();
+        }
+        catch (Exception error)
+        {
+            ShowMainWindow();
+            MessageBox.Show(_mainWindow!, "Bot Speaker could not finish closing the session. The app will stay open so you can retry.\n\n" + error.Message,
+                "Couldn’t quit", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (!IsShuttingDown)
+            {
+                foreach (var window in windows) window.IsEnabled = true;
+                if (_trayIcon?.ContextMenuStrip is { } menu) menu.Enabled = true;
+                if (_mainWindow is not null) _mainWindow.Title = "Bot Speaker";
+                _exitRequested = false;
+            }
+        }
+    }
+
+    private void FinishShutdown()
     {
         _controlServer?.Stop();
         _controlServer = null;

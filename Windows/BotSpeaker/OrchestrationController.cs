@@ -111,6 +111,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
     private bool _hasReportedPlaybackStart;
     private bool _isAdvancing;
     private bool _isPolling;
+    private bool _isExiting;
     private string? _lastRoomActivityMarker;
     private DateTime _lastCollectionSyncUtc = DateTime.MinValue;
     private OrchestrationSessionStatus _previousSessionStatus = OrchestrationSessionStatus.Lobby;
@@ -927,7 +928,25 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
         });
     }
 
-    public async Task LeaveSessionAsync()
+    public async Task PrepareForExitAsync()
+    {
+        _isExiting = true;
+        try
+        {
+            // Let an in-flight host/join operation settle before tearing its session down.
+            while (IsBusy || _isPolling) await Task.Delay(100);
+            ErrorMessage = null;
+            foreach (var request in SpeechRequests.Where(request => !request.Status.IsTerminal()).ToArray())
+            {
+                await FinishSpeechRequestAsync(request.Id, SpeechRequestStatus.Cancelled, "Bot Speaker is quitting.", stopPlayback: true);
+                if (ErrorMessage is string speechError) throw new AppException(speechError);
+            }
+            await LeaveSessionAsync(requireSuccess: true);
+        }
+        finally { _isExiting = false; }
+    }
+
+    public async Task LeaveSessionAsync(bool requireSuccess = false)
     {
         if (SessionId is not string sessionId || _userId is not string uid)
         {
@@ -938,6 +957,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
         if (IsHost && SessionStatus is OrchestrationSessionStatus.Running or OrchestrationSessionStatus.Paused)
         {
             await StopMeetingAsync();
+            if (requireSuccess && ErrorMessage is string stopError) throw new AppException(stopError);
         }
         try
         {
@@ -986,6 +1006,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
         catch (Exception error)
         {
             ErrorMessage = error.Message;
+            if (requireSuccess) throw;
         }
         ClearPersistedSession();
         ResetLocalSession();
@@ -1174,7 +1195,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
 
     private async Task PollAsync()
     {
-        if (_isPolling || SessionId is not string sessionId) return;
+        if (_isExiting || _isPolling || SessionId is not string sessionId) return;
         _isPolling = true;
         try
         {
@@ -1443,7 +1464,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
 
     private void MaybeExecuteActiveTurn()
     {
-        if (SessionStatus != OrchestrationSessionStatus.Running
+        if (_isExiting || SessionStatus != OrchestrationSessionStatus.Running
             || _userId is not string uid
             || ActiveTurn is not OrchestrationTurn turn
             || turn.ParticipantUid != uid

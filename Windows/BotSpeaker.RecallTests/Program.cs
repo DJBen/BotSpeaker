@@ -190,6 +190,18 @@ internal static class Program
         try { await RecallTurnRunner.RunAsync(plan, MeetingRequest, _ => {}, stopRun.Token); throw new Exception("Expected cancellation"); }
         catch (OperationCanceledException) { Check(cancellationSent && sentTurns.Count == 1, "stopping cancels active speech and prevents later turns"); }
 
+        var shutdownHttp = new FakeHttp();
+        var shutdownController = new RecallController(new AppModel(), new HttpClient(shutdownHttp));
+        await shutdownController.HandleAsync("speak", new() { ["botId"] = bot, ["text"] = "shutdown scheduled", ["at"] = "+60" });
+        await shutdownController.HandleAsync("prepare", new() { ["botId"] = bot, ["text"] = "shutdown held" });
+        Check(shutdownController.HasPendingJobs, "pending Recall work requires quit confirmation");
+        await shutdownController.CancelPendingJobsAsync();
+        Check(!shutdownController.HasPendingJobs, "quit awaits every cancelled Recall job");
+        Check(shutdownController.Status()["jobs"]!.AsArray().All(job => job!["status"]!.GetValue<string>() == "cancelled"), "quit cancels both scheduled and held speech");
+        Check(shutdownHttp.Sent.Count == 0, "quit does not dispatch pending speech");
+        await shutdownController.CancelPendingJobsAsync();
+        Check(!shutdownController.HasPendingJobs, "repeated cleanup is safe");
+
         var preparingIds = new List<string>();
         var cleanedIds = new List<string>();
         var preparationDispatches = 0;

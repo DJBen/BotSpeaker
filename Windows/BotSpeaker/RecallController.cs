@@ -16,6 +16,13 @@ public sealed class RecallController
     private static readonly HttpClient defaultHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly HttpClient http;
     private readonly Dictionary<string, (JsonObject State, CancellationTokenSource Cancel)> jobs = [];
+    private readonly List<Task> runningJobs = [];
+    public bool HasPendingJobs => runningJobs.Any(task => !task.IsCompleted);
+    public async Task CancelPendingJobsAsync()
+    {
+        foreach (var job in jobs.Values) job.Cancel.Cancel();
+        await Task.WhenAll(runningJobs);
+    }
     private readonly Dictionary<string, SemaphoreSlim> botLocks = [];
     private readonly Dictionary<string, TaskCompletionSource> preparedStarts = [];
     private readonly Dictionary<string, string> knownMeetingUrls = [];
@@ -136,7 +143,8 @@ public sealed class RecallController
             start = signal.Task;
             state["held"] = true;
         }
-        _ = RunAsync(state, cancel.Token, body["voice"]?.GetValue<string>() ?? model.VoiceId, loop ? null : repeat, interval, at, Key!, Region, start);
+        runningJobs.RemoveAll(task => task.IsCompleted);
+        runningJobs.Add(RunAsync(state, cancel.Token, body["voice"]?.GetValue<string>() ?? model.VoiceId, loop ? null : repeat, interval, at, Key!, Region, start));
         return new JsonObject { ["ok"] = true, ["job"] = state.DeepClone() };
     }
     public static DateTimeOffset ParseTime(string value)
