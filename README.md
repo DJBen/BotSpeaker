@@ -34,7 +34,8 @@ The repository and its release downloads are public.
 
 ## Features
 
-- Native SwiftUI menu-bar app on macOS and native WPF system-tray app on Windows
+- Native SwiftUI menu-bar app on macOS and native WPF app with tray controls on Windows
+- Closing the Windows window fully quits; active playback or meetings require confirmation and cleanup before exit
 - One running instance per executable path; duplicate launches exit, while copies in different folders can run concurrently (macOS guard applies within the current user account)
 - Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
 - Windows installer builds use Velopack for background downloads and an explicit **Restart to update** tray action; portable ZIPs remain manual-update builds
@@ -60,12 +61,15 @@ The repository and its release downloads are public.
 - Timestamped JSON transcript export with both playback-device and
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
+- Recall.ai meeting bots with individual voices, scheduled speech, and orchestrated turns
+- Windows 0.5.5 Recall CLI controls for Teams invitation input, meeting-scoped bot cleanup, prepared speech, job waits, and JSON meeting plans
 
 ## Runtime requirements
 
 - An ElevenLabs API key
-- **macOS:** macOS 14 or later and [BlackHole 2ch](https://existential.audio/blackhole/) or another virtual audio device
-- **Windows:** Windows 10/11 x64 and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) or another virtual audio device
+- **macOS:** macOS 14 or later; [BlackHole 2ch](https://existential.audio/blackhole/) or another virtual audio device for local microphone routing
+- **Windows:** Windows 10/11 x64; [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) or another virtual audio device for local microphone routing
+- **Recall.ai bots:** a Recall API key; speech goes directly to the bot without a local virtual audio driver
 
 Virtual audio drivers are not bundled with BotSpeaker. Review their licensing terms before redistributing them with another application.
 
@@ -152,21 +156,75 @@ output configuration. The host chooses every voice and the meeting script. See t
 [meeting orchestration guide](docs/orchestration.md) for setup, privacy, protocol,
 and transcript details.
 
+## Use Recall.ai meeting bots
+
+Open **Recall.ai Bots** in the sidebar to configure your Recall key and join a
+meeting. On Windows, paste the full Teams invitation, including its meeting ID
+and passcode, or enter a join URL. An existing key appears masked during
+onboarding; choose **Change** to replace it.
+
+For a scripted conversation, choose **Host in Recall.ai** on an orchestrated
+script, assign speaker names and voices, and choose **Arrange turns**. Admit
+the bots from the meeting lobby before starting. Windows prepares every turn's
+audio before playback. Returning to the same sidebar item preserves progress
+for the current app session. After stopping or finishing, use **Remove all bots**
+to make the speaker bots leave.
+
+See the [Recall guide](docs/recall.md) for setup, timing, and lifecycle details.
+
 ## Drive it from the command line or an agent
 
-The `botspeaker` CLI (macOS and Windows) speaks arbitrary text on this
+Use `botspeaker` on macOS or `botspeaker-cli` on Windows to speak arbitrary text on this
 machine or on any Mac or Windows PC paired to the meeting this machine hosts,
 independent of the orchestrated script. Install
-or update it with the one-liner under [Download](#download); the app updates
-itself through Sparkle, and when it gets ahead of the CLI, every CLI call
-prints a reminder to run `botspeaker upgrade`. `botspeaker speak --wait "Hello"` plays locally;
+or update it with the one-liner under [Download](#download). macOS app updates
+use Sparkle; Windows installer builds update the app and bundled CLI together
+through Velopack. Standalone CLIs support `upgrade`.
+The examples below use the macOS command name; substitute `botspeaker-cli` on Windows.
+`botspeaker speak --wait "Hello"` plays locally;
 `botspeaker speak --target "Other Mac" --wait "Hello"` plays remotely and
 reports when it finished; `--loop` keeps the text playing on a cycle until
 `botspeaker stop`, and `--repeat N` plays it a set number of times.
-`botspeaker play-audio clip.mp3` plays a recorded file on this Mac through the
+`botspeaker play-audio clip.mp3` plays a recorded file on this machine through the
 same output and queue. The app exposes the same functions over a loopback
 HTTP API with a per-launch token, and `cli/skills/botspeaker/SKILL.md` is a
 ready-made skill for LLM agents. See the [CLI guide](docs/cli.md).
+
+### Recall CLI on Windows 0.5.5
+
+Use matching 0.5.5 or later app and CLI builds for these commands. All Recall
+commands return JSON. Replace the example IDs with values returned by `add`,
+`prepare`, or `meeting-create`.
+
+```powershell
+botspeaker-cli recall configure --region us-east-1
+Get-Clipboard -Raw | botspeaker-cli recall add --file - --name "Speaker One"
+botspeaker-cli recall add "123 456 789 012 3" --passcode CODE --name "Speaker Two"
+botspeaker-cli recall list --meeting "123 456 789 012 3"
+botspeaker-cli recall speak BOT_ID "Hello" --voice VOICE_ID --wait
+botspeaker-cli recall prepare BOT_ID "Next turn" --voice VOICE_ID --wait
+botspeaker-cli recall dispatch JOB_ID --wait
+botspeaker-cli recall remove-all --meeting "123 456 789 012 3"
+```
+
+For multi-speaker playback, create a JSON plan with a `turns` array containing
+`botId`, `voice`, and `text` for each turn:
+
+```powershell
+botspeaker-cli recall meeting-create --file plan.json
+botspeaker-cli recall meeting-start PLAN_ID
+botspeaker-cli recall meeting-status PLAN_ID
+botspeaker-cli recall meeting-skip PLAN_ID
+botspeaker-cli recall meeting-stop PLAN_ID
+botspeaker-cli recall meeting-wait PLAN_ID --timeout 600
+```
+
+CLI plans are separate from sidebar orchestration sessions. They survive CLI
+exit but reset when the app quits. Stop leaves bots joined; `remove-all` requires
+a meeting scope and makes its unfinished bots leave. Wait timeouts leave work
+running in the app, and cancellation cannot retract audio already sent.
+These extended commands are Windows-only; see the [Recall CLI reference](docs/recall.md#windows-cli-controls-055)
+for the plan format, status fields, and failure handling.
 
 ## Project structure
 
@@ -217,6 +275,4 @@ The same versioned GitHub Release is used for every platform. On the Windows rel
 
 The script verifies matching app and CLI versions, publishes self-contained win-x64 builds, and creates portable ZIPs/checksums plus a Velopack installer, full update package, and feed under a fresh `dist/windows-<version>-<id>/` directory. The installer bundles the matching CLI. Pass `-BuildOnly` to build locally without publishing or changing tags; this also permits a dirty working tree. Pass `-CertificateThumbprint <sha1>` instead of `-AllowUnsigned` to sign the app, CLI, and Velopack installer/updater binaries; unsigned builds require the explicit flag. Publishing refuses a dirty working tree, a tag that does not match `HEAD`, and existing asset names. The update feed uploads after its packages. Either platform can create the shared release first; the other adds its artifacts afterward. See [Windows installation and update verification](Windows/README.md#install-and-update) for migration and testing.
 
-The macOS publisher also signs the DMG with BotSpeaker's Sparkle EdDSA key and attaches `appcast.xml` to the GitHub Release. The Sparkle private key is stored in the login Keychain under Sparkle's default account (`ed25519`); the key was rotated for 0.2.0, so 0.1.x installs must update manually; preserve or securely export this key before moving release production to another Mac. Because anonymous GitHub release downloads are required for Sparkle, automatic updates become available once this repository is public. Until then, collaborators can continue installing releases manually from GitHub.
-
-Because this repository is currently private, only collaborators can download its GitHub release assets. Making the repository public later will also make its releases publicly downloadable.
+The macOS publisher also signs the DMG with BotSpeaker's Sparkle EdDSA key and attaches `appcast.xml` to the GitHub Release. The Sparkle private key is stored in the login Keychain under Sparkle's default account (`ed25519`); the key was rotated for 0.2.0, so 0.1.x installs must update manually; preserve or securely export this key before moving release production to another Mac. This repository and its release assets are public, allowing anonymous downloads for automatic updates.

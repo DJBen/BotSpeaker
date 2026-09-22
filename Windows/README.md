@@ -4,7 +4,7 @@ Native Windows (WPF) port of BotSpeaker: turns meeting scripts into ElevenLabs s
 
 ## Features
 
-Feature parity with the macOS app:
+Core features shared with the macOS app, plus Windows-specific controls:
 
 - ElevenLabs API-key setup, validation, and encrypted storage (Windows DPAPI, current-user scope)
 - ElevenLabs voice selection
@@ -17,12 +17,14 @@ Feature parity with the macOS app:
 - Cross-platform meeting orchestration where the host distributes one
   placeholder-driven script and every client prepares and persistently caches
   all assigned turns before playback
-- The `botspeaker` command line tool and a loopback control API (see
+- The `botspeaker-cli` command line tool and a loopback control API (see
   [Command line](#command-line) below): speak text or play an audio file on
   this PC, or speak text on any Mac or PC paired to a meeting this PC hosts,
-  with the same commands as the macOS CLI.
+  with the same core commands as the macOS CLI.
+- Recall.ai bot control, including invitation/passcode input, scoped bulk removal,
+  prepared speech, job waits, and JSON meeting plans through the Windows CLI
 - Ad hoc speech from the host: while paired in Remote Mode, the PC plays text
-  the host sends (`botspeaker speak --target "This PC" --wait "Hello"`,
+  the host sends (`botspeaker-cli speak --target "This PC" --wait "Hello"`,
   including `--loop` and `--repeat N`) and reports completion, failure, or
   cancellation back.
 - A **Speak** page for ad hoc text: play it on this PC at any time, or, while
