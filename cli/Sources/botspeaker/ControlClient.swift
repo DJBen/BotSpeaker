@@ -142,18 +142,18 @@ struct ControlClient {
         try await send(method: "GET", path: path, query: query, body: nil)
     }
 
-    func post(_ path: String, body: [String: Any] = [:]) async throws -> [String: Any] {
-        try await send(method: "POST", path: path, query: [:], body: body)
+    func post(_ path: String, body: [String: Any] = [:], timeout: TimeInterval = 3600) async throws -> [String: Any] {
+        try await send(method: "POST", path: path, query: [:], body: body, timeout: timeout)
     }
 
-    private func send(method: String, path: String, query: [String: String], body: [String: Any]?) async throws -> [String: Any] {
+    private func send(method: String, path: String, query: [String: String], body: [String: Any]?, timeout: TimeInterval = 3600) async throws -> [String: Any] {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty {
             components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
         var request = URLRequest(url: components.url!)
         request.httpMethod = method
-        request.timeoutInterval = 3600
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

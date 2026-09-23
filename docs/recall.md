@@ -1,6 +1,6 @@
 # Recall bot control
 
-### Timing on Windows
+### Prepared meeting timing
 
 Meeting playback keeps each speaker as a separate bot. Preparing the complete
 script first removes synthesis delays between turns; a failed preparation stops
@@ -15,8 +15,7 @@ For API clients, `POST /v1/recall/prepare` accepts the same speech fields as
 Prepared jobs use clip duration plus any requested `interval`, without the
 standalone command's two-second guard. Job status includes `durationSeconds`,
 `dispatchStartedAt`, `acceptedAt`, and `estimatedEndAt`; these describe local
-dispatch and estimates, not measured audio in the meeting. These actions are
-currently Windows-only.
+dispatch and estimates, not measured audio in the meeting. These actions are available on both platforms in the current source.
 
 Use `botspeaker-cli recall` on Windows or `botspeaker recall` on macOS. The CLI
 talks to the local app, which owns bot requests and speech schedules. The Recall
@@ -124,9 +123,9 @@ completion callbacks. The short-clip implementation uses
 
 ## Local control API
 
-### Windows CLI controls (0.5.5)
+### Recall CLI controls
 
-Windows supports meeting-scoped cleanup, Teams invitations, prepared speech,
+Windows 0.5.5 and the current macOS source support meeting-scoped cleanup, Teams invitations, prepared speech,
 and app-owned meeting plans:
 
 ```powershell
@@ -180,7 +179,7 @@ waits until the clip is ready; speech/dispatch waits use estimated completion.
 
 These CLI plans are separate from sidebar orchestration sessions. Their state
 survives CLI exit, but not app restart. `recall status` includes all CLI plans
-under `meetings`. The extra commands in this section are Windows-only.
+under `meetings`. Use `botspeaker` in place of `botspeaker-cli` on macOS.
 
 ### Routes
 
@@ -192,7 +191,7 @@ All routes use the existing authenticated loopback control server:
 `{meetingUrl, name?}`; `configure` takes `{apiKey?, region?}`. Status includes
 `configured`, `region`, and `jobs`. CLI output is JSON for all Recall actions.
 
-Windows also supports `prepare`, `dispatch`, `remove-all`, `meeting-create`,
+Both platforms also support `prepare`, `dispatch`, `remove-all`, `meeting-create`,
 `meeting-start`, `meeting-status`, `meeting-skip`, and `meeting-stop` under the
 same route prefix. `list` accepts `{meetingId?}`; `remove-all` requires
 `{meetingId}`; `add` also accepts `passcode`. `meeting-create` takes the JSON
@@ -200,6 +199,12 @@ plan above; other meeting actions take `{id}`. `wait` and `meeting-wait` are
 CLI polling operations, not separate API routes.
 
 ## Validation
+
+On macOS, run `scripts/test-macos-recall.sh` for the production controller and
+CLI tests with mocked HTTP, synthesis, and credentials. Run
+`scripts/test-macos-voices.sh` for the voice-selection regression suite.
+No paid API calls or real meetings are used by these tests.
+
 
 ```powershell
 dotnet build Windows/BotSpeaker/BotSpeaker.csproj
@@ -218,10 +223,44 @@ startup, stop, skip, failure, and cleanup without joining real calls.
 
 Choose **Host in Recall.ai** beside **Host this transcript** on an orchestrated script. The flow remembers the meeting link, then offers one bot per configured speaker. Set names and voices before adding bots; each bot joins with that speaker's name. Remove and re-add a bot to change its meeting display name. Bot status refreshes every ten seconds while the setup is visible.
 
-Choose **Arrange turns** to add any missing speaker bots automatically and open the turn preview. Existing bots are reused; if an addition fails, successful additions are retained for retry. The preview shows each bot status and lets you edit speech, assign speakers, reorder, add, or remove turns. **Start meeting** requires all bots to be in `in_call_recording`. On Windows, all turn audio is synthesized and loaded before the first dispatch. Turns then advance after the previous clip's measured duration, with no added two-second pause and no synthesis between speakers. The preparation screen remains cancellable. The macOS flow still uses the previous duration-plus-two-second pacing. This is estimated playback pacing, not a remote playback acknowledgment. There is no schedule/repeat UI in this flow. A failed turn stops subsequent turns. **Stop meeting** cancels the current local speech job and remaining turns; audio already sent may finish. Bots stay in the call until removed from **Back to bots**.
+Choose **Arrange turns** to add any missing speaker bots automatically and open the turn preview. Existing bots are reused; if an addition fails, successful additions are retained for retry. The preview shows each bot status and lets you edit speech, assign speakers, reorder, add, or remove turns. **Start meeting** requires all bots to be in `in_call_recording`. On both platforms, all turn audio is synthesized and loaded before the first dispatch. Turns then advance after the previous clip's measured duration, with no added two-second pause and no synthesis between speakers. The preparation screen remains cancellable. This is estimated playback pacing, not a remote playback acknowledgment. There is no schedule/repeat UI in this flow. A failed turn stops subsequent turns. **Stop meeting** cancels the current local speech job and remaining turns; audio already sent may finish. Bots stay in the call until removed from **Back to bots**.
 
-Navigation preserves the current plan and active run for this app session. Return via **Host in Recall.ai** on an orchestrated script. To choose a different script or meeting, remove the speaker bots, choose **Change meeting**, then **Back to scripts** (Back on macOS). Plans and active speech do not survive app shutdown.
+Navigation preserves each template’s plan and active run for this app session. Return via **Host in Recall.ai** on an orchestrated script. To choose a different script or meeting, remove the speaker bots, choose **Change meeting**, then **Back to scripts** (Back on macOS). Plans and active speech do not survive app shutdown.
 
 During a Recall meeting, **Skip turn** cancels the current local job and advances to the next turn. It does not stop the run. Audio already accepted by Recall cannot be retracted and may finish over the next speaker. Individual Add bot buttons are omitted from orchestration setup; **Arrange turns** adds all missing bots, while Remove bot remains available for bots already added.
 
 Step 2 also offers **Remove all bots** for all speaker bots in the current orchestration. Successful removals clear their mappings; failures remain available for retry. Names, voices, and turns are retained, and **Arrange turns** can add the bots again.
+
+On macOS, explicit Quit (including Cmd-Q and the menu-bar Quit button) confirms
+when work is active, cancels pending speech, leaves/closes remote sessions, and
+removes sidebar orchestration speaker bots. Cleanup failures keep the app open
+for retry. Closing a macOS window still leaves the menu-bar app running.
+Standalone Recall bots and bots supplied to CLI plans remain joined until removed;
+quit cancels their pending local jobs. Plans and jobs are not restored after exit.
+
+### Include this computer and export ground truth (macOS)
+
+In **Host in Recall.ai**, enter the meeting invitation, then enable **Include this
+computer as speaker 1**. Enter **Host Speaker name** exactly as this machine appears
+in the meeting. A five-person script invites four bots; a four-person script
+invites three. Choose speaker 1's voice as usual. Host turns play through the app's
+selected output device: route that virtual device (for example BlackHole) into the
+meeting microphone and unmute the host. All clips prepare before any turn plays.
+The new **Five-person release check** and **Four-person sprint check** scenarios use
+short turns alternating the host with other attendees.
+
+Enable **Produce ground truth after the meeting** to save a `gt_final.json`
+automatically after successful completion. **Reveal ground truth artifact** opens
+its location under `~/Library/Application Support/BotSpeaker/GroundTruth/<run UUID>/`.
+The `gt_final_v1` payload contains the meeting ID, roster, stable seat-based speaker
+keys, host `recorder` flag, scripted text (without bracketed voice directions), and
+millisecond turn intervals. Duplicate display names retain distinct speaker keys.
+Stopped or failed runs do not produce a final artifact; skipped turns are omitted.
+
+These are orchestration estimates, not human-reviewed or recording-aligned truth.
+The `timing.origin` is the first turn's dispatch reference in UTC. Local starts use
+the player's start time; remote starts use Recall's audio acceptance time and clip
+duration. Recall cannot confirm when remote audio becomes audible. Align timestamps
+with the target recording and verify spoken text before using this artifact for
+attribution scoring. The meeting ID is the conferencing ID, not an external
+recorder's internal meeting UUID; update it to that UUID when importing if needed.

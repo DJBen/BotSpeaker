@@ -42,7 +42,79 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable {
         text: performanceReviewOneOnOneText
     )
 
-    static let all = [launchReadiness, apiIncidentReview, performanceReviewOneOnOne]
+    static let quickFivePerson = OrchestratedMeetingTemplate(
+        id: "five-person-release-check", title: "Five-person release check",
+        detail: "5 speakers · short turns", speakerRoles: ["Host", "Engineering", "Design", "Quality", "Support"],
+        defaultVoiceGenders: ["female", "male", "female", "male", "female"], text: """
+        {{speaker_1}}: Let's do a quick release check. {{speaker_2}}, is the build ready?
+
+        {{speaker_2}}: Yes. The retry fix is merged, and the build is green.
+
+        {{speaker_1}}: Great. {{speaker_3}}, any design concerns?
+
+        {{speaker_3}}: Just one. The empty screen needs a clearer next step.
+
+        {{speaker_1}}: Can we fix that today?
+
+        {{speaker_3}}: Yes. I'll send the revised copy before lunch.
+
+        {{speaker_1}}: Thanks. {{speaker_4}}, how did testing go?
+
+        {{speaker_4}}: Desktop passed. I'm checking mobile sign-in this morning.
+
+        {{speaker_1}}: Please flag any blockers by two. {{speaker_5}}, is support ready?
+
+        {{speaker_5}}: The help article is ready. I still need the final screenshots.
+
+        {{speaker_1}}: {{speaker_2}}, can you send those after the copy lands?
+
+        {{speaker_2}}: Absolutely. I'll capture them from the release build.
+
+        {{speaker_1}}: Any reason to delay the pilot?
+
+        {{speaker_4}}: Only if mobile sign-in fails. I'll report back by two.
+
+        {{speaker_1}}: Good. We'll launch after that check passes. Thanks, everyone.
+        """
+    )
+
+    static let quickFourPerson = OrchestratedMeetingTemplate(
+        id: "four-person-sprint-check", title: "Four-person sprint check",
+        detail: "4 speakers · short turns", speakerRoles: ["Host", "Engineering", "Design", "Support"],
+        defaultVoiceGenders: ["female", "male", "female", "male"], text: """
+        {{speaker_1}}: Let's pick today's priorities. {{speaker_2}}, what's blocking us?
+
+        {{speaker_2}}: Search is slow on large accounts. I have a fix ready.
+
+        {{speaker_1}}: What needs to happen before it ships?
+
+        {{speaker_2}}: A load test and one review. Both should finish today.
+
+        {{speaker_1}}: Thanks. {{speaker_3}}, how is the onboarding update?
+
+        {{speaker_3}}: The prototype is ready. Two users will try it this afternoon.
+
+        {{speaker_1}}: Which part are we testing?
+
+        {{speaker_3}}: Whether people can invite a teammate without help.
+
+        {{speaker_1}}: {{speaker_4}}, what are customers asking for?
+
+        {{speaker_4}}: Clearer invite errors. Expired links look like broken accounts.
+
+        {{speaker_1}}: Let's include that in the prototype.
+
+        {{speaker_3}}: Agreed. I'll add an expired-link screen before the sessions.
+
+        {{speaker_1}}: Anything else we need today?
+
+        {{speaker_4}}: A short update when the search fix ships. I'll notify affected customers.
+
+        {{speaker_1}}: Perfect. Search first, onboarding feedback next. We'll check in tomorrow.
+        """
+    )
+
+    static let all = [quickFivePerson, quickFourPerson, launchReadiness, apiIncidentReview, performanceReviewOneOnOne]
 
     private static let performanceReviewOneOnOneText = """
     {{speaker_1}}: Come in, sit down — and {{speaker_2}}, you can stop looking like you're walking into a root canal. [laughs] This is a good review. I'm {{speaker_1}}, your engineering manager, for the record. Short version first, because I know you hate suspense: strong year, exceeding expectations. The billing platform is more reliable because of you, and half the team asks "what would {{speaker_2}} do" during incidents, which is either a compliment or a cry for help.

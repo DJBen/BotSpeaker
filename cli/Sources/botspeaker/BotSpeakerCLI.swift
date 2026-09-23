@@ -350,6 +350,7 @@ struct Status: AsyncParsableCommand {
             if let voice = response["voice"] as? [String: Any] {
                 print("Voice: \(Output.string(voice["name"])) (\(Output.string(voice["id"])))")
             }
+            if let model = response["model"] as? String { print("Model: \(model)") }
             if let session = response["session"] as? [String: Any] {
                 let mode = Output.string(session["mode"])
                 print("Session: \(mode) · code \(Output.string(session["code"])) · \(Output.string(session["status"]))")
@@ -427,7 +428,7 @@ struct Models: AsyncParsableCommand {
 }
 
 struct Voices: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "List ElevenLabs voices, or select the default voice.")
+    static let configuration = CommandConfiguration(abstract: "List your account's voices (shared across models), or select the default voice.")
 
     @OptionGroup var global: GlobalOptions
 
@@ -441,6 +442,7 @@ struct Voices: AsyncParsableCommand {
         do {
             let client = try await ControlClient.locate()
             if let select {
+                if refresh { _ = try await client.get("/v1/voices", query: ["refresh": "1"]) }
                 let response = try await client.post("/v1/voices/select", body: ["voice": select])
                 if global.json { Output.json(response) } else if let selected = response["selected"] as? [String: Any] {
                     print("selected \(Output.string(selected["name"])) (\(Output.string(selected["id"])))")
@@ -453,6 +455,7 @@ struct Voices: AsyncParsableCommand {
                 return
             }
             let selected = response["selected"] as? String
+            if let model = response["model"] as? String { print("Model: \(model) · shared account voice list") }
             var rows = [["", "ID", "NAME", "DETAIL"]]
             for voice in response["voices"] as? [[String: Any]] ?? [] {
                 rows.append([

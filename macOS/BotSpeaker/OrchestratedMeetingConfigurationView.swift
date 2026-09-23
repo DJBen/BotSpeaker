@@ -16,9 +16,6 @@ struct OrchestratedMeetingConfigurationView: View {
     var body: some View {
         if showRecallMeeting {
             RecallMeetingView(model: model, plan: model.recallMeeting) {
-                if model.recallMeeting.speakers.allSatisfy({ $0.bot.isEmpty }) {
-                    model.recallMeeting.speakers = []; model.recallMeeting.turns = []
-                }
                 showRecallMeeting = false
             }
         } else { hostConfiguration }
@@ -94,7 +91,7 @@ struct OrchestratedMeetingConfigurationView: View {
                 .disabled(controller.isBusy)
                 Button("Host in Recall.ai") {
                     do {
-                        try model.recallMeeting.configure(controller, model: model)
+                        try model.selectRecallMeeting(controller)
                         showRecallMeeting = true
                     } catch { recallSetupError = error.localizedDescription }
                 }

@@ -25,6 +25,7 @@ struct ElevenLabsClient {
     func listVoices(apiKey: String) async throws -> [ElevenLabsVoice] {
         var voices: [ElevenLabsVoice] = []
         var nextPageToken: String?
+        var seenTokens = Set<String>()
 
         repeat {
             var components = URLComponents(string: "https://api.elevenlabs.io/v2/voices")!
@@ -45,7 +46,15 @@ struct ElevenLabsClient {
             try validate(response: response, data: data)
             let page = try JSONDecoder().decode(VoicePage.self, from: data)
             voices.append(contentsOf: page.voices)
-            nextPageToken = page.hasMore ? page.nextPageToken : nil
+            if page.hasMore {
+                guard let token = page.nextPageToken, !token.isEmpty,
+                      seenTokens.insert(token).inserted else {
+                    throw AppError("ElevenLabs returned an incomplete voice list. Please refresh voices.")
+                }
+                nextPageToken = token
+            } else {
+                nextPageToken = nil
+            }
         } while nextPageToken != nil
 
         return voices

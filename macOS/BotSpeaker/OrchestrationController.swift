@@ -829,7 +829,18 @@ final class OrchestrationController {
         }
     }
 
-    func leaveSession() async {
+    func prepareForExit() async throws {
+        while isBusy || isAdvancing { try await Task.sleep(for: .milliseconds(100)) }
+        errorMessage = nil
+        for request in speechRequests where !request.status.isTerminal {
+            try await cancelSpeech(id: request.id)
+            if let errorMessage { throw AppError(errorMessage) }
+        }
+        await leaveSession(requireSuccess: true)
+        if let errorMessage { throw AppError(errorMessage) }
+    }
+
+    func leaveSession(requireSuccess: Bool = false) async {
         guard let sessionID, let uid = userID else {
             resetLocalSession()
             return
@@ -837,6 +848,7 @@ final class OrchestrationController {
 
         if isHost, sessionStatus == .running || sessionStatus == .paused {
             await stopMeeting()
+            if requireSuccess, errorMessage != nil { return }
         }
         do {
             let batch = database.batch()
@@ -862,6 +874,7 @@ final class OrchestrationController {
         } catch {
             errorMessage = error.localizedDescription
         }
+        if requireSuccess, errorMessage != nil { return }
         clearPersistedSession()
         resetLocalSession()
     }
@@ -1254,7 +1267,7 @@ final class OrchestrationController {
     }
 
     private func maybeExecuteActiveTurn() {
-        guard sessionStatus == .running,
+        guard model?.isShuttingDown != true, sessionStatus == .running,
               let uid = userID,
               let turn = activeTurn,
               turn.participantUID == uid,
@@ -1598,7 +1611,7 @@ final class OrchestrationController {
     }
 
     private func advanceAfterTerminalTurn(_ terminalTurn: OrchestrationTurn) async {
-        guard !isAdvancing,
+        guard model?.isShuttingDown != true, !isAdvancing,
               let sessionID,
               terminalTurn.index == activeTurnIndex else { return }
         isAdvancing = true

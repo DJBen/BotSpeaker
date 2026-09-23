@@ -6,6 +6,7 @@ struct RecallView: View {
     @State private var name = "BotSpeaker"
     @AppStorage("recallLastMeeting") private var lastMeeting = ""
     @State private var meetingDraft = ""
+    @State private var passcode = ""
     @State private var meetingReady = false
     @State private var showingNamePrompt = false
     @State private var bots: [BotRow] = []
@@ -32,7 +33,7 @@ struct RecallView: View {
     private static let sentences = ["I am ready to help test the meeting audio. I will speak at a steady pace so that everyone can check the sound and follow the conversation.\n\nFor our first task, let us agree on one useful outcome for today. We can collect ideas, compare a few options, and choose a clear next step together.\n\nBefore we finish, we will recap the decision and name the person responsible for following up. That way, everyone leaves with the same understanding and a practical plan.", "I look forward to hearing everyone's ideas. A thoughtful question can reveal something we have missed, so let us leave room for different perspectives.\n\nImagine we are planning a small community garden. We need to choose a location, decide what to grow, and work out how to share the watering schedule.\n\nA simple plan will help us get started without making everything perfect on the first day. We can learn from the first few weeks and make improvements as we go.", "Today is a good day to turn ideas into action. Let us start by describing the problem in plain language and checking that we all mean the same thing.\n\nNext, we can identify one small experiment that would teach us something useful. We should agree on what success looks like and how we will measure the result.\n\nOnce the experiment is complete, we can review the evidence together. Whether the result is encouraging or surprising, it will help us make a better decision about what comes next."]
     private var visibleBots: [BotRow] {
         let scope = RecallController.meetingID(meeting)
-        return bots.filter { !scope.isEmpty && $0.meetingID == scope && $0.status != "done" }
+        return bots.filter { !scope.isEmpty && $0.meetingID == scope && !["done", "fatal"].contains($0.status) }
     }
     var body: some View {
         ScrollView {
@@ -90,13 +91,12 @@ struct RecallView: View {
     private var meetingSetup: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a meeting").font(.title2)
-            TextField("Meeting URL or ID", text: $meetingDraft)
-                .textFieldStyle(.roundedBorder).controlSize(.large).frame(minHeight: 28)
-            Text("Enter a meeting URL or a previously used meeting ID. Known IDs reuse their saved join details.").foregroundStyle(.secondary)
+            TextEditor(text: $meetingDraft).frame(height: 100).border(.secondary.opacity(0.3))
+            SecureField("Teams passcode (for a meeting ID)", text: $passcode).textFieldStyle(.roundedBorder)
+            Text("Paste a full Teams invitation, meeting link, or meeting ID and passcode. Known IDs reuse their saved join details.").foregroundStyle(.secondary)
             Button("Continue") { perform {
-                let value = meetingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !value.isEmpty else { return }
-                if value.contains("://"), URL(string: value)?.scheme != "https" { throw AppError("Use an HTTPS meeting URL.") }
+                let value = try await model.recall.resolveMeetingURL(meetingDraft, passcode: passcode, model: model)
+                passcode = ""
                 lastMeeting = value
                 meeting = value; bots = []; bot = nil; meetingReady = true
                 try await refresh()
@@ -126,6 +126,13 @@ struct RecallView: View {
                         _ = try await model.recall.handle("remove", ["botId": bot], model: model)
                         try await refresh()
                     } }.disabled(bot == nil)
+                    Button("Remove all bots") { perform {
+                        let result = try await model.recall.handle("remove-all", ["meetingId": meeting], model: model)
+                        try await refresh()
+                        if let failures = result["failures"] as? [[String: String]], !failures.isEmpty {
+                            throw AppError(failures.map { ($0["botId"] ?? "") + ": " + ($0["error"] ?? "Removal failed") }.joined(separator: "\n"))
+                        }
+                    } }.disabled(visibleBots.isEmpty)
                     Spacer()
                     Text(meeting.isEmpty ? "Enter a meeting URL or ID." : "\(visibleBots.count) unfinished bots").font(.caption).foregroundStyle(.secondary)
                 }

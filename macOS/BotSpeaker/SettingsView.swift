@@ -20,6 +20,9 @@ struct SettingsView: View {
                 }
                 Text("Flash v2 is English-only. Choose Eleven v3 for expressive audio tags in the bundled templates.")
                     .font(.caption).foregroundStyle(.secondary)
+                VoicePicker(model: model)
+                Text("This is the default voice for scripts and local speech. Both models use the same account voice list, but delivery can differ. Professional voice clones may sound less faithful with v3.")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     if model.hasAPIKey {
                         Label("Saved in Keychain", systemImage: "checkmark.shield.fill")

@@ -94,6 +94,9 @@ struct SpeechComposer: View {
                     .foregroundStyle(.secondary)
                 Picker("Voice", selection: $voiceID) {
                     Text(defaultVoiceLabel).tag("")
+                    if !voiceID.isEmpty, !model.voices.contains(where: { $0.id == voiceID }) {
+                        Text("Voice ID \(voiceID)").tag(voiceID)
+                    }
                     ForEach(model.voices) { voice in
                         Text(voice.detail.isEmpty ? voice.name : "\(voice.name) — \(voice.detail)")
                             .tag(voice.id)
@@ -101,11 +104,27 @@ struct SpeechComposer: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: 360, alignment: .leading)
+                Button { Task { await model.refreshVoices() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh ElevenLabs voices")
+                .accessibilityLabel("Refresh ElevenLabs voices")
+                .disabled(model.isLoadingVoices)
+                if model.isLoadingVoices { ProgressView().controlSize(.small) }
                 Toggle(isOn: $loop) {
                     Label("Loop until stopped", systemImage: "repeat")
                 }
                 .toggleStyle(.checkbox)
                 .help("Play the text on a cycle until you stop it")
+            }
+
+            Text(selectedAttendee == nil
+                 ? "Model: \(model.selectedModelName) · Voice applies to this request. Change the default voice and model in Settings."
+                 : "Uses the attendee's saved model. Listed voices are from this Mac's account; availability on the attendee may differ.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let error = model.voiceLoadError {
+                Text(error).font(.caption).foregroundStyle(.orange)
             }
 
             TextEditor(text: $text)

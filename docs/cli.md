@@ -89,6 +89,32 @@ Add `--json` after the subcommand for machine-readable output (for example
 or failed the request, `2` the app could not be launched or reached, or the
 token was rejected.
 
+### Voices and models on macOS
+
+`eleven_flash_v2` is Flash v2 (English-only), not Multilingual v2 or Flash v2.5.
+Flash v2 and Eleven v3 use the same account voice catalog and voice IDs. Changing
+the model preserves your selected voice; delivery and clone fidelity can differ.
+ElevenLabs notes that professional voice clones may be less faithful with v3.
+The `/v2/voices` URL is the voice-list API version, not a filter for v2 speech.
+See [ElevenLabs voices](https://elevenlabs.io/docs/overview/capabilities/voices)
+and [v3 guidance](https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices).
+
+In **Settings → ElevenLabs**, select the default model and voice together.
+The **Speak** page's voice picker overrides the voice for that request; its
+Default option follows Settings. `botspeaker voices --select NAME_OR_ID` changes
+the same saved default, while `botspeaker speak --voice NAME_OR_ID "text"` changes
+only that request. `botspeaker status` and `botspeaker voices` show the local
+model. Exact voice IDs are safest in scripts: an ambiguous name returns
+`ambiguous_voice` rather than picking the first match. Combine `--refresh --select`
+to refresh first; a failed refresh prevents selection.
+
+Remote attendees use their own saved model, API key, and default voice. A host's
+voice list belongs to the host's account, so an override may not be available to
+the attendee. Omitting `--voice` uses the attendee's own default.
+
+Run `./scripts/test-macos-voices.sh` for voice resolution, catalog pagination,
+and CLI regression tests without using an ElevenLabs account.
+
 ### Remote playback
 
 The CLI and the app share one session. `botspeaker host` runs the same code
@@ -274,4 +300,8 @@ agents. Copy or symlink it into the agent's skills directory
 
 Use `botspeaker recall` (`botspeaker-cli recall` on Windows) to configure Recall,
 list/add/remove bots, schedule ElevenLabs speech, repeat/loop, and cancel jobs.
+Both platforms support invitation/passcode input, meeting-scoped removal,
+`prepare`/`dispatch`, job waits, and JSON meeting plans with start/status/skip/stop
+controls. These extended controls require the current macOS source or Windows
+0.5.5 and matching CLI builds.
 See [Recall control](recall.md) for setup, commands, scheduling semantics, and limits.

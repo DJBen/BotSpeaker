@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Observation
 
@@ -18,6 +19,14 @@ final class RecallMeetingPlan {
     }
     var title = ""
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
+    var passcode = ""
+    var includeHost = false
+    var hostName = ""
+    var exportGroundTruth = false
+    var artifactURL: URL?
+    func isHost(_ index: Int) -> Bool { includeHost && index == 0 }
+    func speakerName(_ index: Int) -> String { isHost(index) ? hostName.trimmingCharacters(in: .whitespacesAndNewlines) : speakers[index].name }
+    var preparing = false
     var step = 0
     var speakers: [Speaker] = []
     var turns: [Turn] = []
@@ -67,6 +76,7 @@ final class RecallMeetingPlan {
         }
     }
     func toggleBot(_ index: Int, model: AppModel) async throws {
+        guard !isHost(index) else { return }
         if speakers[index].bot.isEmpty {
             let name = speakers[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { throw AppError("Enter a speaker name.") }
@@ -90,48 +100,59 @@ final class RecallMeetingPlan {
     }
 
     func resolved(_ text: String) -> String {
-        speakers.enumerated().reduce(text) { $0.replacingOccurrences(of: "{{speaker_\($1.offset + 1)}}", with: $1.element.name) }
+        speakers.enumerated().reduce(text) { $0.replacingOccurrences(of: "{{speaker_\($1.offset + 1)}}", with: speakerName($1.offset)) }
     }
     func start(_ model: AppModel) async throws {
         guard !turns.isEmpty, turns.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw AppError("Add nonempty speech for each turn.") }
+        guard !includeHost || !hostName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AppError("Enter the Host Speaker name shown in the meeting.") }
+        guard turns.allSatisfy({ speakers.indices.contains($0.speaker) }) else { throw AppError("A turn has an invalid speaker.") }
         try await refresh(model)
-        guard speakers.allSatisfy({ $0.status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
+        guard speakers.indices.allSatisfy({ isHost($0) || speakers[$0].status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
         running = true
+        artifactURL = nil
         task = Task {
-            var activeJob: String?
-            defer { running = false; skipRequested = false; task = nil }
+            let local = LocalMeetingSpeech(outputDevice: model.selectedDeviceUID)
+            defer { local.stop() }
+            var origin: Date?
+            var recorded: [[String: Any]] = []
+            defer { running = false; preparing = false; skipRequested = false; task = nil }
             do {
-                for (index, turn) in turns.enumerated() {
-                    try Task.checkCancellation()
-                    skipRequested = false
+                preparing = true
+                let preparedTurns = turns.map { turn in
                     let speaker = speakers[turn.speaker]
-                    message = "Turn \(index + 1) of \(turns.count) · \(speaker.name)\n\n\(resolved(turn.text))"
-                    let result = try await model.recall.handle("speak", ["botId": speaker.bot, "voice": speaker.voice, "text": resolved(turn.text)], model: model)
-                    guard let job = result["job"] as? [String: Any], let id = job["id"] as? String else { throw AppError("Recall did not return a speech job.") }
-                    activeJob = id
-                    while true {
-                        try Task.checkCancellation()
-                        if skipRequested {
-                            _ = try await model.recall.handle("cancel", ["id": id], model: model)
-                            break
-                        }
-                        guard let state = model.recall.jobs.first(where: { $0["id"] as? String == id }) else { throw AppError("Speech job was lost.") }
-                        let status = state["status"] as? String
-                        if status == "finished_dispatching" { break }
-                        if status == "failed" || status == "cancelled" { throw AppError(state["error"] as? String ?? "Speech was cancelled.") }
-                        try await Task.sleep(for: .milliseconds(100))
-                    }
-                    activeJob = nil
+                    return RecallMeetingTurn(botID: isHost(turn.speaker) ? "local" : speaker.bot, voice: speaker.voice, text: resolved(turn.text))
                 }
-                message = "All turns dispatched. Bots remain in the meeting; use Back to bots to remove them."
+                try await RecallTurnRunner.run(preparedTurns, request: { action, body in
+                    if body["botId"] as? String == "local" || local.owns(body["id"] as? String) {
+                        return try await local.handle(action, body, model: model)
+                    }
+                    var response = try await model.recall.handle(action, body, model: model)
+                    if action == "status" { response["jobs"] = (response["jobs"] as? [[String: Any]] ?? []) + local.currentJobs }
+                    return response
+                }, progress: { index in
+                    if origin == nil { origin = Date() }
+                    preparing = false; skipRequested = false
+                    message = "Turn \(index + 1) of \(turns.count) · \(speakerName(turns[index].speaker))\n\n\(preparedTurns[index].text)"
+                }, skipRequested: { skipRequested }, preparing: { index in
+                    message = "Preparing turn \(index + 1) of \(turns.count)…"
+                }, completed: { index, job, skipped in
+                    guard !skipped, let origin, let start = job["acceptedAtEpoch"] as? Double,
+                          let duration = job["durationSeconds"] as? Double else { return }
+                    recorded.append(MeetingGroundTruth.turn(speaker: turns[index].speaker, name: speakerName(turns[index].speaker), text: preparedTurns[index].text, start: start - origin.timeIntervalSince1970, duration: duration, local: isHost(turns[index].speaker)))
+                })
+                if exportGroundTruth, let origin {
+                    artifactURL = try MeetingGroundTruth.save(meetingID: RecallController.meetingID(meeting), names: speakers.indices.map { speakerName($0) }, host: includeHost ? 0 : nil, origin: origin, turns: recorded)
+                }
+                message = "All turns dispatched. Use Remove all bots to make the speaker bots leave."
             } catch {
-                if Task.isCancelled {
-                    if let id = activeJob { _ = try? await model.recall.handle("cancel", ["id": id], model: model) }
-                    message = "Stopped. Audio already sent may finish playing. Bots remain available in Back to bots."
-                } else { message = error.localizedDescription }
+                message = Task.isCancelled
+                    ? "Stopped. Audio already sent may finish playing. Use Remove all bots when finished."
+                    : error.localizedDescription
             }
         }
     }
+    func stopAndWait() async { task?.cancel(); await task?.value }
+
     func stop() { task?.cancel() }
 }
 
@@ -145,10 +166,13 @@ struct RecallMeetingView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recall.ai · \(plan.title)").font(.title.bold())
                 Text("1  Meeting   →   2  Speaker bots   →   3  Arrange turns").foregroundStyle(.secondary)
+                if let url = plan.artifactURL {
+                    Button("Reveal ground truth artifact") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                }
                 if !plan.message.isEmpty { Text(plan.message).textSelection(.enabled) }
                 if plan.running {
                     HStack {
-                        Button("Skip turn") { plan.skipRequested = true }.disabled(plan.skipRequested)
+                        Button("Skip turn") { plan.skipRequested = true }.disabled(plan.skipRequested || plan.preparing)
                         Button("Stop meeting") { plan.stop() }
                     }
                     Text("Skip advances to the next turn. Audio already sent may finish playing over the next speaker.").font(.caption)
@@ -171,15 +195,29 @@ struct RecallMeetingView: View {
     @ViewBuilder private var controls: some View {
         if plan.step == 0 {
             if !model.recall.configured { RecallConfigurationView(model: model) }
-            TextField("Meeting URL or ID", text: $plan.meeting).textFieldStyle(.roundedBorder)
-            Text("For a new meeting, paste its full invite link, including any passcode.").font(.caption)
+            Text("Paste a meeting invitation, join link, or Teams meeting ID.")
+            TextEditor(text: $plan.meeting).frame(height: 90).border(.secondary.opacity(0.3))
+            SecureField("Teams passcode (for a meeting ID)", text: $plan.passcode).textFieldStyle(.roundedBorder)
+            GroupBox("Host participation and ground truth") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Include this computer as speaker 1", isOn: $plan.includeHost)
+                    if plan.includeHost {
+                        TextField("Host Speaker name", text: $plan.hostName).textFieldStyle(.roundedBorder)
+                        Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses the selected app output device; select that virtual device as your meeting microphone.").font(.caption)
+                    }
+                    Toggle("Produce ground truth after the meeting", isOn: $plan.exportGroundTruth)
+                    if plan.exportGroundTruth {
+                        Text("Saves gt_final.json with scripted text and estimated playback times relative to the first turn. Align this origin with your recording before scoring. Skipped turns are omitted.").font(.caption)
+                    }
+                }.padding(6)
+            }
             HStack {
                 Button("Back") { onBack() }
                 Button("Continue to bots") { plan.perform {
+                    guard !plan.includeHost || !plan.hostName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AppError("Enter the Host Speaker name.") }
                     guard model.recall.configured else { throw AppError("Configure Recall first.") }
-                    plan.meeting = plan.meeting.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !plan.meeting.isEmpty else { throw AppError("Enter a meeting URL or ID.") }
-                    if plan.meeting.contains("://") && URL(string: plan.meeting)?.scheme != "https" { throw AppError("Use an HTTPS meeting URL.") }
+                    plan.meeting = try await model.recall.resolveMeetingURL(plan.meeting, passcode: plan.passcode, model: model)
+                    plan.passcode = ""
                     UserDefaults.standard.set(plan.meeting, forKey: "recallLastMeeting"); plan.step = 1
                 }}.buttonStyle(.borderedProminent)
             }
@@ -189,7 +227,9 @@ struct RecallMeetingView: View {
             ForEach(plan.speakers.indices, id: \.self) { index in
                 GroupBox("Speaker \(index + 1)") {
                     VStack(alignment: .leading) {
-                        TextField("Speaker name", text: $plan.speakers[index].name).textFieldStyle(.roundedBorder).disabled(!plan.speakers[index].bot.isEmpty)
+                        if plan.isHost(index) { Text("\(plan.speakerName(index)) · This computer") } else {
+                            TextField("Speaker name", text: $plan.speakers[index].name).textFieldStyle(.roundedBorder).disabled(!plan.speakers[index].bot.isEmpty)
+                        }
                         Picker("Voice", selection: Binding(get: { plan.speakers[index].voice }, set: { plan.selectVoice(index, voice: $0, model: model) })) {
                             ForEach(model.voices) { voice in Text(voice.name).tag(voice.id) }
                         }.labelsHidden().controlSize(.small)
@@ -197,7 +237,7 @@ struct RecallMeetingView: View {
                             if !plan.speakers[index].bot.isEmpty {
                                 Button("Remove bot") { plan.perform { try await plan.toggleBot(index, model: model) } }
                             }
-                            Text(plan.speakers[index].status).foregroundStyle(.secondary)
+                            Text(plan.isHost(index) ? "Local playback" : plan.speakers[index].status).foregroundStyle(.secondary)
                         }
                     }.padding(6)
                 }
@@ -208,7 +248,7 @@ struct RecallMeetingView: View {
                 Button("Remove all bots") { plan.perform { await plan.removeAllBots(model) } }
                     .disabled(plan.speakers.allSatisfy { $0.bot.isEmpty })
                 Button("Arrange turns") { plan.perform {
-                    for index in plan.speakers.indices where plan.speakers[index].bot.isEmpty {
+                    for index in plan.speakers.indices where !plan.isHost(index) && plan.speakers[index].bot.isEmpty {
                         plan.message = "Adding \(plan.speakers[index].name) to the meeting…"
                         try await plan.toggleBot(index, model: model)
                     }
@@ -216,13 +256,15 @@ struct RecallMeetingView: View {
                     plan.message = "Speaker bots have been sent to the meeting. Admit them from the lobby if needed."
                     try await plan.refresh(model)
                 } }
-                    .disabled(plan.speakers.contains { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.voice.isEmpty }).buttonStyle(.borderedProminent)
+                    .disabled(plan.speakers.indices.contains { plan.speakerName($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || plan.speakers[$0].voice.isEmpty }).buttonStyle(.borderedProminent)
             }
         } else {
-            ForEach(plan.speakers) { speaker in Text("\(speaker.name): \(speaker.status)").font(.caption) }
-            Text("Turns play in order. Timing uses clip duration plus a short pause; Recall does not confirm when playback ends.").font(.caption)
+            ForEach(plan.speakers.indices, id: \.self) { i in Text("\(plan.speakerName(i)): \(plan.isHost(i) ? "This computer" : plan.speakers[i].status)").font(.caption) }
+            Text("Turns play in order. All audio is prepared before playback. Timing uses clip duration; Recall does not confirm when playback ends.").font(.caption)
             HStack {
                 Button("Back to bots") { plan.step = 1 }
+                Button("Remove all bots") { plan.perform { await plan.removeAllBots(model) } }
+                    .disabled(plan.speakers.allSatisfy { $0.bot.isEmpty })
                 Button("Add turn") { plan.turns.append(.init(speaker: 0, text: "Enter speech here.")) }
                 Button("Start meeting") { plan.perform { try await plan.start(model) } }.buttonStyle(.borderedProminent)
             }
@@ -231,7 +273,7 @@ struct RecallMeetingView: View {
                     HStack {
                         Text("\(index + 1).")
                         Picker("Speaker", selection: $plan.turns[index].speaker) {
-                            ForEach(plan.speakers.indices, id: \.self) { i in Text(plan.speakers[i].name).tag(i) }
+                            ForEach(plan.speakers.indices, id: \.self) { i in Text(plan.speakerName(i)).tag(i) }
                         }.labelsHidden()
                         Button("↑") { plan.turns.swapAt(index, index-1) }.disabled(index == 0)
                         Button("↓") { plan.turns.swapAt(index, index+1) }.disabled(index == plan.turns.count-1)

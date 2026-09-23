@@ -25,6 +25,7 @@ enum BotSpeakerEntryPoint {
 }
 
 struct BotSpeakerApp: App {
+    @NSApplicationDelegateAdaptor(BotSpeakerAppDelegate.self) private var appDelegate
     @State private var model: AppModel
     @State private var orchestration: OrchestrationController
     @State private var updates = UpdateController()
@@ -38,17 +39,20 @@ struct BotSpeakerApp: App {
         _model = State(initialValue: model)
         _orchestration = State(initialValue: orchestration)
         _controlServer = State(initialValue: server)
+        appDelegate.configure(model: model, orchestration: orchestration, server: server)
         server.start()
     }
 
     var body: some Scene {
         WindowGroup("Bot Speaker", id: "composer") {
             MainWindowView(model: model, orchestration: orchestration)
+                .disabled(model.isShuttingDown)
         }
         .defaultSize(width: 1040, height: 720)
 
         MenuBarExtra {
             MenuBarView(model: model)
+                .disabled(model.isShuttingDown)
         } label: {
             Image(systemName: model.player.isPlaying ? "waveform.circle.fill" : "waveform")
                 .symbolRenderingMode(.monochrome)
@@ -58,6 +62,7 @@ struct BotSpeakerApp: App {
 
         Settings {
             SettingsView(model: model, updates: updates)
+                .disabled(model.isShuttingDown)
         }
     }
 }

@@ -182,7 +182,7 @@ extension OrchestrationController {
     /// Starts the oldest runnable request when the output is free. Safe to call
     /// often; the watchdog, listener, and completions all pump it.
     func pumpSpeechRequestQueue() {
-        guard activeSpeechRequestID == nil,
+        guard model?.isShuttingDown != true, activeSpeechRequestID == nil,
               activeExecutionTurnID == nil,
               model != nil else { return }
         let runnable = speechRequests.first { request in

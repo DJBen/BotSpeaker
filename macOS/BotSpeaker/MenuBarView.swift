@@ -108,9 +108,6 @@ struct MainWindowView: View {
                         Group {
                             if isShowingRecallMeeting {
                                 RecallMeetingView(model: model, plan: model.recallMeeting) {
-                                    if model.recallMeeting.speakers.allSatisfy({ $0.bot.isEmpty }) {
-                                        model.recallMeeting.speakers = []; model.recallMeeting.turns = []
-                                    }
                                     isShowingRecallMeeting = false
                                 }
                             } else if isShowingRecall {
@@ -125,6 +122,7 @@ struct MainWindowView: View {
                                     controller: orchestration,
                                     onPrepareMeeting: presentOrchestrationFlow
                                 )
+                                .id(orchestration.selectedTemplate.id)
                             } else {
                                 ComposerView(
                                     model: model,
@@ -1110,7 +1108,7 @@ struct AnnotationKey: View {
 }
 
 struct VoicePicker: View {
-    let model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1124,7 +1122,7 @@ struct VoicePicker: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Picker("Voice", selection: Binding(get: { model.voiceID }, set: { model.voiceID = $0 })) {
+                Picker("Voice", selection: $model.voiceID) {
                     if !model.voices.contains(where: { $0.id == model.voiceID }) {
                         Text(model.selectedVoiceName).tag(model.voiceID)
                     }

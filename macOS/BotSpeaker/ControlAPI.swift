@@ -27,6 +27,7 @@ final class ControlAPI {
     }
 
     func handle(_ request: ControlServer.Request) async -> ControlServer.Response {
+        guard !model.isShuttingDown else { return .error(503, "Bot Speaker is quitting.") }
         let segments = request.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard segments.first == "v1" else {
             return .error(404, "Unknown path \(request.path). All routes live under /v1.", code: "not_found")
@@ -239,12 +240,13 @@ final class ControlAPI {
         } else {
             await model.loadVoicesIfNeeded()
         }
-        if let error = model.voiceLoadError, model.voices.isEmpty {
+        if let error = model.voiceLoadError, model.voices.isEmpty || boolean(request.query["refresh"]) == true {
             throw ControlError(502, error, code: "voices_unavailable")
         }
         return .ok([
             "ok": true,
             "selected": model.voiceID,
+            "model": model.modelID,
             "voices": model.voices.map { voice in
                 [
                     "id": voice.id,
@@ -330,15 +332,14 @@ final class ControlAPI {
         guard !wanted.isEmpty else { return nil }
         if wanted.lowercased() == "default" { return nil }
         await model.loadVoicesIfNeeded()
-        if model.voices.contains(where: { $0.id == wanted }) { return wanted }
-        if let match = model.voices.first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame })
-            ?? model.voices.first(where: { $0.name.localizedCaseInsensitiveContains(wanted) }) {
-            return match.id
+        do {
+            return try VoiceSelection.resolve(wanted, voices: model.voices.map { (id: $0.id, name: $0.name) })
+        } catch let error as VoiceSelection.Failure {
+            if error.code == "not_found", let loadError = model.voiceLoadError {
+                throw ControlError(502, loadError, code: "voices_unavailable")
+            }
+            throw ControlError(error.code == "not_found" ? 404 : 400, error.message, code: error.code)
         }
-        // Not in this account's library; pass it through as a raw ElevenLabs voice ID.
-        if wanted.count >= 16, wanted.allSatisfy({ $0.isLetter || $0.isNumber }) { return wanted }
-        let names = model.voices.prefix(12).map(\.name).joined(separator: ", ")
-        throw ControlError(404, "No voice matches \"\(wanted)\". Try one of: \(names).", code: "not_found")
     }
 
     // MARK: Payloads
@@ -355,6 +356,7 @@ final class ControlAPI {
             "apiKeyConfigured": model.hasAPIKey,
             "output": orNull(output.map { ["uid": $0.uid, "name": $0.name] }),
             "voice": ["id": model.voiceID, "name": model.selectedVoiceName],
+            "model": model.modelID,
             "player": [
                 "isPlaying": model.player.isPlaying,
                 "isGenerating": model.isGenerating,

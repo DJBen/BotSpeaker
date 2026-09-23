@@ -5,7 +5,28 @@ import Observation
 @Observable
 final class AppModel {
     let recall = RecallController()
-    let recallMeeting = RecallMeetingPlan()
+    private(set) var recallMeeting = RecallMeetingPlan()
+    private var recallMeetings: [String: RecallMeetingPlan] = [:]
+    var isShuttingDown = false
+    var hasRecallMeetingWork: Bool {
+        recallMeetings.values.contains { $0.running || $0.busy || $0.speakers.contains { !$0.bot.isEmpty } }
+    }
+    func selectRecallMeeting(_ source: OrchestrationController) throws {
+        let id = source.selectedTemplate.id
+        if let existing = recallMeetings[id] { recallMeeting = existing; return }
+        let plan = RecallMeetingPlan()
+        try plan.configure(source, model: self)
+        recallMeetings[id] = plan
+        recallMeeting = plan
+    }
+    func prepareRecallMeetingsForExit() async throws {
+        for plan in recallMeetings.values {
+            while plan.busy { try await Task.sleep(for: .milliseconds(100)) }
+            await plan.stopAndWait()
+            await plan.removeAllBots(self)
+            if plan.speakers.contains(where: { !$0.bot.isEmpty }) { throw AppError(plan.message) }
+        }
+    }
     private(set) var text = ExampleExcerpt.launchRetroProductManager.text
     private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id
     private(set) var customScripts: [CustomSpeechScript] = []
@@ -49,6 +70,8 @@ final class AppModel {
 
     @ObservationIgnored private let keychain = KeychainStore()
     @ObservationIgnored private let client = ElevenLabsClient()
+    @ObservationIgnored private var voiceLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var voiceLoadID = UUID()
     @ObservationIgnored private var generationTask: Task<Void, Never>?
     @ObservationIgnored private var generationID = UUID()
     @ObservationIgnored private var currentSpeechSignature: String?
@@ -197,6 +220,7 @@ final class AppModel {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AppError("Enter an ElevenLabs API key.") }
         try keychain.save(trimmed)
+        invalidateVoices()
         hasAPIKey = true
     }
 
@@ -211,16 +235,35 @@ final class AppModel {
     func removeAPIKey() throws {
         try keychain.delete()
         hasAPIKey = false
+        invalidateVoices()
+    }
+
+    private func invalidateVoices() {
+        voiceLoadID = UUID()
+        voiceLoadTask?.cancel()
+        voiceLoadTask = nil
+        isLoadingVoices = false
         voices = []
         voiceLoadError = nil
     }
 
     func loadVoicesIfNeeded() async {
-        guard voices.isEmpty, !isLoadingVoices else { return }
+        if let voiceLoadTask { await voiceLoadTask.value; return }
+        guard voices.isEmpty else { return }
         await refreshVoices()
     }
 
     func refreshVoices() async {
+        if let voiceLoadTask { await voiceLoadTask.value; return }
+        let loadID = UUID()
+        voiceLoadID = loadID
+        let task = Task { await self.fetchVoices(loadID: loadID) }
+        voiceLoadTask = task
+        await task.value
+        if voiceLoadID == loadID { voiceLoadTask = nil }
+    }
+
+    private func fetchVoices(loadID: UUID) async {
         guard let apiKey = try? keychain.read(), !apiKey.isEmpty else {
             voices = []
             voiceLoadError = "Add an ElevenLabs API key to load voices."
@@ -229,19 +272,26 @@ final class AppModel {
 
         isLoadingVoices = true
         voiceLoadError = nil
-        defer { isLoadingVoices = false }
+        defer { if voiceLoadID == loadID { isLoadingVoices = false } }
         do {
-            voices = try await client.listVoices(apiKey: apiKey)
+            let loaded = try await client.listVoices(apiKey: apiKey)
+            guard voiceLoadID == loadID else { return }
+            voices = loaded
             if voices.isEmpty {
                 voiceLoadError = "No voices are available for this ElevenLabs account."
             }
         } catch {
+            guard voiceLoadID == loadID else { return }
             voiceLoadError = error.localizedDescription
         }
     }
 
     var selectedVoiceName: String {
         voices.first(where: { $0.id == voiceID })?.name ?? "Voice ID \(voiceID.prefix(8))…"
+    }
+
+    var selectedModelName: String {
+        modelID == "eleven_v3" ? "Eleven v3" : "Flash v2"
     }
 
     func selectScript(id: String) {
@@ -464,6 +514,7 @@ final class AppModel {
     /// without touching the player or starting audio. When the turn is later
     /// assigned, `playOrchestratedTurn` reads these clips from disk.
     func prepareOrchestratedTurn(text turnText: String, cacheNamespace: String) async throws {
+        let voiceID = self.voiceID
         let modelID = self.modelID
         let plans = SpeechTextChunker.chunks(for: turnText)
         guard !plans.isEmpty else { throw AppError("The turn to prepare is empty.") }
@@ -603,6 +654,7 @@ final class AppModel {
     }
 
     private func generateOrToggle(forceRegenerate: Bool) async {
+        let voiceID = self.voiceID
         let modelID = self.modelID
         errorMessage = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -653,7 +705,7 @@ final class AppModel {
                 guard let self else { return }
                 await self.generateSequentially(
                     plans: plans,
-                    voiceID: self.voiceID,
+                    voiceID: voiceID,
                     modelID: modelID,
                     apiKey: apiKey,
                     cacheNamespace: script.cacheNamespace,
