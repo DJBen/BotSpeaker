@@ -50,3 +50,14 @@ branch was re-fetched before release; no newer Windows source was present.
   not re-tested in that run. Platform-specific update mechanisms remain distinct.
 - Release verification reruns the Recall controller/CLI, voice selection/CLI,
   and ground-truth/template suites. Recall `-l` and `-r` aliases now match Windows.
+
+## Release delivery
+
+- macOS 0.5.6 app and CLI were built for arm64 and x86_64, Developer ID signed,
+  and accepted by Apple notarization. The DMG was stapled and passed Gatekeeper.
+- The packaged CLI also passed the Recall and voice integration suites.
+- Windows remains on 0.5.5, which stays GitHub's latest release to preserve
+  Windows updater asset lookup. The signed macOS appcast is attached there as
+  well as to 0.5.6 and points to the 0.5.6 DMG.
+- Use the version-specific CLI installation command in the release notes;
+  the older standalone CLI's generic upgrade command uses the shared latest tag.
