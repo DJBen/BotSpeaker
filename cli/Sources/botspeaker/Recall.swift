@@ -12,8 +12,8 @@ struct Recall: AsyncParsableCommand {
     @Option(help: "ElevenLabs voice ID; defaults to the app's selected voice.") var voice: String?
     @Option(help: "now, +SECONDS, or ISO 8601 timestamp with timezone.") var at: String?
     @Option(help: "Extra gap between clips in seconds.") var interval: Double?
-    @Option(name: .customLong("repeat")) var repeatCount: Int?
-    @Flag var loop = false
+    @Option(name: [.customLong("repeat"), .customShort("r")]) var repeatCount: Int?
+    @Flag(name: [.long, .customShort("l")]) var loop = false
     @Flag(help: "Read the Recall key from stdin rather than a hidden prompt.") var keyStdin = false
     @Option(name: [.short, .long]) var file: String?
 

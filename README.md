@@ -12,7 +12,7 @@ The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/)
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.4.5-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.4.5), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
+- **macOS 14 or later:** [`BotSpeaker-0.5.6-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.6), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
 - **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. It downloads the signed `botspeaker` binary attached to the latest release.
 
   ```sh
@@ -73,7 +73,7 @@ The repository and its release downloads are public.
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
 - Recall.ai meeting bots with individual voices, scheduled speech, and orchestrated turns
-- Recall CLI controls (Windows 0.5.5 and current macOS source) for Teams invitation input, meeting-scoped bot cleanup, prepared speech, job waits, and JSON meeting plans
+- Recall CLI controls (Windows 0.5.5 and macOS 0.5.6) for Teams invitation input, meeting-scoped bot cleanup, prepared speech, job waits, and JSON meeting plans
 
 ## Runtime requirements
 
@@ -274,7 +274,7 @@ request JSON shape, every endpoint, and the Windows differences.
 
 ### Recall CLI
 
-These commands are available in Windows 0.5.5 and the current macOS source.
+These commands are available in Windows 0.5.5 and macOS 0.5.6.
 Use `botspeaker` in place of `botspeaker-cli` on macOS. All Recall
 commands return JSON. Replace the example IDs with values returned by `add`,
 `prepare`, or `meeting-create`.

@@ -1,8 +1,9 @@
 # macOS functional parity review
 
-Baseline: `origin/main` at `01c07c8` (September 22, 2026), including Windows
-0.5.5 and the subsequent voice-derived speaker-name change. This review covers
-source behavior; it does not publish or change the advertised macOS release.
+Release: macOS app and CLI **0.5.6** (September 24, 2026).
+Baseline: `origin/main` at `f9e904b`, including Windows 0.5.5, voice-derived
+speaker names, and the prior macOS parity implementation. The upstream main
+branch was re-fetched before release; no newer Windows source was present.
 
 | Capability | macOS result |
 | --- | --- |
@@ -42,6 +43,10 @@ source behavior; it does not publish or change the advertised macOS release.
   Covers invitations, held jobs, dispatch timing, scoped removal, preparation
   failure, stop/skip cleanup, JSON plans, waits, validation and exit codes.
 - `scripts/test-macos-voices.sh`: existing voice catalog/selection and CLI tests.
-- Live Recall meetings, real Firestore shutdown, audio routing and interactive
-  quit confirmation still require a manual smoke test. No paid service calls or
-  real bots were created during this review.
+- The September 23 Teams run exercised four admitted Recall bots plus self,
+  repeated speech and waits, and meeting-scoped removal with no reported failures.
+  This validates BotSpeaker transport/orchestration, not Wispr AX reliability.
+- Interactive quit confirmation and real cross-machine Firestore shutdown were
+  not re-tested in that run. Platform-specific update mechanisms remain distinct.
+- Release verification reruns the Recall controller/CLI, voice selection/CLI,
+  and ground-truth/template suites. Recall `-l` and `-r` aliases now match Windows.

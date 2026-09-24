@@ -62,6 +62,12 @@ try:
     assert calls[0] == ('/v1/recall/dispatch', {'id': 'job'})
     run('speak', 'bot', '--file', '-', '--repeat', '2', '--wait', stdin='hello')
     assert calls[0][1]['repeat'] == 2 and calls[0][1]['text'] == 'hello'
+    run('speak', 'bot', 'hello', '-r', '3')
+    assert calls[0][1]['repeat'] == 3 and calls[0][1]['loop'] is False
+    run('speak', 'bot', 'hello', '-l')
+    assert calls[0][1]['loop'] is True
+    run('speak', 'bot', 'hello', '-l', '-r', '2', code=64)
+    assert not calls
     run('wait', 'job')
     state = 'failed'
     run('wait', 'job', '--json', code=1)
