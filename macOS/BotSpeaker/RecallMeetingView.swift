@@ -21,6 +21,7 @@ final class RecallMeetingPlan {
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
     var passcode = ""
     var includeHost = false
+    var useDirectMic = false
     var hostName = ""
     var exportGroundTruth = false
     var artifactURL: URL?
@@ -111,7 +112,7 @@ final class RecallMeetingPlan {
         running = true
         artifactURL = nil
         task = Task {
-            let local = LocalMeetingSpeech(outputDevice: model.selectedDeviceUID)
+            let local = LocalMeetingSpeech(outputDevice: useDirectMic ? DirectMicPlayer.deviceUID : model.selectedDeviceUID)
             defer { local.stop() }
             var origin: Date?
             var recorded: [[String: Any]] = []
@@ -203,6 +204,10 @@ struct RecallMeetingView: View {
                     Toggle("Include this computer as speaker 1", isOn: $plan.includeHost)
                     if plan.includeHost {
                         TextField("Host Speaker name", text: $plan.hostName).textFieldStyle(.roundedBorder)
+                        Toggle("Send host speech directly to DirectMic", isOn: $plan.useDirectMic)
+                        if plan.useDirectMic {
+                            Text("Select DirectMic as the meeting microphone. Host speech is injected into the input without system playback.").font(.caption)
+                        }
                         Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses the selected app output device; select that virtual device as your meeting microphone.").font(.caption)
                     }
                     Toggle("Produce ground truth after the meeting", isOn: $plan.exportGroundTruth)
