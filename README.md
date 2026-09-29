@@ -82,7 +82,7 @@ The repository and its release downloads are public.
 - **Windows:** Windows 10/11 x64; [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) or another virtual audio device for local microphone routing
 - **Recall.ai bots:** a Recall API key; speech goes directly to the bot without a local virtual audio driver
 
-Virtual audio drivers are not bundled with BotSpeaker. Review their licensing terms before redistributing them with another application.
+The Mac release bundles DirectMic for host speech in Recall orchestrated meetings. Enable **Include this computer as speaker 1**, enable **Send host speech directly to DirectMic**, then choose **Install DirectMic…**. Administrator authorization is required; installation briefly interrupts all Mac audio. Select DirectMic as the meeting microphone afterward. BlackHole and VB-Audio Virtual Cable remain separate downloads. See [DirectMic setup](docs/directmic.md).
 
 ## Build from source
 

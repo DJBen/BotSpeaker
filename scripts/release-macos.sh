@@ -183,6 +183,12 @@ if [[ " $ARCHITECTURES " != *" arm64 "* || " $ARCHITECTURES " != *" x86_64 "* ]]
     exit 1
 fi
 
+# Embed the driver so installation never depends on access to its source repo.
+DIRECTMIC_SOURCE_DIR="${DIRECTMIC_SOURCE_DIR:-$REPO_ROOT/../DirectMic}"
+bash "$REPO_ROOT/scripts/build-directmic.sh" "$DIRECTMIC_SOURCE_DIR" \
+    "$APP_PATH/Contents/Resources/DirectMic Installer.app" "$DEVELOPER_ID_IDENTITY"
+codesign --force --sign "$DEVELOPER_ID_IDENTITY" --timestamp \
+    --preserve-metadata=identifier,entitlements,requirements,flags "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 "$REPO_ROOT/scripts/make-dmg.sh" "$APP_PATH" "$DMG_PATH" "$DEVELOPER_ID_IDENTITY"
 

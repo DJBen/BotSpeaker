@@ -206,7 +206,7 @@ struct RecallMeetingView: View {
                         TextField("Host Speaker name", text: $plan.hostName).textFieldStyle(.roundedBorder)
                         Toggle("Send host speech directly to DirectMic", isOn: $plan.useDirectMic)
                         if plan.useDirectMic {
-                            Text("Select DirectMic as the meeting microphone. Host speech is injected into the input without system playback.").font(.caption)
+                            DirectMicSetupView()
                         }
                         Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses DirectMic when enabled, otherwise the selected app output device. Select the same device as your meeting microphone.").font(.caption)
                     }
