@@ -111,11 +111,11 @@ public sealed class RecallView : UserControl
         botActions.Children.Add(MakeButton("Refresh bots", Refresh));
         botActions.Children.Add(MakeButton("Remove selected bot", async () => { await controller.HandleAsync("remove", new() { ["botId"] = SelectedBot().Id }); await Refresh(); })); controls.Children.Add(botActions);
         Field(controls, "Speech", speech);
-        speech.Text = Starter(name.Text);
+        speech.Text = Starter();
         voice.Margin = new Thickness(0, 8, 0, 6);
         System.Windows.Automation.AutomationProperties.SetName(voice, "Voice");
         controls.Children.Add(voice); controls.Children.Add(voiceHint);
-        controls.Children.Add(MakeButton("New sample", () => { speech.Text = Starter((bots.SelectedItem as BotRow)?.Name ?? name.Text); return Task.CompletedTask; }));
+        controls.Children.Add(MakeButton("New sample", () => { speech.Text = Starter(); return Task.CompletedTask; }));
         var dispatch = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,10,0,10) };
         dispatch.Children.Add(new TextBlock { Text = "Dispatch  ", VerticalAlignment = VerticalAlignment.Center }); dispatch.Children.Add(now); dispatch.Children.Add(scheduled);
         var initial = DateTime.Now.AddMinutes(5); date.SelectedDate = initial.Date; hour.SelectedIndex = initial.Hour; minute.SelectedIndex = initial.Minute;
@@ -157,7 +157,7 @@ public sealed class RecallView : UserControl
         dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
         return dialog.ShowDialog() == true ? input.Text.Trim() : null;
     }
-    private static string Starter(string botName) => $"Hi I am {botName}, {Sentences[Random.Shared.Next(Sentences.Length)]}";
+    private static string Starter() => Sentences[Random.Shared.Next(Sentences.Length)];
     private void ApplyMeetingPaste(string text)
     {
         var parsed = RecallController.ParseMeetingInput(text);
@@ -179,7 +179,7 @@ public sealed class RecallView : UserControl
     {
         if (previousBot != null) drafts[previousBot] = speech.Text;
         previousBot = (bots.SelectedItem as BotRow)?.Id;
-        if (bots.SelectedItem is BotRow row) speech.Text = drafts.GetValueOrDefault(row.Id) ?? Starter(row.Name);
+        if (bots.SelectedItem is BotRow row) speech.Text = drafts.GetValueOrDefault(row.Id) ?? Starter();
     }
     private async Task Refresh()
     {

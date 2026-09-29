@@ -117,9 +117,9 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable {
     static let all = [quickFivePerson, quickFourPerson, launchReadiness, apiIncidentReview, performanceReviewOneOnOne]
 
     private static let performanceReviewOneOnOneText = """
-    {{speaker_1}}: Come in, sit down — and {{speaker_2}}, you can stop looking like you're walking into a root canal. [laughs] This is a good review. I'm {{speaker_1}}, your engineering manager, for the record. Short version first, because I know you hate suspense: strong year, exceeding expectations. The billing platform is more reliable because of you, and half the team asks "what would {{speaker_2}} do" during incidents, which is either a compliment or a cry for help.
+    {{speaker_1}}: Come in, sit down — and {{speaker_2}}, you can stop looking like you're walking into a root canal. [laughs] This is a good review. Short version first, because I know you hate suspense: strong year, exceeding expectations. The billing platform is more reliable because of you, and half the team asks "what would {{speaker_2}} do" during incidents, which is either a compliment or a cry for help.
 
-    {{speaker_2}}: [relieved sigh] Okay. Wow. I'm {{speaker_2}}, senior engineer on billing — and yes, I was braced for the "growth areas" speech. Exceeding expectations feels… really good to hear, honestly. Especially since the ledger migration ran three weeks over and I've been quietly stewing about that since March.
+    {{speaker_2}}: [relieved sigh] Okay. Wow. Yes, I was braced for the "growth areas" speech. Exceeding expectations feels… really good to hear, honestly. Especially since the ledger migration ran three weeks over and I've been quietly stewing about that since March.
 
     {{speaker_1}}: The migration going long is not the story. The story is you caught the retry bug that would have double-charged customers before it shipped. Reconciliation errors down sixty percent, and support got hours of their week back. [whispers] Nobody remembers a schedule slip. Everybody remembers double charges. The actual reservation from calibration was visibility — people outside our team sometimes learned about risks later than they needed to.
 
@@ -141,11 +141,11 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable {
     """
 
     private static let apiIncidentReviewText = """
-    {{speaker_1}}: I'm {{speaker_1}}, incident commander for yesterday's API latency mess. Blameless review, so nobody's getting fired — [wry] — though the config system is on thin ice. Timeline: nine forty-two a.m., checkout latency blows through the two-second objective. Mitigated at ten thirty-one, recovered at ten forty-seven. {{speaker_2}}, walk us through it.
+    {{speaker_1}}: Blameless review, so nobody's getting fired — [wry] — though the config system is on thin ice. Timeline: nine forty-two a.m., checkout latency blows through the two-second objective. Mitigated at ten thirty-one, recovered at ten forty-seven. {{speaker_2}}, walk us through it.
 
-    {{speaker_2}}: I'm {{speaker_2}}, the on-call SRE, running on four hours of sleep. [tired laugh] Nine thirty-eight: a routine config change raised the pricing service's connection pool limit. Fine in staging. In production, every instance opened connections at once and the database hit lock contention. And here's the fun part — [sarcastic] — every alert stayed GREEN. Meanwhile customers couldn't buy ANYTHING.
+    {{speaker_2}}: Running on four hours of sleep. [tired laugh] Nine thirty-eight: a routine config change raised the pricing service's connection pool limit. Fine in staging. In production, every instance opened connections at once and the database hit lock contention. And here's the fun part — [sarcastic] — every alert stayed GREEN. Meanwhile customers couldn't buy ANYTHING.
 
-    {{speaker_3}}: I'm {{speaker_3}}, customer support lead, and customers noticed before our alerts did, which — [sighs] — is becoming a theme. First chat at nine forty-three: a retailer watching a checkout spinner for a full minute. By nine forty-seven, six reports across three queues — nobody saw the pattern until an agent posted them in one channel.
+    {{speaker_3}}: Customers noticed before our alerts did, which — [sighs] — is becoming a theme. First chat at nine forty-three: a retailer watching a checkout spinner for a full minute. By nine forty-seven, six reports across three queues — nobody saw the pattern until an agent posted them in one channel.
 
     {{speaker_1}}: Once the page finally fired, what made diagnosis so slow?
 
@@ -169,13 +169,13 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable {
     """
 
     private static let launchReadinessText = """
-    {{speaker_1}}: Alright, everyone's here — let's do this. I'm {{speaker_1}}, product manager for Decision Digest, and today we decide whether this thing actually ships. [exhales] I've rescheduled this meeting twice, so I'm not leaving without an answer. Quick reality check: the launch is five design partners, internal meetings only, post-meeting summaries with every line linked back to the transcript. Nothing auto-sends anywhere. That's the whole product. Where are we?
+    {{speaker_1}}: Alright, everyone's here — let's do this. Today we decide whether this thing actually ships. [exhales] I've rescheduled this meeting twice, so I'm not leaving without an answer. Quick reality check: the launch is five design partners, internal meetings only, post-meeting summaries with every line linked back to the transcript. Nothing auto-sends anywhere. That's the whole product. Where are we?
 
-    {{speaker_2}}: I'm {{speaker_2}}, engineering lead, and the honest answer is "conditional go," which I realize is the least satisfying phrase in software. [laughs] The service is stable at pilot volume and the kill switch works — I tested it myself on Friday, and yes, it actually kills things. Two gates left: export events still don't show up reliably in the audit log, and the batching change needs forty-eight hours of clean canary. That's it. But I want those actually done, not "the PR is basically approved" done.
+    {{speaker_2}}: The honest answer is "conditional go," which I realize is the least satisfying phrase in software. [laughs] The service is stable at pilot volume and the kill switch works — I tested it myself on Friday, and yes, it actually kills things. Two gates left: export events still don't show up reliably in the audit log, and the batching change needs forty-eight hours of clean canary. That's it. But I want those actually done, not "the PR is basically approved" done.
 
-    {{speaker_3}}: I'm {{speaker_3}}, privacy and security. Conditional from me too, and my condition is NOT negotiable. [firm] If an attendee can't tell that processing is happening, we don't generate. Full stop. I also want one end-to-end deletion drill — a real participant request, all the way through to verified removal of the digest and the embeddings. Not a database command. A request.
+    {{speaker_3}}: Conditional from me too, and my condition is NOT negotiable. [firm] If an attendee can't tell that processing is happening, we don't generate. Full stop. I also want one end-to-end deletion drill — a real participant request, all the way through to verified removal of the digest and the embeddings. Not a database command. A request.
 
-    {{speaker_4}}: I'm {{speaker_4}}, customer success, and I bring good news for once! [cheerful] Customers love this thing. Pilot teams say it saves them ten, fifteen minutes per meeting. The bad news — [sighs] — is they keep calling the draft "the record." Which it is not. If we don't hammer "editable draft" into every screen and every training doc, someone is going to file an action item straight from a hallucination, and the escalation will have my name on it.
+    {{speaker_4}}: I bring good news for once! [cheerful] Customers love this thing. Pilot teams say it saves them ten, fifteen minutes per meeting. The bad news — [sighs] — is they keep calling the draft "the record." Which it is not. If we don't hammer "editable draft" into every screen and every training doc, someone is going to file an action item straight from a hallucination, and the escalation will have my name on it.
 
     {{speaker_1}}: [laughs] Noted. Okay, latency. Median is six seconds, but the tail reaches the high twenties. Do we need a week of shadowing, or is forty-eight hours enough? I want a number, not a vibe. And before anyone says "it depends"—
 

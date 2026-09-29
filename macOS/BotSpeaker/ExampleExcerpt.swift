@@ -39,7 +39,7 @@ struct ExampleExcerpt: Identifiable {
         audience: "Engineering, design, marketing, and customer success",
         meeting: "Q3 launch retrospective",
         text: """
-        Hey everyone — {{name}} here, product manager, and yes, I know, I promised this retro would be thirty minutes, so hold me to it. [laughs] Headline first: the launch shipped. On the third attempt, two weeks late, with a feature list that had been… let's say lovingly trimmed — but it shipped, and customers are actually using it. Adoption is at forty percent of the pilot group after ten days, which beats every internal bet, including mine.
+        Hey everyone — yes, I know, I promised this retro would be thirty minutes, so hold me to it. [laughs] Headline first: the launch shipped. On the third attempt, two weeks late, with a feature list that had been… let's say lovingly trimmed — but it shipped, and customers are actually using it. Adoption is at forty percent of the pilot group after ten days, which beats every internal bet, including mine.
 
         Now the uncomfortable part. [exhales] The two-week slip was not bad luck. It was me saying yes to three "tiny" scope additions in week two. Each one was reasonable. Together, they were a disaster. I have heard "it's just a checkbox" three times this quarter, and I now have a rule: nothing is ever just a checkbox. The pricing page rewrite alone touched ELEVEN screens. Eleven! [frustrated] And I found out live, in the review, along with everyone else. [sarcastic] Great way to learn about your own product.
 
@@ -55,7 +55,7 @@ struct ExampleExcerpt: Identifiable {
         audience: "Product, engineering, and the on-call rotation",
         meeting: "Q3 launch retrospective",
         text: """
-        {{name}} here, engineering lead, and let me address the elephant in the room right away: yes, the Friday deploy. [sighs] The one that took the search cluster down for forty minutes. I have relived it every day since, so let me save you the questions and just walk through it.
+        Let me address the elephant in the room right away: yes, the Friday deploy. [sighs] The one that took the search cluster down for forty minutes. I have relived it every day since, so let me save you the questions and just walk through it.
 
         Short version: we shipped an index migration at four thirty on a Friday, which, in hindsight, was a decision made by someone who has clearly never met a Friday. [laughs] The migration itself was correct. The rollout order was not. New code hit the old index for six minutes, queries failed, retries piled up, and the cluster tipped over in the most theatrical way possible.
 
@@ -71,7 +71,7 @@ struct ExampleExcerpt: Identifiable {
         audience: "Product, engineering, marketing, and support",
         meeting: "Q3 launch retrospective",
         text: """
-        Hi all — {{name}}, customer success lead, bringing you the view from the other side of the launch. I'll be honest: I rehearsed a diplomatic version of this update and then deleted it. [laughs] You're getting the real one.
+        Hi all — bringing you the view from the other side of the launch. I'll be honest: I rehearsed a diplomatic version of this update and then deleted it. [laughs] You're getting the real one.
 
         First, the wins, because they are real. NPS from the pilot group is up nine points, three customers renewed early, and one of them named the new dashboard in their renewal call — unprompted! [excited] I nearly fell out of my chair. Do you know how rare unprompted praise is? Eight years in this job, and I can count those calls on one hand.
 

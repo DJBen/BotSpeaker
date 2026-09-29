@@ -1,4 +1,4 @@
-{{name}} here, engineering lead, and let me address the elephant in the room right away: yes, the Friday deploy. [sighs] The one that took the search cluster down for forty minutes. I have relived it every day since, so let me save you the questions and just walk through it.
+Let me address the elephant in the room right away: yes, the Friday deploy. [sighs] The one that took the search cluster down for forty minutes. I have relived it every day since, so let me save you the questions and just walk through it.
 
 Short version: we shipped an index migration at four thirty on a Friday, which, in hindsight, was a decision made by someone who has clearly never met a Friday. [laughs] The migration itself was correct. The rollout order was not. New code hit the old index for six minutes, queries failed, retries piled up, and the cluster tipped over in the most theatrical way possible.
 

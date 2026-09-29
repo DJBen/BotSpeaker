@@ -11,7 +11,7 @@ struct RecallView: View {
     @State private var showingNamePrompt = false
     @State private var bots: [BotRow] = []
     @State private var bot: String?
-    @State private var text = "Hi I am BotSpeaker, I am ready to help test the meeting audio."
+    @State private var text = "Ready to help test the meeting audio."
     @State private var drafts: [String: String] = [:]
     @State private var voice = ""
     @State private var schedule = false
@@ -68,7 +68,7 @@ struct RecallView: View {
             if meetingDraft.isEmpty { meetingDraft = lastMeeting }
             await model.loadVoicesIfNeeded()
             if voice.isEmpty { voice = model.voices.contains(where: { $0.id == model.voiceID }) ? model.voiceID : model.voices.first?.id ?? "" }
-            if bot == nil { text = starter(name) }
+            if bot == nil { text = starter() }
         }
         .task(id: meetingReady ? meeting : "") {
             guard meetingReady else { return }
@@ -82,7 +82,7 @@ struct RecallView: View {
         }
         .onChange(of: bot) { old, new in
             if let old { drafts[old] = text }
-            if let new, let row = visibleBots.first(where: { $0.id == new }) { text = drafts[new] ?? starter(row.name) }
+            if let new, visibleBots.contains(where: { $0.id == new }) { text = drafts[new] ?? starter() }
         }
         .onChange(of: meeting) { _, _ in
             if !visibleBots.contains(where: { $0.id == bot }) { bot = nil }
@@ -149,7 +149,7 @@ struct RecallView: View {
                         Text(item.detail.isEmpty ? item.name : "\(item.name) — \(item.detail)").tag(item.id)
                     }
                 }.labelsHidden().accessibilityLabel("Voice").controlSize(.regular).padding(.vertical, 4)
-                Button("New sample") { text = starter(visibleBots.first(where: { $0.id == bot })?.name ?? name) }
+                Button("New sample") { text = starter() }
                 if let message = model.voiceLoadError { Text(message).font(.caption).foregroundStyle(.red) }
                 HStack(alignment: .center, spacing: 12) {
                     Text("Dispatch")
@@ -190,7 +190,7 @@ struct RecallView: View {
             }
         }
     }
-    private func starter(_ name: String) -> String { "Hi I am \(name), \(Self.sentences.randomElement()!)" }
+    private func starter() -> String { Self.sentences.randomElement()! }
     private func refresh() async throws {
         guard !refreshingBots else { return }
         refreshingBots = true
