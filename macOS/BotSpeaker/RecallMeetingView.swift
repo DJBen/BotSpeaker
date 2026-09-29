@@ -208,7 +208,7 @@ struct RecallMeetingView: View {
                         if plan.useDirectMic {
                             Text("Select DirectMic as the meeting microphone. Host speech is injected into the input without system playback.").font(.caption)
                         }
-                        Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses the selected app output device; select that virtual device as your meeting microphone.").font(.caption)
+                        Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses DirectMic when enabled, otherwise the selected app output device. Select the same device as your meeting microphone.").font(.caption)
                     }
                     Toggle("Produce ground truth after the meeting", isOn: $plan.exportGroundTruth)
                     if plan.exportGroundTruth {

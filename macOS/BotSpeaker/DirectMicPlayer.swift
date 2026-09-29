@@ -64,6 +64,7 @@ final class DirectMicPlayer {
                 if target > now { try? await Task.sleep(nanoseconds: UInt64(Double(target - now) * Double(base.numer) / Double(base.denom))) }
             }
             if !Task.isCancelled { try? await Task.sleep(nanoseconds: 150_000_000) }
+            guard !Task.isCancelled else { return }
             isPlaying = false
         }
     }
