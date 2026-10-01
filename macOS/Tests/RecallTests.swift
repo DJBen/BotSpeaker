@@ -27,21 +27,30 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
     static var listPages: [[String: Any]] = []
     static let bot = "11111111-1111-1111-1111-111111111111"
     static let other = "22222222-2222-2222-2222-222222222222"
+    static let ended = "33333333-3333-3333-3333-333333333333"
+    static let stuck = "44444444-4444-4444-4444-444444444444"
+    static var rejectedLeaves: Set<String> = []
+    static var botStatuses: [String: String] = [:]
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url!.path + (request.url!.path.hasSuffix("/") ? "" : "/")
         Self.requests.append(path)
         Self.requestedURLs.append(request.url!.absoluteString)
-        let body: [String: Any]
-        if path.hasSuffix("/bot/"), !Self.listPages.isEmpty {
+        var body: [String: Any]
+        var status = 200
+        if path.hasSuffix("/leave_call/"), Self.rejectedLeaves.contains(where: path.contains) {
+            status = 400; body = ["code": "cannot_command_completed_bot"]
+        } else if let id = Self.botStatuses.keys.first(where: { path.hasSuffix("/bot/\($0)/") }) {
+            body = ["id": id, "status_changes": [["code": Self.botStatuses[id]!]]]
+        } else if path.hasSuffix("/bot/"), !Self.listPages.isEmpty {
             body = Self.listPages.removeFirst()
         } else if path.hasSuffix("/bot/") {
             body = ["results": [
                 ["id": Self.bot, "meeting_url": "https://teams.microsoft.com/meet/123?p=x", "status_changes": [["code": "in_call_recording"]]],
                 ["id": Self.other, "meeting_url": "https://teams.microsoft.com/meet/456?p=y", "status_changes": [["code": "in_call_recording"]]]]]
         } else { body = [:] }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -115,6 +124,15 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition(!MockHTTP.requests.contains { $0.contains(MockHTTP.other) })
         do { _ = try await request("remove-all", ["meetingId": "https://example.com/"]); fatalError("Accepted empty scope") } catch {}
         print("PASS: bulk removal stays scoped to the requested meeting")
+
+        MockHTTP.rejectedLeaves = [MockHTTP.ended, MockHTTP.stuck]
+        MockHTTP.botStatuses = [MockHTTP.ended: "done", MockHTTP.stuck: "in_call_recording"]
+        let departed = try await request("remove", ["botId": MockHTTP.ended])
+        precondition(departed["ok"] as? Bool == true, "Departed removal: \(departed)")
+        precondition(MockHTTP.requests.contains { $0.hasSuffix("/bot/\(MockHTTP.ended)/") })
+        do { _ = try await request("remove", ["botId": MockHTTP.stuck]); fatalError("Ignored a rejected leave for a bot still in the call") }
+        catch { precondition(error.localizedDescription.hasPrefix("Recall returned HTTP 400."), "\(error)") }
+        print("PASS: removal accepts bots that already left; rejected leaves for joined bots still fail")
 
         let sends = MockHTTP.requests.filter { $0.hasSuffix("output_audio/") }.count
         let failed = id(try await request("meeting-create", ["turns": [

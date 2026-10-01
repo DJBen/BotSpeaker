@@ -71,7 +71,9 @@ the repeat counter or adjacent Loop toggle to repeat it. `status` returns local
 configuration and speech jobs. The GUI refreshes bots every 10 seconds while its meeting controls are open,
 and supports manual refresh. Overlapping requests are skipped. Bots must be admitted from the
 meeting lobby where required. `remove` asks the bot to leave and cancels its local
-pending speech jobs. It does not delete recordings or meeting history.
+pending speech jobs. On macOS, if Recall rejects the request because the bot has
+already left an ended meeting, removal succeeds. It does not delete recordings or
+meeting history.
 
 ## Speech
 
@@ -234,7 +236,9 @@ Step 2 also offers **Remove all bots** for all speaker bots in the current orche
 On macOS, explicit Quit (including Cmd-Q and the menu-bar Quit button) confirms
 when work is active, cancels pending speech, leaves/closes remote sessions, and
 removes sidebar orchestration speaker bots. Cleanup failures keep the app open
-for retry. Closing a macOS window still leaves the menu-bar app running.
+for retry. Bots that Recall reports as already out of their call count as
+removed, so expired meetings do not block Quit or Sparkle updates. Closing a macOS
+window still leaves the menu-bar app running.
 Standalone Recall bots and bots supplied to CLI plans remain joined until removed;
 quit cancels their pending local jobs. Plans and jobs are not restored after exit.
 

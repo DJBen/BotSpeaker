@@ -5,6 +5,8 @@ import AVFoundation
 @MainActor @Observable
 final class RecallController {
     static let regions = ["us-east-1", "us-west-2", "eu-central-1", "ap-northeast-1"]
+    /// Statuses of bots that are no longer in their call and reject leave_call.
+    static let departedStatuses: Set<String> = ["call_ended", "done", "fatal", "analysis_done", "analysis_failed", "media_expired", "recording_done"]
     var region = UserDefaults.standard.string(forKey: "recallRegion") ?? "us-east-1"
     var configured = false
     var jobs: [[String: Any]] = []
@@ -81,7 +83,10 @@ final class RecallController {
             let bot = try botID(body)
             await meetings.stopForBots([bot])
             for job in jobs where job["botId"] as? String == bot { if let id = job["id"] as? String { tasks[id]?.cancel() } }
-            _ = try await send("POST", "bot/\(bot)/leave_call/", body: [:])
+            do { _ = try await send("POST", "bot/\(bot)/leave_call/", body: [:]) } catch let error as RecallHTTPError {
+                // Bots from ended meetings have already left; only a bot still in its call blocks removal.
+                guard (try? await hasLeftCall(bot)) == true else { throw error }
+            }
             return ["ok": true]
         case "remove-all":
             let scope = Self.meetingID(try required(body, "meetingId"))
@@ -90,7 +95,7 @@ final class RecallController {
             var removed: [String] = []
             var failures: [[String: String]] = []
             for bot in result["bots"] as? [[String: Any]] ?? [] {
-                guard !["done", "fatal"].contains(bot["status"] as? String ?? ""), let id = bot["id"] as? String else { continue }
+                guard !Self.departedStatuses.contains(bot["status"] as? String ?? ""), let id = bot["id"] as? String else { continue }
                 do { _ = try await handle("remove", ["botId": id], model: model); removed.append(id) }
                 catch { failures.append(["botId": id, "error": error.localizedDescription]) }
             }
@@ -258,6 +263,9 @@ final class RecallController {
          "meeting_id": meeting,
          "join_at": bot["join_at"] ?? NSNull()]
     }
+    private func hasLeftCall(_ bot: String) async throws -> Bool {
+        Self.departedStatuses.contains(summary(try await send("GET", "bot/\(bot)/"))["status"] as? String ?? "")
+    }
     private func required(_ body: [String: Any], _ name: String) throws -> String {
         guard let value = body[name] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AppError("\(name) is required.") }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -274,8 +282,13 @@ final class RecallController {
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-            throw AppError("Recall returned HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0). Check the key, region, bot status, and account limits.")
+            throw RecallHTTPError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
         return data.isEmpty ? [:] : (try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:])
     }
+}
+
+struct RecallHTTPError: LocalizedError {
+    let statusCode: Int
+    var errorDescription: String? { "Recall returned HTTP \(statusCode). Check the key, region, bot status, and account limits." }
 }
