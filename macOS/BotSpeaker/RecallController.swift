@@ -62,8 +62,9 @@ final class RecallController {
                 }
                 path = nil
                 if let next = page["next"] as? String {
-                    guard let url = URL(string: next), url.scheme == "https", url.host == "\(region).recall.ai", url.path.hasPrefix("/api/v1/bot/") else { throw AppError("Unexpected Recall pagination URL.") }
-                    path = String(url.path.dropFirst(8)) + (url.query.map { "?" + $0 } ?? "")
+                    guard let url = URL(string: next), url.scheme == "https", url.host == "\(region).recall.ai", url.path(percentEncoded: true).hasPrefix("/api/v1/bot/") else { throw AppError("Unexpected Recall pagination URL.") }
+                    // Preserve the endpoint slash and escaped cursor when following Recall pagination.
+                    path = String(url.path(percentEncoded: true).dropFirst(8)) + (url.query(percentEncoded: true).map { "?" + $0 } ?? "")
                 }
             }
             if let scope = body["meetingId"] as? String, !scope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

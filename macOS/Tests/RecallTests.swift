@@ -23,6 +23,8 @@ struct ElevenLabsClient {
 }
 final class MockHTTP: URLProtocol, @unchecked Sendable {
     static var requests: [String] = []
+    static var requestedURLs: [String] = []
+    static var listPages: [[String: Any]] = []
     static let bot = "11111111-1111-1111-1111-111111111111"
     static let other = "22222222-2222-2222-2222-222222222222"
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -30,8 +32,11 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         let path = request.url!.path + (request.url!.path.hasSuffix("/") ? "" : "/")
         Self.requests.append(path)
+        Self.requestedURLs.append(request.url!.absoluteString)
         let body: [String: Any]
-        if path.hasSuffix("/bot/") {
+        if path.hasSuffix("/bot/"), !Self.listPages.isEmpty {
+            body = Self.listPages.removeFirst()
+        } else if path.hasSuffix("/bot/") {
             body = ["results": [
                 ["id": Self.bot, "meeting_url": "https://teams.microsoft.com/meet/123?p=x", "status_changes": [["code": "in_call_recording"]]],
                 ["id": Self.other, "meeting_url": "https://teams.microsoft.com/meet/456?p=y", "status_changes": [["code": "in_call_recording"]]]]]
@@ -67,6 +72,29 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
             }
             fatalError("Did not reach \(state): \(controller.jobs)")
         }
+        let next = "https://\(controller.region).recall.ai/api/v1/bot/?page=cursor%2Bvalue%2Fpart%3D&limit=100"
+        MockHTTP.listPages = [
+            ["results": [["id": MockHTTP.bot]], "next": next],
+            ["results": [["id": MockHTTP.other]], "next": NSNull()]
+        ]
+        let listed = try await request("list")
+        precondition((listed["bots"] as? [[String: Any]])?.compactMap { $0["id"] as? String } == [MockHTTP.bot, MockHTTP.other])
+        precondition(MockHTTP.requestedURLs.count == 2 && MockHTTP.requestedURLs.last == next,
+                     "Pagination must preserve the trailing slash and encoded cursor: \(MockHTTP.requestedURLs)")
+        for invalid in [
+            "http://\(controller.region).recall.ai/api/v1/bot/?page=2",
+            "https://example.com/api/v1/bot/?page=2",
+            "https://\(controller.region).recall.ai/api/v1/bots/?page=2",
+            "https://\(controller.region).recall.ai/api/v1/bot%2F?page=2"
+        ] {
+            MockHTTP.listPages = [["results": [], "next": invalid]]
+            let count = MockHTTP.requestedURLs.count
+            do { _ = try await request("list"); fatalError("Accepted unexpected pagination URL: \(invalid)") }
+            catch { precondition(error.localizedDescription == "Unexpected Recall pagination URL.") }
+            precondition(MockHTTP.requestedURLs.count == count + 1)
+        }
+        print("PASS: two-page listing preserves URL and cursor; unexpected pagination URLs are rejected")
+
         let first = id(try await request("prepare", ["botId": MockHTTP.bot, "text": "one"]))
         try await wait(first, "prepared")
         precondition(!MockHTTP.requests.contains { $0.hasSuffix("output_audio/") })
