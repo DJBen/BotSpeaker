@@ -10,6 +10,7 @@ Core features shared with the macOS app, plus Windows-specific controls:
 - ElevenLabs voice selection
 - Speech-model selection in Settings or `botspeaker-cli models --select ID`: Flash v2 (`eleven_flash_v2`, default) or Eleven v3 (`eleven_v3`). Flash v2 is English-only; select v3 for expressive audio tags.
 - Sequential, sentence-aware speech generation for long scripts (identical chunking to macOS)
+- A shared FIFO queue limits ElevenLabs synthesis to six concurrent requests per app process, including requests from the CLI and Recall jobs. Waiting requests can be cancelled; cached audio bypasses the queue. Separate app processes or computers do not share this limit. Temporary network failures, timeouts, HTTP 408/429, and HTTP 500/502/503/504 retry up to three times after the initial attempt, with 1/2/4-second backoff plus jitter (or a longer `Retry-After`). Backoff releases the queue slot and remains cancellable.
 - Persistent audio-chunk caching per script, voice, and model
 - Three read-only launch-retrospective templates written for Eleven v3 audio tags, plus named custom scripts with a separate editor window
 - Play, pause, stop, seek, and progress-aware text highlighting driven by ElevenLabs character timestamps
@@ -47,6 +48,12 @@ VB-CABLE is not bundled with BotSpeaker. Review VB-Audio's licensing terms befor
 
 ```powershell
 dotnet run --project Windows/BotSpeaker
+```
+
+Run the synthesis queue tests (also supported on macOS/Linux with .NET 10):
+
+```powershell
+dotnet run --project Windows/BotSpeaker.SynthesisTests
 ```
 
 Or produce a self-contained build:

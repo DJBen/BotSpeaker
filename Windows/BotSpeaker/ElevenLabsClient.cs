@@ -19,6 +19,17 @@ public sealed class ElevenLabsClient
 {
     public const double DefaultSpeechSpeed = 1.1;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(180) };
+    private static readonly SpeechSynthesisQueue SynthesisQueue = new(6);
+    private readonly HttpClient _http;
+
+    public ElevenLabsClient() : this(Http) { }
+    private readonly Func<TimeSpan, CancellationToken, Task> _retryDelay;
+    internal ElevenLabsClient(HttpClient http, Func<TimeSpan, CancellationToken, Task>? retryDelay = null)
+    {
+        _http = http;
+        _retryDelay = retryDelay ?? Task.Delay;
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public async Task ValidateAsync(string apiKey, CancellationToken cancellation = default)
@@ -27,7 +38,7 @@ public sealed class ElevenLabsClient
             HttpMethod.Get,
             "https://api.elevenlabs.io/v2/voices?page_size=1&include_total_count=false");
         request.Headers.Add("xi-api-key", apiKey);
-        using var response = await Http.SendAsync(request, cancellation);
+        using var response = await _http.SendAsync(request, cancellation);
         await ValidateAsync(response, cancellation);
     }
 
@@ -45,7 +56,7 @@ public sealed class ElevenLabsClient
             }
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("xi-api-key", apiKey);
-            using var response = await Http.SendAsync(request, cancellation);
+            using var response = await _http.SendAsync(request, cancellation);
             await ValidateAsync(response, cancellation);
             var page = await response.Content.ReadFromJsonAsync<VoicePage>(JsonOptions, cancellation)
                 ?? throw new AppException("ElevenLabs returned an invalid voice list.");
@@ -85,18 +96,8 @@ public sealed class ElevenLabsClient
         }
 
         var url = $"https://api.elevenlabs.io/v1/text-to-speech/{Uri.EscapeDataString(voiceId)}/with-timestamps?output_format=mp3_44100_128";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Add("xi-api-key", apiKey);
-        request.Headers.Add("Accept", "audio/mpeg");
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(new SpeechRequest(
-                text,
-                modelId,
-                new VoiceSettings(DefaultSpeechSpeed))),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await Http.SendAsync(request, cancellation);
+        var payload = JsonSerializer.Serialize(new SpeechRequest(text, modelId, new VoiceSettings(DefaultSpeechSpeed)));
+        using var response = await SendSynthesisAsync(url, payload, apiKey, cancellation);
         await ValidateAsync(response, cancellation);
         var body = await response.Content.ReadFromJsonAsync<TimedSpeechResponse>(JsonOptions, cancellation)
             ?? throw new AppException("ElevenLabs returned an invalid response.");
@@ -116,6 +117,57 @@ public sealed class ElevenLabsClient
         await File.WriteAllBytesAsync(audioPath, audioData, cancellation);
         await File.WriteAllTextAsync(timingPath, JsonSerializer.Serialize(timing), cancellation);
         return new SpeechClip(audioPath, timing);
+    }
+
+    private async Task<HttpResponseMessage> SendSynthesisAsync(
+        string url, string payload, string apiKey, CancellationToken cancellation)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            HttpResponseMessage response;
+            try
+            {
+                await SynthesisQueue.AcquireAsync(cancellation);
+                try
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    // HttpRequestMessage cannot be sent twice. Buffer the full body within the slot.
+                    using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                    request.Headers.Add("xi-api-key", apiKey);
+                    request.Headers.Add("Accept", "audio/mpeg");
+                    request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    response = await _http.SendAsync(request, cancellation);
+                }
+                finally { SynthesisQueue.Release(); }
+            }
+            catch (Exception error) when (attempt < 3 && !cancellation.IsCancellationRequested &&
+                (error is HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError or
+                    HttpRequestError.NameResolutionError or HttpRequestError.ResponseEnded } ||
+                 error is OperationCanceledException))
+            {
+                await _retryDelay(RetryDelay(attempt), cancellation);
+                continue;
+            }
+            if (cancellation.IsCancellationRequested)
+            {
+                response.Dispose();
+                cancellation.ThrowIfCancellationRequested();
+            }
+            if (attempt >= 3 || (int)response.StatusCode is not (408 or 429 or 500 or 502 or 503 or 504))
+                return response;
+            var delay = RetryDelay(attempt, response);
+            response.Dispose();
+            // Backoff consumes no slot. The next attempt rejoins the FIFO queue.
+            await _retryDelay(delay, cancellation);
+        }
+    }
+
+    internal static TimeSpan RetryDelay(int attempt, HttpResponseMessage? response = null)
+    {
+        var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt) + Random.Shared.NextDouble() * 0.25);
+        var retryAfter = response?.Headers.RetryAfter;
+        var requested = retryAfter?.Delta ?? (retryAfter?.Date - DateTimeOffset.UtcNow);
+        return requested > delay ? requested.Value : delay;
     }
 
     private static (string Audio, string Timing) CachePaths(

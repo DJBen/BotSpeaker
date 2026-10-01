@@ -4,10 +4,20 @@ import Foundation
 struct ElevenLabsClient {
     static let defaultSpeechSpeed = 1.1
 
+    private static let synthesisQueue = SpeechSynthesisQueue(limit: 6)
+
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    private let retrySleep: @Sendable (TimeInterval) async throws -> Void
+
+    init(
+        session: URLSession = .shared,
+        retrySleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
+    ) {
         self.session = session
+        self.retrySleep = retrySleep
     }
 
     func validate(apiKey: String) async throws {
@@ -98,7 +108,7 @@ struct ElevenLabsClient {
             voiceSettings: VoiceSettings(speed: Self.defaultSpeechSpeed)
         ))
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await sendSynthesis(request)
         try validate(response: response, data: data)
         let responseBody = try JSONDecoder().decode(TimedSpeechResponse.self, from: data)
         guard let audioData = Data(base64Encoded: responseBody.audioBase64), !audioData.isEmpty else {
@@ -111,6 +121,56 @@ struct ElevenLabsClient {
         try audioData.write(to: cache.audio, options: .atomic)
         try JSONEncoder().encode(timing).write(to: cache.timing, options: .atomic)
         return SpeechClip(audioURL: cache.audio, timing: timing)
+    }
+
+    private func sendSynthesis(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        for attempt in 0...3 {
+            var result: (Data, URLResponse)
+            do {
+                try await Self.synthesisQueue.acquire()
+                do {
+                    try Task.checkCancellation()
+                    result = try await session.data(for: request)
+                    await Self.synthesisQueue.release()
+                } catch {
+                    await Self.synthesisQueue.release()
+                    throw error
+                }
+            } catch {
+                try Task.checkCancellation()
+                let transient = (error as? URLError).map {
+                    [.timedOut, .networkConnectionLost, .cannotConnectToHost,
+                     .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet].contains($0.code)
+                } ?? false
+                guard attempt < 3, transient else { throw error }
+                try await retrySleep(Self.retryDelay(attempt: attempt))
+                continue
+            }
+            try Task.checkCancellation()
+            guard attempt < 3, let http = result.1 as? HTTPURLResponse,
+                  [408, 429, 500, 502, 503, 504].contains(http.statusCode) else { return result }
+            // Release the slot before sleeping; every retry rejoins the FIFO queue.
+            try await retrySleep(Self.retryDelay(attempt: attempt, response: http))
+        }
+        preconditionFailure("Retry loop always returns or throws on its final attempt")
+    }
+
+    static func retryDelay(attempt: Int, response: HTTPURLResponse? = nil) -> TimeInterval {
+        var delay = pow(2, Double(attempt)) + Double.random(in: 0...0.25)
+        if let value = response?.value(forHTTPHeaderField: "Retry-After") {
+            if let seconds = Double(value), seconds.isFinite, seconds >= 0 {
+                delay = max(delay, seconds)
+            } else {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+                if let date = formatter.date(from: value) {
+                    delay = max(delay, date.timeIntervalSinceNow)
+                }
+            }
+        }
+        return delay
     }
 
     private func cacheURLs(
@@ -364,4 +424,47 @@ private struct VoiceSettings: Encodable {
 private struct APIErrorEnvelope: Decodable {
     struct Detail: Decodable { let message: String }
     let detail: Detail
+}
+
+/// One process-wide FIFO gate shared by all synthesis callers, including Recall
+/// and local playback. Cached clips never acquire a slot.
+actor SpeechSynthesisQueue {
+    private let limit: Int
+    private var active = 0
+    private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
+
+    init(limit: Int) {
+        precondition(limit > 0)
+        self.limit = limit
+    }
+
+    func acquire() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            if active < limit {
+                active += 1
+                return
+            }
+            try await withCheckedThrowingContinuation { continuation in
+                waiting.append((id, continuation))
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    func release() {
+        if waiting.isEmpty {
+            active -= 1
+        } else {
+            // Transfer the occupied slot directly to the oldest waiter.
+            waiting.removeFirst().continuation.resume()
+        }
+    }
+
+    private func cancel(_ id: UUID) {
+        guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
+        waiting.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
 }

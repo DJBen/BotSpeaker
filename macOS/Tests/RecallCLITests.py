@@ -1,4 +1,4 @@
-"""Exercise the built macOS CLI with a loopback fixture, never a paid API."""
+"""Exercise either built CLI with a loopback fixture, never a paid API."""
 import json
 import os
 import subprocess
@@ -6,6 +6,8 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+# Swift ArgumentParser uses 64 for usage errors; the Windows CLI uses 2.
+usage_error_code = 2 if '--windows' in sys.argv[2:] else 64
 calls = []
 state = 'finished_dispatching'
 partial_failure = False
@@ -66,7 +68,7 @@ try:
     assert calls[0][1]['repeat'] == 3 and calls[0][1]['loop'] is False
     run('speak', 'bot', 'hello', '-l')
     assert calls[0][1]['loop'] is True
-    run('speak', 'bot', 'hello', '-l', '-r', '2', code=64)
+    run('speak', 'bot', 'hello', '-l', '-r', '2', code=usage_error_code)
     assert not calls
     run('wait', 'job')
     state = 'failed'
@@ -85,7 +87,7 @@ try:
         run(action, 'plan')
         assert calls[0][1] == {'id': 'plan'}
     for args in [('remove-all',), ('prepare', 'bot', 'x', '--at', '+10'), ('list', '--wait'), ('speak', 'bot', 'x', '--repeat', '0'), ('wait', 'job', '--timeout', 'nan'), ('status', 'extra')]:
-        run(*args, code=64)
+        run(*args, code=usage_error_code)
         assert not calls, args
     print('PASS: JSON plans and all meeting controls; invalid commands rejected before HTTP')
 finally:
