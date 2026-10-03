@@ -41,6 +41,10 @@ public sealed class RecallMeetingView : UserControl
     private int step;
     private bool busy, refreshing;
     private string selectedMeeting = "";
+    private readonly CheckBox includeHost = new() { Content = "Include this computer as speaker 1", IsChecked = false, Margin = new(0,8,0,6) };
+    private readonly TextBox hostName = new() { MinHeight = 28, Padding = new(5) };
+    private bool IsHost(int index) => includeHost.IsChecked == true && index == 0;
+    private string SpeakerName(int index) => IsHost(index) ? hostName.Text.Trim() : speakers[index].Name;
     private sealed class Speaker
     {
         public required OrchestratedSpeakerConfiguration Configuration;
@@ -93,9 +97,14 @@ public sealed class RecallMeetingView : UserControl
             if (!model.Recall.Configured) body.Children.Add(new RecallView(model, settingsOnly: true));
             body.Children.Add(new TextBlock { Text = "Meeting URL or ID", Margin = new(0,8,0,6) });
             body.Children.Add(meeting);
+            body.Children.Add(includeHost);
+            body.Children.Add(new TextBlock { Text = "Host name shown in the meeting" });
+            body.Children.Add(hostName);
+            body.Children.Add(new TextBlock { Text = "Host mode invites one fewer bot. Select CABLE Input in BotSpeaker, CABLE Output as the meeting microphone, and unmute yourself.", TextWrapping = TextWrapping.Wrap });
             body.Children.Add(new TextBlock { Text = "For a new meeting, paste its full invite link, including any passcode.", Margin = new(0,6,0,6) });
             body.Children.Add(Button("Continue to bots", () => {
                 if (!model.Recall.Configured) throw new AppException("Configure Recall first.");
+                if (includeHost.IsChecked == true && string.IsNullOrWhiteSpace(hostName.Text)) throw new AppException("Enter the host name shown in the meeting.");
                 selectedMeeting = meeting.Text.Trim();
                 if (selectedMeeting.Length == 0) throw new AppException("Enter a meeting URL or ID.");
                 if (selectedMeeting.Contains("://") && (!Uri.TryCreate(selectedMeeting, UriKind.Absolute, out var uri) || uri.Scheme != "https")) throw new AppException("Use an HTTPS meeting URL.");
@@ -120,7 +129,8 @@ public sealed class RecallMeetingView : UserControl
                     source.SaveRecallSpeakerConfiguration(templateId, speaker.Configuration);
                 };
                 name.LostFocus += (_, _) => { updatingName = true; name.Text = speaker.Name; updatingName = false; };
-                row.Children.Add(new TextBlock { Text = $"Speaker {i + 1}" }); row.Children.Add(name);
+                row.Children.Add(new TextBlock { Text = IsHost(i) ? $"Speaker 1 · This PC · {SpeakerName(i)}" : $"Speaker {i + 1}" });
+                if (!IsHost(i)) row.Children.Add(name);
                 var voice = new ComboBox { ItemsSource = model.Voices, DisplayMemberPath = "DisplayName", SelectedValuePath = "Id", SelectedValue = speaker.Voice, Height = 24, Padding = new(6,1,6,1), Margin = new(0,6,0,0) };
                 voice.SelectionChanged += (_, _) => {
                     if (voice.SelectedValue is not string value) return;
@@ -139,7 +149,7 @@ public sealed class RecallMeetingView : UserControl
                     await model.Recall.HandleAsync("remove", new() { ["botId"] = speaker.Bot });
                     speaker.Bot = ""; speaker.Status = "Not added";
                 }));
-                var status = new TextBlock { Text = speaker.Status, VerticalAlignment = VerticalAlignment.Center }; statuses[index] = status;
+                var status = new TextBlock { Text = IsHost(i) ? "This PC · selected app output" : speaker.Status, VerticalAlignment = VerticalAlignment.Center }; statuses[index] = status;
                 actions.Children.Add(status); row.Children.Add(actions); body.Children.Add(row);
             }
             var footer = new WrapPanel();
@@ -149,7 +159,7 @@ public sealed class RecallMeetingView : UserControl
 
             footer.Children.Add(Button("Arrange turns", async () => {
                 if (speakers.Any(s => string.IsNullOrWhiteSpace(s.Name) || string.IsNullOrWhiteSpace(s.Voice))) throw new AppException("Enter a name and choose a voice for every speaker.");
-                foreach (var speaker in speakers.Where(s => s.Bot.Length == 0)) {
+                foreach (var speaker in speakers.Where((s, index) => !IsHost(index) && s.Bot.Length == 0)) {
                     message.Text = "Adding " + speaker.Name + " to the meeting…";
                     var result = await model.Recall.HandleAsync("add", new() { ["meetingUrl"] = selectedMeeting, ["name"] = speaker.Name.Trim() });
                     speaker.Bot = result["bot"]!["id"]!.GetValue<string>();
@@ -163,7 +173,7 @@ public sealed class RecallMeetingView : UserControl
         }
         body.Children.Add(new TextBlock { Text = "All speech is prepared before playback. Turns then run with no added pause. Separate bots may still have small gaps or overlap because Recall does not confirm playback timing.", TextWrapping = TextWrapping.Wrap });
         for (int i = 0; i < speakers.Count; i++) {
-            var status = new TextBlock { Text = speakers[i].Name + ": " + speakers[i].Status, Margin = new(0,2,0,2) };
+            var status = new TextBlock { Text = SpeakerName(i) + ": " + (IsHost(i) ? "This PC" : speakers[i].Status), Margin = new(0,2,0,2) };
             statuses[i] = status; body.Children.Add(status);
         }
         var buttons = new WrapPanel();
@@ -177,7 +187,7 @@ public sealed class RecallMeetingView : UserControl
             var row = new StackPanel { Margin = new(0,10,0,8) };
             var actions = new WrapPanel();
             actions.Children.Add(new TextBlock { Text = $"{i + 1}. ", VerticalAlignment = VerticalAlignment.Center });
-            var speaker = new ComboBox { ItemsSource = speakers.Select(s => s.Name).ToArray(), SelectedIndex = turn.SpeakerIndex, MinWidth = 180, Height = 28, VerticalAlignment = VerticalAlignment.Center };
+            var speaker = new ComboBox { ItemsSource = Enumerable.Range(0, speakers.Count).Select(SpeakerName).ToArray(), SelectedIndex = turn.SpeakerIndex, MinWidth = 180, Height = 28, VerticalAlignment = VerticalAlignment.Center };
             speaker.SelectionChanged += (_, _) => { if (speaker.SelectedIndex >= 0) turns[index] = turns[index] with { SpeakerIndex = speaker.SelectedIndex }; };
             actions.Children.Add(speaker);
             if (i > 0) actions.Children.Add(Button("↑", () => { (turns[index-1],turns[index]) = (turns[index],turns[index-1]); return Task.CompletedTask; }));
@@ -208,7 +218,7 @@ public sealed class RecallMeetingView : UserControl
         return button;
     }
 
-    private string Resolve(string text) { for (int i=0; i<speakers.Count; i++) text = text.Replace($"{{{{speaker_{i+1}}}}}", speakers[i].Name); return text; }
+    private string Resolve(string text) { for (int i=0; i<speakers.Count; i++) text = text.Replace($"{{{{speaker_{i+1}}}}}", SpeakerName(i)); return text; }
     private async Task Refresh()
     {
         if (refreshing) return;
@@ -228,7 +238,7 @@ public sealed class RecallMeetingView : UserControl
     {
         if (turns.Count == 0 || turns.Any(t => string.IsNullOrWhiteSpace(t.Text))) throw new AppException("Add nonempty speech for each turn.");
         await Refresh();
-        if (speakers.Any(s => s.Status != "in_call_recording")) throw new AppException("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.");
+        if (speakers.Where((_, index) => !IsHost(index)).Any(s => s.Status != "in_call_recording")) throw new AppException("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.");
         run = new();
         body.Children.Clear(); body.IsEnabled = true;
         var stop = new Button { Content = "Stop meeting", Padding = new(12,5,12,5), HorizontalAlignment = HorizontalAlignment.Left };
@@ -241,10 +251,12 @@ public sealed class RecallMeetingView : UserControl
         actions.Children.Add(skip); actions.Children.Add(stop); body.Children.Add(actions);
         body.Children.Add(new TextBlock { Text = "Skip advances to the next turn. Audio already sent may finish playing over the next speaker.", TextWrapping = TextWrapping.Wrap, Margin = new(0,8,0,0) });
         try {
-            var plan = turns.Select(t => new RecallMeetingTurn(speakers[t.SpeakerIndex].Bot, speakers[t.SpeakerIndex].Voice, Resolve(t.Text))).ToArray();
-            await RecallTurnRunner.RunAsync(plan, model.Recall.HandleAsync, index => {
+            using var host = includeHost.IsChecked == true ? model.CreateLocalMeetingSpeech(model.Recall.HandleAsync, run.Token) : null;
+            var plan = turns.Select(t => new RecallMeetingTurn(IsHost(t.SpeakerIndex) ? "local" : speakers[t.SpeakerIndex].Bot, speakers[t.SpeakerIndex].Voice, Resolve(t.Text))).ToArray();
+            Func<string, JsonObject, Task<JsonObject>> request = host == null ? model.Recall.HandleAsync : host.HandleAsync;
+            await RecallTurnRunner.RunAsync(plan, request, index => {
                 skipRequested = false; skip.IsEnabled = true;
-                message.Text = $"Turn {index+1} of {plan.Length} · {speakers[turns[index].SpeakerIndex].Name}\n\n{plan[index].Text}";
+                message.Text = $"Turn {index+1} of {plan.Length} · {SpeakerName(turns[index].SpeakerIndex)}\n\n{plan[index].Text}";
             }, run.Token, () => skipRequested, index => {
                 message.Text = $"Preparing speech {index+1} of {plan.Length} before playback…";
             });

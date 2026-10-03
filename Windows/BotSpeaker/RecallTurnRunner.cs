@@ -4,6 +4,11 @@ namespace BotSpeaker;
 
 public sealed record RecallMeetingTurn(string BotId, string Voice, string Text);
 
+public interface IRecallMeetingSpeech : IDisposable
+{
+    Task<JsonObject> HandleAsync(string action, JsonObject body);
+}
+
 /// <summary>Prepares all clips before starting, then advances on estimated clip completion.</summary>
 public static class RecallTurnRunner
 {

@@ -60,13 +60,21 @@ public sealed class AppModel : INotifyPropertyChanged
     /// paired attendee is always locked, and a host is locked only while its
     /// orchestrated meeting is running or paused.
     /// </summary>
-    public bool IsLocalPlaybackLocked => IsRemoteControlled && (!IsHostingMeeting || IsHostedMeetingInProgress);
+    private bool recallHostActive;
+    public bool IsRecallHostActive {
+        get => recallHostActive;
+        set { recallHostActive = value; Notify(nameof(IsLocalPlaybackLocked)); Notify(nameof(LocalPlaybackLockReason)); }
+    }
+    public IRecallMeetingSpeech CreateLocalMeetingSpeech(Func<string, System.Text.Json.Nodes.JsonObject, Task<System.Text.Json.Nodes.JsonObject>> remote, CancellationToken token)
+        => new LocalMeetingSpeech(this, remote, token);
+    public bool IsLocalPlaybackLocked => IsRecallHostActive || IsRemoteControlled && (!IsHostingMeeting || IsHostedMeetingInProgress);
 
     public string? LocalPlaybackLockReason
     {
         get
         {
             if (!IsLocalPlaybackLocked) return null;
+            if (IsRecallHostActive) return "Local playback resumes when the Recall meeting ends.";
             return IsHostingMeeting
                 ? "Local playback resumes when the orchestrated meeting ends. Use Speak to queue ad hoc text."
                 : "Playback is controlled by the meeting host.";
@@ -551,6 +559,7 @@ public sealed class AppModel : INotifyPropertyChanged
     public async Task PlayOrchestratedTurnAsync(
         string turnText, string cacheNamespace, CancellationToken cancellation, string? voiceId = null)
     {
+        if (IsRecallHostActive) throw new AppException("Wait until the Recall host turn finishes before starting local speech.");
         var modelId = ModelId;
         var effectiveVoiceId = string.IsNullOrWhiteSpace(voiceId) ? VoiceId : voiceId;
         var plans = SpeechTextChunker.Chunks(turnText);
@@ -624,6 +633,7 @@ public sealed class AppModel : INotifyPropertyChanged
     /// </summary>
     public void PlayAudioFile(string path, string displayName)
     {
+        if (IsRecallHostActive) throw new AppException("Wait until the Recall meeting ends before starting local audio.");
         if (string.IsNullOrEmpty(SelectedDeviceId))
         {
             throw new AppException("Choose an audio output in Settings.");

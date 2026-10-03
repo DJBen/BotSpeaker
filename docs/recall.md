@@ -268,3 +268,11 @@ duration. Recall cannot confirm when remote audio becomes audible. Align timesta
 with the target recording and verify spoken text before using this artifact for
 attribution scoring. The meeting ID is the conferencing ID, not an external
 recorder's internal meeting UUID; update it to that UUID when importing if needed.
+
+## Windows 0.5.11 host participation
+
+Enable **Include this computer as speaker 1**, enter your meeting display name, and choose speaker 1’s voice. An N-person script invites N−1 Recall bots. Set BotSpeaker output to **CABLE Input**, system default recording device and meeting microphone to **CABLE Output**, then unmute the host. Leave the meeting speaker on your headphones or speakers.
+
+Windows CLI plans accept `"botId": "local"` for host turns. For an existing bot-only plan, `botspeaker-cli recall meeting-create --file plan.json --include-host` converts every turn belonging to the first turn’s speaker to local. Invite only the remaining speakers’ bots. Both paths prepare every clip before playback and preserve the turn order. Stop and skip stop local playback; remote audio already sent may finish.
+
+After each meeting, including failed or interrupted runs, remove its bots with `botspeaker-cli recall remove-all --meeting MEETING_URL` and verify a meeting-scoped list has no active bots. Stopping a plan alone leaves its bots joined.

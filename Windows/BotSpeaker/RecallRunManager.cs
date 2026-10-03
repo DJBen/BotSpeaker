@@ -3,7 +3,8 @@ using System.Text.Json.Nodes;
 namespace BotSpeaker;
 
 /// <summary>App-owned CLI meeting plans; navigation and CLI exit do not interrupt a run.</summary>
-public sealed class RecallRunManager(Func<string, JsonObject, Task<JsonObject>> request)
+public sealed class RecallRunManager(Func<string, JsonObject, Task<JsonObject>> request,
+    Func<CancellationToken, IRecallMeetingSpeech>? localSpeech = null)
 {
     private sealed class Run(RecallMeetingTurn[] turns)
     {
@@ -39,11 +40,12 @@ public sealed class RecallRunManager(Func<string, JsonObject, Task<JsonObject>> 
             var items = body["turns"] as JsonArray ?? throw new AppException("Provide a JSON plan with a turns array.");
             if (items.Count is < 1 or > 450) throw new AppException("Provide between 1 and 450 turns.");
             var turns = items.Select(item => {
-                if (!Guid.TryParse(item?["botId"]?.GetValue<string>(), out var bot)) throw new AppException("Every turn needs a bot UUID.");
+                var target = item?["botId"]?.GetValue<string>();
+                if (target != "local" && !Guid.TryParse(target, out _)) throw new AppException("Every turn needs a bot UUID or local.");
                 var voice = item?["voice"]?.GetValue<string>()?.Trim();
                 var text = item?["text"]?.GetValue<string>()?.Trim();
                 if (string.IsNullOrEmpty(voice) || string.IsNullOrEmpty(text)) throw new AppException("Every turn needs voice and text.");
-                return new RecallMeetingTurn(bot.ToString(), voice, text);
+                return new RecallMeetingTurn(target == "local" ? target : Guid.Parse(target!).ToString(), voice, text);
             }).ToArray();
             var created = new Run(turns);
             runs.Add(created.Id, created);
@@ -82,13 +84,17 @@ public sealed class RecallRunManager(Func<string, JsonObject, Task<JsonObject>> 
         try
         {
             var token = run.Cancellation!.Token;
-            var response = await request("list", new()).WaitAsync(token);
+            using var host = run.Turns.Any(turn => turn.BotId == "local")
+                ? localSpeech?.Invoke(token) ?? throw new AppException("Host speech is unavailable.") : null;
+            Func<string, JsonObject, Task<JsonObject>> dispatch = host == null ? request : host.HandleAsync;
+            var remoteTurns = run.Turns.Where(turn => turn.BotId != "local").ToArray();
+            var response = remoteTurns.Length == 0 ? new JsonObject { ["bots"] = new JsonArray() } : await request("list", new()).WaitAsync(token);
             token.ThrowIfCancellationRequested();
             var ready = response["bots"]!.AsArray().Where(bot => bot?["status"]?.GetValue<string>() == "in_call_recording")
                 .Select(bot => bot!["id"]!.GetValue<string>()).ToHashSet();
-            if (run.Turns.Any(turn => !ready.Contains(turn.BotId))) throw new AppException("Every speaker bot must be in_call_recording before starting.");
+            if (remoteTurns.Any(turn => !ready.Contains(turn.BotId))) throw new AppException("Every speaker bot must be in_call_recording before starting.");
             run.Status = "preparing";
-            await RecallTurnRunner.RunAsync(run.Turns, request, index => {
+            await RecallTurnRunner.RunAsync(run.Turns, dispatch, index => {
                 run.Index = index; run.Skip = false; run.Status = "running";
             }, run.Cancellation!.Token, () => run.Skip, index => run.Index = index);
             run.Status = "finished";

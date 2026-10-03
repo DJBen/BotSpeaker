@@ -21,7 +21,9 @@ static partial class Cli
           prepare BOT_ID TEXT [--voice ID] [--file PATH] [--wait]
           dispatch JOB_ID [--wait]                   play a prepared clip
           wait JOB_ID [--timeout SECONDS]            wait for dispatch completion
-          meeting-create --file PLAN.json|-         plan turns using botId, voice, text
+          meeting-create --file PLAN.json|- [--include-host]
+            --include-host makes the first turn's speaker this PC for all their turns.
+            Host participation: use botId "local" for this PC; invite N-1 bots for N speakers.
           meeting-start PLAN_ID [--wait]             prepare all turns, then play
           meeting-status PLAN_ID                    inspect progress
           meeting-skip PLAN_ID                       skip the current turn

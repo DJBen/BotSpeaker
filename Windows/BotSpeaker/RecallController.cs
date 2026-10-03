@@ -34,7 +34,7 @@ public sealed class RecallController
     public RecallController(AppModel model, HttpClient? httpClient = null)
     {
         this.model = model;
-        meetings = new(HandleAsync);
+        meetings = new(HandleAsync, token => model.CreateLocalMeetingSpeech(HandleAsync, token));
         http = httpClient ?? defaultHttp;
         if (File.Exists(RegionPath) && Regions.Contains(File.ReadAllText(RegionPath).Trim())) Region = File.ReadAllText(RegionPath).Trim();
     }

@@ -462,7 +462,7 @@ sealed class UsageException(string message) : Exception(message);
 /// <summary>Minimal option parser: --name value, --name=value, -n value, boolean flags, and "--" to end options.</summary>
 sealed class Args(List<string> positional, Dictionary<string, string?> options)
 {
-    private static readonly HashSet<string> BooleanFlags = ["json", "wait", "w", "loop", "l", "refresh", "help", "h", "key-stdin", "check"];
+    private static readonly HashSet<string> BooleanFlags = ["json", "wait", "w", "loop", "l", "refresh", "help", "h", "key-stdin", "check", "include-host"];
 
     public List<string> Positional { get; } = positional;
     public Dictionary<string, string?> Options { get; } = options;

@@ -33,9 +33,14 @@ public static class RecallCommands
             case "meeting-start": case "meeting-stop": case "meeting-skip": case "meeting-status": case "meeting-wait":
                 maxArguments = 2; body["id"] = Required(1, "ID"); break;
             case "meeting-create":
-                Allow("file", "f");
+                Allow("file", "f", "include-host");
                 body = JsonNode.Parse(read(Option("file") ?? Option("f") ?? throw new ArgumentException("--file is required."))) as JsonObject
                     ?? throw new ArgumentException("Meeting plan must be a JSON object.");
+                if (options.ContainsKey("include-host")) {
+                    var turns = body["turns"] as JsonArray ?? throw new ArgumentException("Plan needs a turns array.");
+                    var first = turns.FirstOrDefault()?["botId"]?.GetValue<string>() ?? throw new ArgumentException("Plan needs a first speaker.");
+                    foreach (var turn in turns.Where(turn => turn?["botId"]?.GetValue<string>() == first)) turn!["botId"] = "local";
+                }
                 break;
             case "speak": case "prepare":
                 Allow("voice", "file", "f");

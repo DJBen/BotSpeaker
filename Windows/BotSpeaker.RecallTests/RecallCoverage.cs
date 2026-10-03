@@ -15,6 +15,7 @@ static class RecallCoverage
     public static async Task Run()
     {
         await Manager();
+        await HostCoverage.Run();
         await Cli();
     }
     static async Task Manager()
