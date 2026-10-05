@@ -49,6 +49,7 @@ struct RecallView: View {
                 if model.recall.configured {
                     if meetingReady {
                         botPanel
+                        RecallScreenShareView(model: model, bots: visibleBots.map { .init(id: $0.id, name: $0.name, status: $0.status) }, selectedBot: bot ?? "")
                         speechPanel
                         jobRows
                     } else { meetingSetup }

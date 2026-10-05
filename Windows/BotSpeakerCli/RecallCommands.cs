@@ -28,6 +28,7 @@ public static class RecallCommands
                 break;
             case "remove-all":
                 Allow("meeting"); body["meetingId"] = Option("meeting") ?? throw new ArgumentException("--meeting is required for remove-all."); break;
+            case "screenshare-start": case "screenshare-stop":
             case "remove": maxArguments = 2; body["botId"] = Required(1, "Bot ID"); break;
             case "cancel": case "dispatch": case "wait":
             case "meeting-start": case "meeting-stop": case "meeting-skip": case "meeting-status": case "meeting-wait":

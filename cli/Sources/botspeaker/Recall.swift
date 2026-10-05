@@ -3,7 +3,7 @@ import Foundation
 import Darwin
 
 struct Recall: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Control Recall meeting bots and schedule prerecorded speech.", discussion: "Actions: configure, status, list, add, remove, remove-all, speak, prepare, dispatch, cancel, wait, meeting-create, meeting-start, meeting-status, meeting-skip, meeting-stop, meeting-wait. Use --meeting for scoped list/removal, --file for invitations or JSON plans, and --wait for speech or meeting completion. Keep the app running and awake. Scheduling controls dispatch, not exact playback. Cancellation stops future dispatches only.")
+    static let configuration = CommandConfiguration(abstract: "Control Recall meeting bots and schedule prerecorded speech.", discussion: "Actions: configure, status, list, add, remove, remove-all, screenshare-start, screenshare-stop, speak, prepare, dispatch, cancel, wait, meeting-create, meeting-start, meeting-status, meeting-skip, meeting-stop, meeting-wait. Use --meeting for scoped list/removal, --file for invitations or JSON plans, and --wait for speech or meeting completion. Keep the app running and awake. Scheduling controls dispatch, not exact playback. Cancellation stops future dispatches only.")
     @OptionGroup var global: GlobalOptions
     @Argument var action: String = "status"
     @Argument var arguments: [String] = []
@@ -23,7 +23,7 @@ struct Recall: AsyncParsableCommand {
     @Option(help: "Maximum wait in seconds; work continues after timeout.") var timeout: Double = 3600
 
     func validate() throws {
-        guard ["configure", "status", "list", "add", "remove", "remove-all", "speak", "prepare", "dispatch", "cancel", "wait", "meeting-create", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action) else { throw ValidationError("Unknown Recall action.") }
+        guard ["configure", "status", "list", "add", "remove", "remove-all", "screenshare-start", "screenshare-stop", "speak", "prepare", "dispatch", "cancel", "wait", "meeting-create", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action) else { throw ValidationError("Unknown Recall action.") }
         if loop && repeatCount != nil { throw ValidationError("Use --loop or --repeat, not both.") }
         if let repeatCount, repeatCount < 1 { throw ValidationError("--repeat must be positive.") }
         if let interval, !interval.isFinite || interval < 0 || interval > 86400 { throw ValidationError("--interval must be finite and between 0 and 86400 seconds.") }
@@ -35,7 +35,7 @@ struct Recall: AsyncParsableCommand {
         if passcode != nil && action != "add" { throw ValidationError("--passcode requires add.") }
         if voice != nil && !["speak", "prepare"].contains(action) { throw ValidationError("--voice requires speak or prepare.") }
         if keyStdin && action != "configure" { throw ValidationError("--key-stdin requires configure.") }
-        let needsID = ["remove", "speak", "prepare", "dispatch", "cancel", "wait", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action)
+        let needsID = ["screenshare-start", "screenshare-stop", "remove", "speak", "prepare", "dispatch", "cancel", "wait", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action)
         if needsID && arguments.isEmpty { throw ValidationError("An ID is required.") }
         if action == "add" && file == nil && arguments.isEmpty { throw ValidationError("A meeting invitation, URL, or ID is required.") }
         if action == "remove-all" && (meeting ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw ValidationError("--meeting is required for remove-all.") }
@@ -71,7 +71,7 @@ struct Recall: AsyncParsableCommand {
                 body["name"] = name
                 if let passcode { body["passcode"] = passcode }
             }
-            if ["remove", "speak", "prepare"].contains(action) { body["botId"] = arguments.first }
+            if ["screenshare-start", "screenshare-stop", "remove", "speak", "prepare"].contains(action) { body["botId"] = arguments.first }
             if ["cancel", "dispatch", "wait", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action) { body["id"] = arguments.first }
             if action == "meeting-create" {
                 guard let data = try read(file!).data(using: .utf8),

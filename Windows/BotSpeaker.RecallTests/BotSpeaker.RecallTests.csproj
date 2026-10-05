@@ -6,4 +6,5 @@
   <ItemGroup><Compile Include="../BotSpeakerCli/RecallCommands.cs" Link="RecallCommands.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../BotSpeaker/RecallController.cs" Link="RecallController.cs" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../BotSpeaker/recall-silence.mp3" LogicalName="BotSpeaker.recall-silence.mp3" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../BotSpeaker/recall-test-screen.jpg" LogicalName="BotSpeaker.recall-test-screen.jpg" /></ItemGroup>
 </Project>

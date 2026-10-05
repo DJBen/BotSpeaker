@@ -298,6 +298,11 @@ agents. Copy or symlink it into the agent's skills directory
 
 ## Recall meeting bots
 
+Use `botspeaker recall screenshare-start BOT_ID` to present a bundled test card,
+and `botspeaker recall screenshare-stop BOT_ID` to stop sharing independently of
+speech or a running meeting plan. Use `botspeaker-cli` on Windows. These commands
+report Recall's API acceptance; confirm visibility in the meeting itself.
+
 Use `botspeaker recall` (`botspeaker-cli recall` on Windows) to configure Recall,
 list/add/remove bots, schedule ElevenLabs speech, repeat/loop, and cancel jobs.
 Both platforms support invitation/passcode input, meeting-scoped removal,

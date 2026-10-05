@@ -30,6 +30,7 @@ final class BotSpeakerAppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 try await orchestration.prepareForExit()
+                await model.recall.waitForBotControls()
                 try await model.prepareRecallMeetingsForExit()
                 await model.recall.cancelPendingJobs()
                 model.stop()

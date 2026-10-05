@@ -62,7 +62,11 @@ public sealed class RecallMeetingView : UserControl
         meeting.Text = model.Settings.LastRecallMeeting;
         root.Margin = new(22);
         root.Children.Add(new TextBlock { Text = "Recall.ai · " + source.SelectedTemplate.Title, FontSize = 22, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap });
-        root.Children.Add(message); root.Children.Add(body);
+        root.Children.Add(message);
+        var screenshare = new RecallScreenShareView(model.Recall, () => speakers.Where(s => !string.IsNullOrEmpty(s.Bot)).Select(s => new RecallScreenShareView.Bot(s.Bot, s.Name, s.Status)).ToArray());
+        root.Children.Add(screenshare); root.Children.Add(body);
+        screenshare.Visibility = Visibility.Collapsed;
+        timer.Tick += (_, _) => screenshare.Visibility = step > 0 ? Visibility.Visible : Visibility.Collapsed;
         Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         timer.Tick += async (_, _) => { if (step > 0 && !busy) await SafeRefresh(); };
         Loaded += async (_, _) => { timer.Start(); await model.LoadVoicesIfNeededAsync(); Render(); };

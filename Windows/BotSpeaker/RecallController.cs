@@ -18,12 +18,20 @@ public sealed class RecallController
     private readonly RecallRunManager meetings;
     private readonly Dictionary<string, (JsonObject State, CancellationTokenSource Cancel)> jobs = [];
     private readonly List<Task> runningJobs = [];
-    public bool HasPendingJobs => meetings.HasActiveRuns || runningJobs.Any(task => !task.IsCompleted);
+    private readonly Dictionary<string, JsonObject> screenshares = [];
+    private readonly HashSet<string> screenRequests = [];
+    public JsonObject? ScreenShare(string bot) => screenshares.GetValueOrDefault(Region + ":" + bot.ToLowerInvariant());
+    public bool HasPendingJobs => screenRequests.Count > 0 || meetings.HasActiveRuns || runningJobs.Any(task => !task.IsCompleted);
+    public async Task WaitForBotControlsAsync()
+    {
+        while (screenRequests.Count > 0) await Task.Delay(50);
+    }
     public async Task CancelPendingJobsAsync()
     {
         await meetings.StopAllAsync();
         foreach (var job in jobs.Values) job.Cancel.Cancel();
         await Task.WhenAll(runningJobs);
+        await WaitForBotControlsAsync();
     }
     private readonly Dictionary<string, SemaphoreSlim> botLocks = [];
     private readonly Dictionary<string, TaskCompletionSource> preparedStarts = [];
@@ -41,14 +49,47 @@ public sealed class RecallController
     private string? Key => credentials.Read() ?? Env("RECALL_API_KEY") ?? Env("RECALL_AI_API_KEY");
     private static string? Env(string name) => new[] { Environment.GetEnvironmentVariable(name), Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User) }.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
     public bool Configured => !string.IsNullOrWhiteSpace(Key);
-    public JsonObject Status() => new() { ["ok"] = true, ["configured"] = Configured, ["region"] = Region, ["jobs"] = new JsonArray(jobs.Values.Select(j => (JsonNode)j.State.DeepClone()).ToArray()), ["meetings"] = meetings.Snapshots() };
+    public JsonObject Status() => new() { ["ok"] = true, ["configured"] = Configured, ["region"] = Region, ["jobs"] = new JsonArray(jobs.Values.Select(j => (JsonNode)j.State.DeepClone()).ToArray()), ["meetings"] = meetings.Snapshots(),
+        ["screenshares"] = new JsonArray(screenshares.Values.Where(s => s["region"]?.GetValue<string>() == Region).OrderBy(s => s["botId"]?.GetValue<string>()).Select(s => (JsonNode)s.DeepClone()).ToArray()) };
     public async Task<JsonObject> HandleAsync(string action, JsonObject body)
     {
         if (action.StartsWith("meeting-", StringComparison.Ordinal)) return await meetings.HandleAsync(action, body);
         switch (action)
         {
             case "status": return Status();
+            case "screenshare-start": case "screenshare-stop":
+            {
+                var screenBot = BotId(body);
+                var screenRegion = Region;
+                var screenKey = Key ?? throw new AppException("Configure Recall first.");
+                var identity = screenRegion + ":" + screenBot;
+                if (screenRequests.Contains(identity)) throw new AppException("A screen-share request for this bot is already in progress.");
+                var starting = action == "screenshare-start";
+                JsonObject? payload = null;
+                if (starting) {
+                    using var stream = typeof(RecallController).Assembly.GetManifestResourceStream("BotSpeaker.recall-test-screen.jpg")
+                        ?? throw new AppException("Missing bundled Recall test screen.");
+                    using var bytes = new MemoryStream(); stream.CopyTo(bytes);
+                    var encoded = Convert.ToBase64String(bytes.ToArray());
+                    if (encoded.Length is 0 or > 1835008) throw new AppException("Recall test screen exceeds the image size limit.");
+                    payload = new() { ["kind"] = "jpeg", ["b64_data"] = encoded };
+                }
+                screenRequests.Add(identity);
+                screenshares[identity] = new() { ["botId"] = screenBot, ["region"] = screenRegion, ["state"] = starting ? "starting" : "stopping" };
+                try {
+                    await SendAsync(starting ? "POST" : "DELETE", $"bot/{screenBot}/output_screenshare/", payload, default, screenKey, screenRegion);
+                    var share = new JsonObject { ["botId"] = screenBot, ["region"] = screenRegion, ["state"] = starting ? "start_accepted" : "stop_accepted", ["updatedAt"] = DateTimeOffset.UtcNow.ToString("O") };
+                    screenshares[identity] = share;
+                    return new() { ["ok"] = true, ["screenshare"] = share.DeepClone() };
+                }
+                catch (Exception error) {
+                    screenshares[identity] = new() { ["botId"] = screenBot, ["region"] = screenRegion, ["state"] = "failed", ["error"] = error.Message };
+                    throw;
+                }
+                finally { screenRequests.Remove(identity); }
+            }
             case "configure":
+                if (screenRequests.Count > 0) throw new AppException("Wait for bot control requests before changing Recall configuration.");
                 var region = body["region"]?.GetValue<string>() ?? Region;
                 if (!Regions.Contains(region)) throw new AppException("Choose a supported Recall region.");
                 var key = body["apiKey"]?.GetValue<string>()?.Trim();
@@ -99,11 +140,19 @@ public sealed class RecallController
                 return new JsonObject { ["ok"] = true, ["bot"] = Summary(created) };
             }
             case "remove":
+            {
                 var botId = BotId(body);
-                await meetings.StopForBotsAsync([botId]);
-                foreach (var job in jobs.Values.Where(j => j.State["botId"]!.GetValue<string>() == botId)) job.Cancel.Cancel();
-                await SendAsync("POST", $"bot/{botId}/leave_call/", new());
-                return new JsonObject { ["ok"] = true };
+                if (screenRequests.Contains(Region + ":" + botId)) throw new AppException("Wait for the screen-share request before removing this bot.");
+                var identity = Region + ":" + botId;
+                screenRequests.Add(identity);
+                try {
+                    await meetings.StopForBotsAsync([botId]);
+                    foreach (var job in jobs.Values.Where(j => j.State["botId"]!.GetValue<string>() == botId)) job.Cancel.Cancel();
+                    await SendAsync("POST", $"bot/{botId}/leave_call/", new());
+                    screenshares.Remove(Region + ":" + botId);
+                    return new JsonObject { ["ok"] = true };
+                } finally { screenRequests.Remove(identity); }
+            }
             case "remove-all":
                 var meetingId = MeetingId(Required(body, "meetingId"));
                 var listed = await HandleAsync("list", new() { ["meetingId"] = meetingId });

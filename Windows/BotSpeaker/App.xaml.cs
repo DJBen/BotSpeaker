@@ -229,6 +229,7 @@ public partial class App : Application
             if (_trayIcon?.ContextMenuStrip is { } menu) menu.Enabled = false;
             if (_mainWindow is not null) _mainWindow.Title = "Bot Speaker — Finishing session and quitting…";
             await Orchestration.PrepareForExitAsync();
+            await Model.Recall.WaitForBotControlsAsync();
             if (_mainWindow is not null) await _mainWindow.PrepareRecallMeetingsForExitAsync();
             await Model.Recall.CancelPendingJobsAsync();
             Model.StopPlayback();

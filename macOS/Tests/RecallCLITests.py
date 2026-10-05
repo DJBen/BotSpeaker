@@ -55,6 +55,14 @@ try:
     partial_failure = False
     print('PASS: scoped list/removal, invitation stdin, passcode, partial-failure exit')
 
+    for action in ('screenshare-start', 'screenshare-stop'):
+        run(action, 'bot')
+        assert calls[-1] == ('/v1/recall/' + action, {'botId': 'bot'})
+        for args in [(action,), (action, 'bot', '--wait'), (action, 'bot', '--file', '-')]:
+            run(*args, code=usage_error_code)
+            assert not calls
+    print('PASS: screen-share start/stop bodies; invalid options rejected before HTTP')
+
     state = 'prepared'
     result = run('prepare', 'bot', 'hello', '--voice', 'voice', '--wait')
     assert calls[0][1] == {'botId': 'bot', 'text': 'hello', 'voice': 'voice'}

@@ -110,6 +110,8 @@ public sealed class RecallView : UserControl
         }));
         botActions.Children.Add(MakeButton("Refresh bots", Refresh));
         botActions.Children.Add(MakeButton("Remove selected bot", async () => { await controller.HandleAsync("remove", new() { ["botId"] = SelectedBot().Id }); await Refresh(); })); controls.Children.Add(botActions);
+        controls.Children.Add(new RecallScreenShareView(controller, () => bots.SelectedItem is BotRow selected
+            ? [new(selected.Id, selected.Name, selected.Status)] : []));
         Field(controls, "Speech", speech);
         speech.Text = Starter();
         voice.Margin = new Thickness(0, 8, 0, 6);

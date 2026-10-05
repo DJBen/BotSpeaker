@@ -171,6 +171,9 @@ struct RecallMeetingView: View {
                     Button("Reveal ground truth artifact") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
                 if !plan.message.isEmpty { Text(plan.message).textSelection(.enabled) }
+                if plan.step > 0 {
+                    RecallScreenShareView(model: model, bots: plan.speakers.filter { !$0.bot.isEmpty }.map { .init(id: $0.bot, name: $0.name, status: $0.status) })
+                }
                 if plan.running {
                     HStack {
                         Button("Skip turn") { plan.skipRequested = true }.disabled(plan.skipRequested || plan.preparing)
@@ -187,7 +190,7 @@ struct RecallMeetingView: View {
             await model.loadVoicesIfNeeded()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
-                if plan.step > 0 && !plan.busy && !plan.running {
+                if plan.step > 0 && !plan.busy {
                     do { try await plan.refresh(model) } catch { plan.message = error.localizedDescription }
                 }
             }

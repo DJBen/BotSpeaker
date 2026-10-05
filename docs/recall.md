@@ -75,6 +75,48 @@ pending speech jobs. On macOS, if Recall rejects the request because the bot has
 already left an ended meeting, removal succeeds. It does not delete recordings or
 meeting history.
 
+## Screen sharing
+
+Select a bot on **Recall Bot** and choose **Share test screen** or **Stop sharing**.
+In **Host in Recall.ai**, the screen-share panel provides a presenting-bot picker
+from the speaker-bot step onward and stays available during preparation and live
+turn playback. The local host is excluded because this feature presents from a
+remote Recall bot. Start is available once the bot is in the call; the meeting
+host must allow it to present.
+
+```sh
+botspeaker recall screenshare-start BOT_ID
+botspeaker recall screenshare-stop BOT_ID
+botspeaker recall status --json
+```
+
+Use `botspeaker-cli` on Windows. Both commands also work for speaker bots in
+app-owned CLI meeting plans, independently of speech preparation, dispatch,
+skip, and stop. Stop sharing leaves the bot joined and does not cancel speech.
+The default content is a bundled 1280×720 JPEG test card; no hosted page, desktop
+capture permission, or additional presenter bot is needed.
+
+The authenticated loopback API exposes `POST /v1/recall/screenshare-start` and
+`POST /v1/recall/screenshare-stop`, each accepting `{"botId": "BOT_UUID"}`.
+They call Recall's [JPEG screenshare endpoint](https://docs.recall.ai/reference/bot_output_screenshare_create)
+using POST and DELETE respectively. Status includes a `screenshares` array;
+action responses contain `screenshare` with `botId`, `region`, `state`, and an
+`updatedAt` timestamp after success. States are `starting`, `stopping`,
+`start_accepted`, `stop_accepted`, or `failed` (with `error`). These reflect local
+requests and API acceptance, **not measured visibility in the meeting**. External
+changes to sharing and app restarts are not tracked. Removal clears local sharing
+state after success. An in-flight control request blocks another share/removal
+request for that bot and changes to Recall configuration; failed requests can
+be retried. App shutdown waits for in-flight bot control requests.
+
+These actions require an app process running on the same machine as the CLI.
+A service elsewhere can call Recall directly through its own authenticated
+backend; the app's control server remains bound to loopback.
+
+Dynamic webpages and animations should use a dedicated Output Media presenter:
+Recall's [Output Media](https://docs.recall.ai/docs/stream-media) conflicts with
+the automatic audio configuration and clip endpoint used by existing speech bots.
+
 ## Speech
 
 ```sh

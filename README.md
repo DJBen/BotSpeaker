@@ -73,6 +73,7 @@ The repository and its release downloads are public.
   server-received start/end times for every speaker turn
 - Optional looping, disabled by default
 - Recall.ai meeting bots with individual voices, scheduled speech, and orchestrated turns
+- Start and stop a remote bot's test screen share from Recall controls, during orchestrated meetings, or through the CLI/API
 - Recall CLI controls (Windows 0.5.5 and macOS 0.5.6) for Teams invitation input, meeting-scoped bot cleanup, prepared speech, job waits, and JSON meeting plans
 
 ## Runtime requirements
@@ -287,6 +288,8 @@ botspeaker-cli recall list --meeting "123 456 789 012 3"
 botspeaker-cli recall speak BOT_ID "Hello" --voice VOICE_ID --wait
 botspeaker-cli recall prepare BOT_ID "Next turn" --voice VOICE_ID --wait
 botspeaker-cli recall dispatch JOB_ID --wait
+botspeaker-cli recall screenshare-start BOT_ID
+botspeaker-cli recall screenshare-stop BOT_ID
 botspeaker-cli recall remove-all --meeting "123 456 789 012 3"
 ```
 

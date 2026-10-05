@@ -11,6 +11,8 @@ static partial class Cli
           status                                    configuration and local jobs
           add MEETING_URL [--name NAME]              join a meeting
           remove BOT_ID                             leave and cancel pending jobs
+          screenshare-start BOT_ID                  share the bundled test screen
+          screenshare-stop BOT_ID                   stop sharing, keep speech running
           speak BOT_ID TEXT [--voice ID] [--file PATH]
             [--at now|+SECONDS|ISO8601] [--loop | --repeat N] [--interval SECONDS]
           cancel JOB_ID                             stop future dispatches

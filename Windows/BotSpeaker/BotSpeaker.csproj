@@ -11,7 +11,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\BotSpeaker.ico</ApplicationIcon>
-    <Version>0.5.11</Version>
+    <Version>0.5.12</Version>
     <StartupObject>BotSpeaker.App</StartupObject>
   </PropertyGroup>
 
@@ -45,4 +45,5 @@
   </ItemGroup>
 
   <ItemGroup><EmbeddedResource Include="recall-silence.mp3" LogicalName="BotSpeaker.recall-silence.mp3" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="recall-test-screen.jpg" LogicalName="BotSpeaker.recall-test-screen.jpg" /></ItemGroup>
 </Project>

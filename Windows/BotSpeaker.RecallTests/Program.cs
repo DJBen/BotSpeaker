@@ -40,6 +40,31 @@ internal static class Program
         JsonObject Job(string id) => controller.Status()["jobs"]!.AsArray().Select(x => x!.AsObject()).Single(x => x["id"]!.GetValue<string>() == id);
         string Id(JsonObject response) => response["job"]!["id"]!.GetValue<string>();
         Check(!controller.Status().ToJsonString().Contains("test-secret"), "status does not disclose credentials");
+        var screen = await controller.HandleAsync("screenshare-start", new() { ["botId"] = bot.ToUpperInvariant() });
+        Check(screen["screenshare"]?["state"]?.GetValue<string>() == "start_accepted", "screen share request accepted");
+        var jpeg = Convert.FromBase64String(handler.Screens.Last().Body!["b64_data"]!.GetValue<string>());
+        Check(handler.Screens.Last().Method == "POST" && jpeg.Length > 0 && jpeg[0] == 255 && jpeg[1] == 216, "screen share sends a bundled JPEG");
+        await controller.HandleAsync("screenshare-stop", new() { ["botId"] = bot });
+        Check(handler.Screens.Last().Method == "DELETE" && handler.Screens.Last().Body == null, "stop accepts empty 204 response");
+        var screenCount = handler.Screens.Count;
+        await Reject(() => controller.HandleAsync("screenshare-start", new() { ["botId"] = "bad" }), "screen share validates bot UUID");
+        Check(handler.Screens.Count == screenCount, "invalid bot never reaches HTTP");
+        handler.FailScreen = true;
+        await Reject(() => controller.HandleAsync("screenshare-start", new() { ["botId"] = bot }), "rejected screen share propagates failure");
+        Check(controller.ScreenShare(bot)?["state"]?.GetValue<string>() == "failed", "screen share failure remains visible");
+        handler.FailScreen = false;
+        handler.ScreenGate = new();
+        var pendingScreen = controller.HandleAsync("screenshare-start", new() { ["botId"] = bot });
+        await Until(() => controller.ScreenShare(bot)?["state"]?.GetValue<string>() == "starting");
+        await Reject(() => controller.HandleAsync("screenshare-stop", new() { ["botId"] = bot }), "overlapping screen controls rejected");
+        await Reject(() => controller.HandleAsync("remove", new() { ["botId"] = bot }), "removal waits for pending screen share");
+        await Reject(() => controller.HandleAsync("configure", new()), "configuration cannot change mid-request");
+        handler.ScreenGate.SetResult(); await pendingScreen; handler.ScreenGate = null;
+        Check(!controller.HasPendingJobs, "screen request releases its lock");
+        foreach (var action in new[] { "screenshare-start", "screenshare-stop" }) {
+            var command = BotSpeaker.Cli.RecallCommands.Build([action, bot], new Dictionary<string, string?>(), _ => throw new Exception("Unexpected file read"));
+            Check(command.Action == action && command.Body["botId"]?.GetValue<string>() == bot, "CLI screen-share request body");
+        }
         await Reject(() => controller.HandleAsync("speak", Speech("bad", "2020-01-01T00:00:00Z")), "past timestamp rejected");
         await Reject(() => controller.HandleAsync("speak", Speech("bad", "2028-01-01T12:00:00")), "timezone required");
         var invalid = Speech("bad"); invalid["loop"] = true; invalid["repeat"] = 2;
@@ -239,6 +264,9 @@ internal static class Program
 
 sealed class FakeHttp : HttpMessageHandler
 {
+    public List<(string Method, JsonObject? Body)> Screens = [];
+    public bool FailScreen;
+    public TaskCompletionSource? ScreenGate;
     public JsonArray? Bots;
     public string? FailLeave;
     public List<string> Leaves = [];
@@ -250,6 +278,13 @@ sealed class FakeHttp : HttpMessageHandler
     {
         if (request.Headers.Authorization?.Parameter != "test-secret") throw new Exception("Missing auth");
         var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("output_screenshare/")) {
+            var screenBody = request.Content == null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync(token))!.AsObject();
+            Screens.Add((request.Method.Method, screenBody));
+            if (ScreenGate != null) await ScreenGate.Task;
+            if (FailScreen) return new(HttpStatusCode.Forbidden) { Content = new StringContent("denied") };
+            return request.Method == HttpMethod.Delete ? new(HttpStatusCode.NoContent) { Content = new StringContent("") } : Ok(new());
+        }
         if (request.Method == HttpMethod.Get)
         {
             if (Bots != null) return Ok(new() { ["results"] = Bots.DeepClone() });

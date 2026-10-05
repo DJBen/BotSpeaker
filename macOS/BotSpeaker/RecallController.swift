@@ -10,6 +10,9 @@ final class RecallController {
     var region = UserDefaults.standard.string(forKey: "recallRegion") ?? "us-east-1"
     var configured = false
     var jobs: [[String: Any]] = []
+    private(set) var screenshares: [String: [String: Any]] = [:]
+    @ObservationIgnored private var screenRequests: Set<String> = []
+    @ObservationIgnored private let testScreen: Data?
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private let credentials = KeychainStore(account: "recall-api-key")
     @ObservationIgnored private var knownMeetingURLs: [String: String] = [:]
@@ -18,20 +21,28 @@ final class RecallController {
     @ObservationIgnored private var activeBots: Set<String> = []
 
     let meetings = RecallRunManager()
-    var hasPendingJobs: Bool { !tasks.isEmpty || meetings.hasActiveRuns }
+    var hasPendingJobs: Bool { !screenRequests.isEmpty || !tasks.isEmpty || meetings.hasActiveRuns }
+    func waitForBotControls() async {
+        while !screenRequests.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+    }
     func cancelPendingJobs() async {
         await meetings.stopAll()
         let pending = Array(tasks.values)
         for task in pending { task.cancel() }
         for task in pending { await task.value }
+        await waitForBotControls()
     }
-    init(session: URLSession = .shared) { self.session = session; configured = key != nil }
+    init(session: URLSession = .shared, testScreen: Data? = nil) {
+        self.session = session; self.testScreen = testScreen; configured = key != nil
+    }
     private var key: String? {
         if let saved = try? credentials.read(), !saved.isEmpty { return saved }
         let env = ProcessInfo.processInfo.environment
         return [env["RECALL_API_KEY"], env["RECALL_AI_API_KEY"]].compactMap { $0 }.first { !$0.isEmpty }
     }
-    func status() -> [String: Any] { ["ok": true, "configured": configured, "region": region, "jobs": jobs, "meetings": meetings.snapshots] }
+    func screenShare(_ bot: String) -> [String: Any]? { screenshares[region + ":" + bot.lowercased()] }
+    func status() -> [String: Any] { ["ok": true, "configured": configured, "region": region, "jobs": jobs, "meetings": meetings.snapshots,
+        "screenshares": screenshares.values.filter { $0["region"] as? String == region }.sorted { ($0["botId"] as? String ?? "") < ($1["botId"] as? String ?? "") }] }
     func handle(_ action: String, _ body: [String: Any], model: AppModel) async throws -> [String: Any] {
         if action.hasPrefix("meeting-") {
             return try await meetings.handle(action, body) { [self] action, body in
@@ -40,7 +51,36 @@ final class RecallController {
         }
         switch action {
         case "status": return status()
+        case "screenshare-start", "screenshare-stop":
+            let bot = try botID(body)
+            let requestRegion = region
+            let requestKey = key
+            let identity = requestRegion + ":" + bot
+            guard !screenRequests.contains(identity) else { throw AppError("A screen-share request for this bot is already in progress.") }
+            guard let requestKey else { throw AppError("Configure Recall first.") }
+            let starting = action == "screenshare-start"
+            var payload: [String: Any]?
+            if starting {
+                let image = try testScreen ?? Bundle.main.url(forResource: "recall-test-screen", withExtension: "jpg").map { try Data(contentsOf: $0) }
+                guard let image, !image.isEmpty else { throw AppError("Missing bundled Recall test screen.") }
+                let encoded = image.base64EncodedString()
+                guard encoded.count <= 1835008 else { throw AppError("Recall test screen exceeds the image size limit.") }
+                payload = ["kind": "jpeg", "b64_data": encoded]
+            }
+            screenRequests.insert(identity)
+            defer { screenRequests.remove(identity) }
+            screenshares[identity] = ["botId": bot, "region": requestRegion, "state": starting ? "starting" : "stopping"]
+            do {
+                _ = try await send(starting ? "POST" : "DELETE", "bot/\(bot)/output_screenshare/", body: payload, key: requestKey, region: requestRegion)
+                let share: [String: Any] = ["botId": bot, "region": requestRegion, "state": starting ? "start_accepted" : "stop_accepted", "updatedAt": ISO8601DateFormatter().string(from: Date())]
+                screenshares[identity] = share
+                return ["ok": true, "screenshare": share]
+            } catch {
+                screenshares[identity] = ["botId": bot, "region": requestRegion, "state": "failed", "error": error.localizedDescription]
+                throw error
+            }
         case "configure":
+            guard screenRequests.isEmpty else { throw AppError("Wait for bot control requests before changing Recall configuration.") }
             let proposedRegion = body["region"] as? String ?? region
             guard Self.regions.contains(proposedRegion) else { throw AppError("Choose a supported Recall region.") }
             let input = (body["apiKey"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,12 +121,17 @@ final class RecallController {
             return ["ok": true, "bot": summary(bot)]
         case "remove":
             let bot = try botID(body)
+            guard !screenRequests.contains(region + ":" + bot) else { throw AppError("Wait for the screen-share request before removing this bot.") }
+            let identity = region + ":" + bot
+            screenRequests.insert(identity)
+            defer { screenRequests.remove(identity) }
             await meetings.stopForBots([bot])
             for job in jobs where job["botId"] as? String == bot { if let id = job["id"] as? String { tasks[id]?.cancel() } }
             do { _ = try await send("POST", "bot/\(bot)/leave_call/", body: [:]) } catch let error as RecallHTTPError {
                 // Bots from ended meetings have already left; only a bot still in its call blocks removal.
                 guard (try? await hasLeftCall(bot)) == true else { throw error }
             }
+            screenshares[region + ":" + bot] = nil
             return ["ok": true]
         case "remove-all":
             let scope = Self.meetingID(try required(body, "meetingId"))

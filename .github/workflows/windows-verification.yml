@@ -1,0 +1,53 @@
+name: Verify Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version declared by the app and CLI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build app and CLI
+        shell: pwsh
+        run: |
+          dotnet build Windows/BotSpeaker -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build Windows/BotSpeakerCli -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Recall and CLI behavior
+        shell: pwsh
+        run: |
+          dotnet run --project Windows/BotSpeaker.RecallTests -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project Windows/BotSpeaker.CliTests -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package reviewable release artifacts
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: ./scripts/publish-windows-release.ps1 -Version $env:RELEASE_VERSION -AllowUnsigned -BuildOnly
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          if-no-files-found: error
+          path: |
+            dist/windows-*/*.zip
+            dist/windows-*/*.sha256
+            dist/windows-*/velopack/*.exe
+            dist/windows-*/velopack/*.nupkg
+            dist/windows-*/velopack/*.json

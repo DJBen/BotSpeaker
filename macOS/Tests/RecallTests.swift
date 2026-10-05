@@ -31,6 +31,11 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
     static let stuck = "44444444-4444-4444-4444-444444444444"
     static var rejectedLeaves: Set<String> = []
     static var botStatuses: [String: String] = [:]
+    static var screenRequests: [URLRequest] = []
+    static var screenBodies: [Data] = []
+    static var rejectScreen = false
+    static var holdScreen = false
+    static var heldScreenResponse: (() -> Void)?
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -39,7 +44,22 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         Self.requestedURLs.append(request.url!.absoluteString)
         var body: [String: Any]
         var status = 200
-        if path.hasSuffix("/leave_call/"), Self.rejectedLeaves.contains(where: path.contains) {
+        if path.hasSuffix("/output_screenshare/") {
+            Self.screenRequests.append(request)
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    if count <= 0 { break }
+                    data.append(contentsOf: buffer.prefix(count))
+                }
+            }
+            Self.screenBodies.append(data)
+            status = Self.rejectScreen ? 403 : request.httpMethod == "DELETE" ? 204 : 200
+            body = [:]
+        } else if path.hasSuffix("/leave_call/"), Self.rejectedLeaves.contains(where: path.contains) {
             status = 400; body = ["code": "cannot_command_completed_bot"]
         } else if let id = Self.botStatuses.keys.first(where: { path.hasSuffix("/bot/\($0)/") }) {
             body = ["id": id, "status_changes": [["code": Self.botStatuses[id]!]]]
@@ -50,9 +70,13 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
                 ["id": Self.bot, "meeting_url": "https://teams.microsoft.com/meet/123?p=x", "status_changes": [["code": "in_call_recording"]]],
                 ["id": Self.other, "meeting_url": "https://teams.microsoft.com/meet/456?p=y", "status_changes": [["code": "in_call_recording"]]]]]
         } else { body = [:] }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
-        client?.urlProtocolDidFinishLoading(self)
+        let finish = {
+            self.client?.urlProtocol(self, didReceive: HTTPURLResponse(url: self.request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: status == 204 ? Data() : try! JSONSerialization.data(withJSONObject: body))
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
+        if Self.holdScreen && path.hasSuffix("/output_screenshare/") { Self.heldScreenResponse = finish }
+        else { finish() }
     }
     override func stopLoading() {}
 }
@@ -68,7 +92,8 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockHTTP.self]
-        let controller = RecallController(session: URLSession(configuration: config))
+        let image = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2]))
+        let controller = RecallController(session: URLSession(configuration: config), testScreen: image)
         let model = AppModel()
         func request(_ action: String, _ body: [String: Any] = [:]) async throws -> [String: Any] {
             try await controller.handle(action, body, model: model)
@@ -104,8 +129,49 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         }
         print("PASS: two-page listing preserves URL and cursor; unexpected pagination URLs are rejected")
 
+        let screen = try await request("screenshare-start", ["botId": MockHTTP.bot.uppercased()])
+        precondition((screen["screenshare"] as? [String: Any])?["state"] as? String == "start_accepted")
+        let start = MockHTTP.screenRequests.last!
+        let payload = try JSONSerialization.jsonObject(with: MockHTTP.screenBodies.last!) as! [String: Any]
+        precondition(start.httpMethod == "POST" && start.url!.path(percentEncoded: true).hasSuffix("/\(MockHTTP.bot)/output_screenshare/"))
+        precondition(payload["kind"] as? String == "jpeg" && Data(base64Encoded: payload["b64_data"] as! String) == image)
+        let stopped = try await request("screenshare-stop", ["botId": MockHTTP.bot])
+        precondition((stopped["screenshare"] as? [String: Any])?["state"] as? String == "stop_accepted")
+        precondition(MockHTTP.screenRequests.last!.httpMethod == "DELETE" && MockHTTP.screenRequests.last!.httpBody == nil)
+        let screenCount = MockHTTP.screenRequests.count
+        do { _ = try await request("screenshare-start", ["botId": "invalid"]); fatalError("Accepted invalid bot") } catch {}
+        precondition(MockHTTP.screenRequests.count == screenCount)
+        MockHTTP.rejectScreen = true
+        do { _ = try await request("screenshare-start", ["botId": MockHTTP.bot]); fatalError("Accepted rejected share") } catch {}
+        precondition(controller.screenShare(MockHTTP.bot)?["state"] as? String == "failed")
+        MockHTTP.rejectScreen = false
+        _ = try await request("screenshare-start", ["botId": MockHTTP.bot])
+        print("PASS: JPEG payload, POST/DELETE, empty 204, UUID validation, failure and retry")
+
+        MockHTTP.holdScreen = true
+        let pendingShare = Task { try await request("screenshare-start", ["botId": MockHTTP.bot]) }
+        for _ in 0..<1000 {
+            if MockHTTP.heldScreenResponse != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        precondition(MockHTTP.heldScreenResponse != nil && controller.hasPendingJobs)
+        let countBeforeConflict = MockHTTP.requests.count
+        for action in ["screenshare-stop", "remove"] {
+            do { _ = try await request(action, ["botId": MockHTTP.bot]); fatalError("Allowed overlapping bot control") } catch {}
+        }
+        do { _ = try await request("configure", ["region": "us-west-2"]); fatalError("Changed region mid-request") } catch {}
+        precondition(MockHTTP.requests.count == countBeforeConflict)
+        MockHTTP.holdScreen = false
+        MockHTTP.heldScreenResponse?(); MockHTTP.heldScreenResponse = nil
+        _ = try await pendingShare.value
+        precondition(!controller.hasPendingJobs)
+        print("PASS: overlapping control and configuration changes rejected while a request is in flight")
+
         let first = id(try await request("prepare", ["botId": MockHTTP.bot, "text": "one"]))
         try await wait(first, "prepared")
+        _ = try await request("screenshare-start", ["botId": MockHTTP.bot])
+        _ = try await request("screenshare-stop", ["botId": MockHTTP.bot])
+        precondition(controller.jobs.first { $0["id"] as? String == first }?["status"] as? String == "prepared")
         precondition(!MockHTTP.requests.contains { $0.hasSuffix("output_audio/") })
         let second = id(try await request("prepare", ["botId": MockHTTP.bot, "text": "two"]))
         try await wait(second, "prepared")
@@ -113,6 +179,8 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         try await wait(second, "finished_dispatching")
         precondition(controller.jobs.first { $0["id"] as? String == first }?["status"] as? String == "prepared")
         let job = controller.jobs.first { $0["id"] as? String == second }!
+        _ = try await request("screenshare-stop", ["botId": MockHTTP.bot])
+        precondition(controller.jobs.first { $0["id"] as? String == second }?["status"] as? String == "finished_dispatching")
         precondition(job["durationSeconds"] != nil && job["acceptedAt"] != nil && job["estimatedEndAt"] != nil)
         _ = try await request("cancel", ["id": first])
         try await wait(first, "cancelled")
@@ -121,6 +189,7 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
 
         let removed = try await request("remove-all", ["meetingId": "123"])
         precondition(removed["removed"] as? [String] == [MockHTTP.bot], "Removal: \(removed)")
+        precondition(controller.screenShare(MockHTTP.bot) == nil)
         precondition(!MockHTTP.requests.contains { $0.contains(MockHTTP.other) })
         do { _ = try await request("remove-all", ["meetingId": "https://example.com/"]); fatalError("Accepted empty scope") } catch {}
         print("PASS: bulk removal stays scoped to the requested meeting")
