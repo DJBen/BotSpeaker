@@ -1,6 +1,12 @@
 name: Verify Windows release
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - Windows/**
+      - scripts/publish-windows-release.ps1
+      - .github/workflows/windows-verification.yml
   workflow_dispatch:
     inputs:
       version:
@@ -40,7 +46,10 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-        run: ./scripts/publish-windows-release.ps1 -Version $env:RELEASE_VERSION -AllowUnsigned -BuildOnly
+        run: |
+          $version = $env:RELEASE_VERSION
+          if (-not $version) { $version = ([xml](Get-Content Windows/BotSpeaker/BotSpeaker.csproj)).Project.PropertyGroup.Version }
+          ./scripts/publish-windows-release.ps1 -Version $version -AllowUnsigned -BuildOnly
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
