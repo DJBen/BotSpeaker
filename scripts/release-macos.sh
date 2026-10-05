@@ -117,7 +117,7 @@ if $PUBLISH_GITHUB; then
 fi
 
 PROJECT="$REPO_ROOT/macOS/BotSpeaker.xcodeproj"
-EXPORT_OPTIONS="$REPO_ROOT/macOS/ExportOptions.plist"
+EXPORT_OPTIONS="${BOTSPEAKER_EXPORT_OPTIONS_PLIST:-$REPO_ROOT/macOS/ExportOptions.plist}"
 SCHEME="BotSpeaker"
 TEAM_ID="52RD2GH5DP"
 BUILD_NUMBER="$(date -u +%Y%m%d%H%M)"
@@ -184,9 +184,19 @@ if [[ " $ARCHITECTURES " != *" arm64 "* || " $ARCHITECTURES " != *" x86_64 "* ]]
 fi
 
 # Embed the driver so installation never depends on access to its source repo.
-DIRECTMIC_SOURCE_DIR="${DIRECTMIC_SOURCE_DIR:-$REPO_ROOT/../DirectMic}"
-bash "$REPO_ROOT/scripts/build-directmic.sh" "$DIRECTMIC_SOURCE_DIR" \
-    "$APP_PATH/Contents/Resources/DirectMic Installer.app" "$DEVELOPER_ID_IDENTITY"
+if [[ -n "${DIRECTMIC_INSTALLER_APP:-}" ]]; then
+    # Reuse an unchanged component from a prior signed release when its private
+    # source checkout is unavailable. Verify its identity and payload first.
+    codesign --verify --deep --strict \
+        -R '=anchor apple generic and certificate leaf[subject.OU] = "52RD2GH5DP" and identifier "com.botspeaker.DirectMicInstaller"' \
+        "$DIRECTMIC_INSTALLER_APP"
+    bash "$REPO_ROOT/scripts/test-directmic-package.sh" "$DIRECTMIC_INSTALLER_APP"
+    ditto "$DIRECTMIC_INSTALLER_APP" "$APP_PATH/Contents/Resources/DirectMic Installer.app"
+else
+    DIRECTMIC_SOURCE_DIR="${DIRECTMIC_SOURCE_DIR:-$REPO_ROOT/../DirectMic}"
+    bash "$REPO_ROOT/scripts/build-directmic.sh" "$DIRECTMIC_SOURCE_DIR" \
+        "$APP_PATH/Contents/Resources/DirectMic Installer.app" "$DEVELOPER_ID_IDENTITY"
+fi
 codesign --force --sign "$DEVELOPER_ID_IDENTITY" --timestamp \
     --preserve-metadata=identifier,entitlements,requirements,flags "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"

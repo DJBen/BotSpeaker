@@ -17,4 +17,6 @@ To uninstall, end calls, select another microphone, remove `/Library/Audio/Plug-
 
 The release machine needs the private DirectMic source checkout with its pinned libASPL dependency. Set `DIRECTMIC_SOURCE_DIR` to that checkout, or place it next to BotSpeaker as `../DirectMic`. `scripts/release-macos.sh` builds both architectures, signs the driver, bundles its dependency licenses, embeds it in the app, and re-signs the app before DMG notarization. End users never need access to the private checkout. Development Xcode builds without the bundled driver disable the install action.
 
+For a release that leaves DirectMic unchanged, `DIRECTMIC_INSTALLER_APP` can point to the bundled installer from a prior BotSpeaker release. Packaging verifies the installer and driver signatures, their signing team and bundle identities, and both architectures before copying the component. `BOTSPEAKER_EXPORT_OPTIONS_PLIST` can select machine-specific export options for an installed Developer ID provisioning profile.
+
 DirectMic uses libASPL under the MIT license; its license and included Apple notices are inside the driver’s `Contents/Resources` folder. One local producer should feed DirectMic at a time.

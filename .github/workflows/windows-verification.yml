@@ -37,6 +37,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Recall and CLI behavior
         shell: pwsh
+        env:
+          BOTSPEAKER_TEST_CLI: ${{ github.workspace }}/Windows/BotSpeakerCli/bin/Release/net10.0/botspeaker-cli.exe
         run: |
           dotnet run --project Windows/BotSpeaker.RecallTests -c Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
