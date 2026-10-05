@@ -246,7 +246,7 @@ struct MainWindowView: View {
                   !isShowingOrchestrationConfiguration,
                   !model.isLocalPlaybackLocked,
                   model.selectedScript.isCustom,
-                  !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !model.text.isBlank,
                   !(model.isGenerating && !model.player.hasAudio) else {
                 return .ignored
             }
@@ -1013,7 +1013,7 @@ struct ComposerView: View {
         !model.selectedScript.isCustom ||
         model.isLocalPlaybackLocked ||
         (model.isGenerating && !player.hasAudio) ||
-        model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        model.text.isBlank
     }
 
     private var selectedDeviceName: String {

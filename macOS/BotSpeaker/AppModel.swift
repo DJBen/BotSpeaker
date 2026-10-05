@@ -28,8 +28,15 @@ final class AppModel {
         }
     }
     private(set) var text = ExampleExcerpt.launchRetroProductManager.text
-    private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id
-    private(set) var customScripts: [CustomSpeechScript] = []
+    private(set) var selectedScriptID = ExampleExcerpt.launchRetroProductManager.speechScript.id {
+        didSet { refreshSelectedScript() }
+    }
+    private(set) var customScripts: [CustomSpeechScript] = [] {
+        didSet { refreshSelectedScript() }
+    }
+    /// Kept in step with `selectedScriptID` and `customScripts` so views that
+    /// re-render on every playback tick do not rebuild the script list.
+    private(set) var selectedScript = ExampleExcerpt.launchRetroProductManager.speechScript
     /// Name typed into the role template's speaker field. Empty means the
     /// field follows the selected voice, so picking another voice renames the
     /// speaker; once a name is typed, the voice no longer changes it.
@@ -98,7 +105,7 @@ final class AppModel {
     }
 
     var bundledScripts: [SpeechScript] {
-        ExampleExcerpt.all.map(\.speechScript)
+        ExampleExcerpt.allSpeechScripts
     }
 
     var bundledScriptGroups: [ExampleScenario] {
@@ -121,8 +128,9 @@ final class AppModel {
         availableScripts.filter(\.isCustom)
     }
 
-    var selectedScript: SpeechScript {
-        availableScripts.first(where: { $0.id == selectedScriptID }) ?? ExampleExcerpt.launchRetroProductManager.speechScript
+    private func refreshSelectedScript() {
+        selectedScript = availableScripts.first(where: { $0.id == selectedScriptID })
+            ?? ExampleExcerpt.launchRetroProductManager.speechScript
     }
 
     var voiceID = UserDefaults.standard.string(forKey: Defaults.voiceID) ?? "JBFqnCBsd6RMkjVDRZzb" {
@@ -177,6 +185,8 @@ final class AppModel {
         let initialScript = availableScripts.first(where: { $0.id == requestedID })
             ?? ExampleExcerpt.launchRetroProductManager.speechScript
         selectedScriptID = initialScript.id
+        // Property observers do not run inside init.
+        refreshSelectedScript()
         text = initialScript.text
         if initialScript.isCustom {
             UserDefaults.standard.set(initialScript.id, forKey: Defaults.lastPlayableScriptID)
