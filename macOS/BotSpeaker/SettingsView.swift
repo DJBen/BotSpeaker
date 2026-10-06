@@ -46,14 +46,15 @@ struct SettingsView: View {
             Section("Recall") { RecallConfigurationView(model: model) }
 
             Section("Audio routing") {
-                Picker("Output device", selection: $model.selectedDeviceUID) {
-                    Text("Choose an output…").tag("")
-                    ForEach(model.devices.outputDevices) { device in
+                Picker("Audio destination", selection: $model.selectedDeviceUID) {
+                    Text("Choose a destination…").tag("")
+                    ForEach(model.devices.audioDestinations) { device in
                         Text(device.isBlackHole ? "\(device.name) — recommended" : device.name).tag(device.uid)
                     }
                 }
+                DirectMicSetupView()
                 BlackHoleStatusView(model: model)
-                Text("In Zoom, Meet, or Teams, select the same BlackHole device as your microphone.")
+                Text("In Zoom, Meet, or Teams, select DirectMic or the same BlackHole device as your microphone when using that destination.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

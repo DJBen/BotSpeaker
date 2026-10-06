@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RecallView: View {
     let model: AppModel
+    let orchestration: OrchestrationController
+    @State private var speechTarget = ""
+    @State private var shortSampleIndex = 0
+    @State private var longSampleIndex = 1
     @State private var meeting = ""
     @State private var name = "BotSpeaker"
     @AppStorage("recallLastMeeting") private var lastMeeting = ""
@@ -12,7 +16,7 @@ struct RecallView: View {
     @State private var bots: [BotRow] = []
     @State private var bot: String?
     @State private var text = "Ready to help test the meeting audio."
-    @State private var drafts: [String: String] = [:]
+    @State private var drafts: [String: SpeakerDraft] = [:]
     @State private var voice = ""
     @State private var schedule = false
     @State private var dispatchDate = Date().addingTimeInterval(300)
@@ -23,6 +27,13 @@ struct RecallView: View {
     @State private var refreshingBots = false
     @State private var busy = false
 
+    private struct SpeakerDraft {
+        let text: String
+        let voice: String
+        let shortSampleIndex: Int
+        let longSampleIndex: Int
+    }
+
     private struct BotRow: Identifiable {
         let id: String
         let name: String
@@ -30,7 +41,16 @@ struct RecallView: View {
         let meetingID: String
         var shortID: String { String(id.prefix(8)) }
     }
-    private static let sentences = ["I am ready to help test the meeting audio. I will speak at a steady pace so that everyone can check the sound and follow the conversation.\n\nFor our first task, let us agree on one useful outcome for today. We can collect ideas, compare a few options, and choose a clear next step together.\n\nBefore we finish, we will recap the decision and name the person responsible for following up. That way, everyone leaves with the same understanding and a practical plan.", "I look forward to hearing everyone's ideas. A thoughtful question can reveal something we have missed, so let us leave room for different perspectives.\n\nImagine we are planning a small community garden. We need to choose a location, decide what to grow, and work out how to share the watering schedule.\n\nA simple plan will help us get started without making everything perfect on the first day. We can learn from the first few weeks and make improvements as we go.", "Today is a good day to turn ideas into action. Let us start by describing the problem in plain language and checking that we all mean the same thing.\n\nNext, we can identify one small experiment that would teach us something useful. We should agree on what success looks like and how we will measure the result.\n\nOnce the experiment is complete, we can review the evidence together. Whether the result is encouraging or surprising, it will help us make a better decision about what comes next."]
+    private var localHost: Bool { speechTarget == "local-host" }
+    private var speakerName: String {
+        localHost ? "Myself" : visibleBots.first(where: { $0.id == speechTarget })?.name ?? "Select a speaker"
+    }
+    private var canSpeak: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && model.voices.contains(where: { $0.id == voice })
+            && (localHost ? (!model.isLocalPlaybackLocked && !model.selectedDeviceUID.isEmpty)
+                : visibleBots.contains(where: { $0.id == speechTarget }))
+    }
     private var visibleBots: [BotRow] {
         let scope = RecallController.meetingID(meeting)
         return bots.filter { !scope.isEmpty && $0.meetingID == scope && !["done", "fatal"].contains($0.status) }
@@ -39,7 +59,7 @@ struct RecallView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Recall Bot").font(.title.bold())
+                    Text("Meeting audio").font(.title.bold())
                     Spacer()
                     SettingsLink { Image(systemName: "gearshape") }
                         .buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
@@ -51,7 +71,7 @@ struct RecallView: View {
                         botPanel
                         RecallScreenShareView(model: model, bots: visibleBots.map { .init(id: $0.id, name: $0.name, status: $0.status) }, selectedBot: bot ?? "")
                         speechPanel
-                        jobRows
+                        historyPanel
                     } else { meetingSetup }
                 }
             }.padding(20).disabled(busy)
@@ -69,7 +89,7 @@ struct RecallView: View {
             if meetingDraft.isEmpty { meetingDraft = lastMeeting }
             await model.loadVoicesIfNeeded()
             if voice.isEmpty { voice = model.voices.contains(where: { $0.id == model.voiceID }) ? model.voiceID : model.voices.first?.id ?? "" }
-            if bot == nil { text = starter() }
+            if text == "Ready to help test the meeting audio." { text = starter() }
         }
         .task(id: meetingReady ? meeting : "") {
             guard meetingReady else { return }
@@ -81,9 +101,20 @@ struct RecallView: View {
                 }
             }
         }
-        .onChange(of: bot) { old, new in
-            if let old { drafts[old] = text }
-            if let new, visibleBots.contains(where: { $0.id == new }) { text = drafts[new] ?? starter() }
+        .onChange(of: bot) { _, new in
+            if !localHost { speechTarget = new ?? "" }
+        }
+        .onChange(of: speechTarget) { old, new in
+            drafts[old] = SpeakerDraft(
+                text: text, voice: voice,
+                shortSampleIndex: shortSampleIndex, longSampleIndex: longSampleIndex
+            )
+            let draft = drafts[new]
+            text = draft?.text ?? starter()
+            voice = draft?.voice ?? voice
+            shortSampleIndex = draft?.shortSampleIndex ?? 0
+            longSampleIndex = draft?.longSampleIndex ?? 1
+            if !localHost, visibleBots.contains(where: { $0.id == new }) { bot = new }
         }
         .onChange(of: meeting) { _, _ in
             if !visibleBots.contains(where: { $0.id == bot }) { bot = nil }
@@ -142,56 +173,145 @@ struct RecallView: View {
     }
     private var speechPanel: some View {
         GroupBox("Speech") {
-            VStack(alignment: .leading, spacing: 8) {
-                TextEditor(text: $text).frame(height: 125)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Speak as").font(.subheadline.weight(.semibold))
+                ViewThatFits(in: .horizontal) {
+                    speakerPicker.pickerStyle(.segmented)
+                    speakerPicker.pickerStyle(.menu)
+                }
                 Picker("Voice", selection: $voice) {
                     Text("Select a voice").tag("")
                     ForEach(model.voices) { item in
                         Text(item.detail.isEmpty ? item.name : "\(item.name) — \(item.detail)").tag(item.id)
                     }
-                }.labelsHidden().accessibilityLabel("Voice").controlSize(.regular).padding(.vertical, 4)
-                Button("New sample") { text = starter() }
+                }.controlSize(.regular)
+                Divider()
+                HStack {
+                    Text("Message").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button("New short sample") {
+                        text = RecallSpeechSamples.short[shortSampleIndex]
+                        shortSampleIndex = (shortSampleIndex + 1) % RecallSpeechSamples.short.count
+                    }
+                    Button("New long sample") {
+                        text = RecallSpeechSamples.long[longSampleIndex]
+                        longSampleIndex = (longSampleIndex + 1) % RecallSpeechSamples.long.count
+                    }
+                }
+                TextEditor(text: $text)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator))
+                    .frame(height: 150)
+                    .accessibilityLabel("Text to speak")
+                Text("\(text.split(whereSeparator: \.isWhitespace).count) words").font(.caption).foregroundStyle(.secondary)
                 if let message = model.voiceLoadError { Text(message).font(.caption).foregroundStyle(.red) }
-                HStack(alignment: .center, spacing: 12) {
-                    Text("Dispatch")
-                    Picker("Dispatch time", selection: $schedule) {
-                        Text("Now").tag(false)
-                        Text("Schedule").tag(true)
-                    }.pickerStyle(.radioGroup).horizontalRadioGroupLayout().labelsHidden()
-                    if schedule {
-                        DatePicker("Local time", selection: $dispatchDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                Divider()
+                Text("Playback").font(.subheadline.weight(.semibold))
+                if !localHost {
+                    HStack(alignment: .center, spacing: 12) {
+                        Text("Dispatch")
+                        Picker("Dispatch time", selection: $schedule) {
+                            Text("Now").tag(false)
+                            Text("Schedule").tag(true)
+                        }.pickerStyle(.radioGroup).horizontalRadioGroupLayout().labelsHidden()
+                        if schedule {
+                            DatePicker("Local time", selection: $dispatchDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                        }
                     }
                 }
                 HStack {
                     Stepper("Repeat \(repeatCount)", value: $repeatCount, in: 1...10000).disabled(loop)
                     Toggle("Loop until cancelled", isOn: $loop)
                 }
-                HStack { Text("Extra gap (seconds)"); TextField("Seconds", value: $interval, format: .number).textFieldStyle(.roundedBorder).controlSize(.large).frame(width: 65, height: 28) }
-                Button(schedule ? "Schedule speech" : "Speak now") { perform {
-                    guard let bot else { return }
-                    var body: [String: Any] = ["botId": bot, "text": text, "at": schedule ? ISO8601DateFormatter().string(from: dispatchDate) : "now", "loop": loop, "interval": interval, "voice": voice]
-                    if !loop { body["repeat"] = repeatCount }
-                    _ = try await model.recall.handle("speak", body, model: model)
-                } }.disabled(bot == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.voices.contains(where: { $0.id == voice }))
-                Text("Keep the app running and awake. Playback may start after dispatch. Cancel stops future sends; audio already sent may continue.").font(.caption).foregroundStyle(.secondary)
-            }.padding(4)
+                if !localHost {
+                    HStack { Text("Extra gap (seconds)"); TextField("Seconds", value: $interval, format: .number).textFieldStyle(.roundedBorder).controlSize(.large).frame(width: 65, height: 28) }
+                }
+                HStack {
+                    Text(localHost ? (model.localPlaybackLockReason ?? (model.selectedDeviceUID.isEmpty ? "Choose an audio destination in Settings." : "Uses the audio destination selected in Settings.")) : "Send audio to \(speakerName)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        submitSpeech()
+                    } label: {
+                        Label(!localHost && schedule ? "Schedule for \(speakerName)" : "Speak as \(speakerName)", systemImage: !localHost && schedule ? "clock" : "speaker.wave.2.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!canSpeak)
+                }
+                if !localHost {
+                    Text("Keep the app running and awake. Playback may start after dispatch. Cancel stops future sends; audio already sent may continue.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.padding(8)
+        }
+    }
+    private var speakerPicker: some View {
+        Picker("Speak as", selection: $speechTarget) {
+            Text("Myself").tag("local-host")
+            if speechTarget.isEmpty { Text("Choose a bot").tag("") }
+            ForEach(visibleBots) { item in
+                Text(item.name).tag(item.id)
+            }
+        }.labelsHidden()
+    }
+    private func submitSpeech() {
+        guard canSpeak else { return }
+        perform {
+            if localHost {
+                try await orchestration.speak(text: text, target: .local, voiceID: voice, cycles: loop ? nil : repeatCount)
+                return
+            }
+            var body: [String: Any] = ["botId": speechTarget, "text": text, "at": schedule ? ISO8601DateFormatter().string(from: dispatchDate) : "now", "loop": loop, "interval": interval, "voice": voice]
+            if !loop { body["repeat"] = repeatCount }
+            _ = try await model.recall.handle("speak", body, model: model)
+        }
+    }
+    private var historyPanel: some View {
+        GroupBox("Speech history") {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if model.recall.jobs.isEmpty && !orchestration.speechRequests.contains(where: { $0.target == .local }) {
+                        Text("Speech requests and playback status will appear here.")
+                            .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if orchestration.speechRequests.contains(where: { $0.target == .local }) {
+                        Text("Myself").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                    ForEach(orchestration.speechRequests.filter { $0.target == .local }.reversed()) { request in
+                        SpeechRequestRow(request: request, onCancel: {
+                            perform { try await orchestration.cancelSpeech(id: request.id) }
+                        })
+                        Divider()
+                    }
+                    if !model.recall.jobs.isEmpty {
+                        Text("Bots").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                    jobRows
+                }.padding(8)
+            }.frame(height: 180)
         }
     }
     private var jobRows: some View {
-        ForEach(model.recall.jobs.indices, id: \.self) { index in
+        ForEach(model.recall.jobs.indices.reversed(), id: \.self) { index in
             let job = model.recall.jobs[index]
             HStack {
                 VStack(alignment: .leading) {
                     Text(job["text"] as? String ?? "").lineLimit(2)
-                    Text("\(job["status"] as? String ?? "") · \(job["dispatched"] as? Int ?? 0) sent").font(.caption)
+                    Text("\(job["botName"] as? String ?? visibleBots.first(where: { $0.id == job["botId"] as? String })?.name ?? "Bot") · \((job["status"] as? String ?? "").replacingOccurrences(of: "_", with: " ").capitalized) · \(job["dispatched"] as? Int ?? 0) sent").font(.caption)
                     if let message = job["error"] as? String { Text(message).foregroundStyle(.red).font(.caption) }
                 }
                 Spacer()
-                Button("Cancel") { perform { _ = try await model.recall.handle("cancel", ["id": job["id"] as? String ?? ""], model: model) } }
+                if !["finished_dispatching", "cancelled", "failed"].contains(job["status"] as? String ?? "") {
+                    Button("Cancel") { perform { _ = try await model.recall.handle("cancel", ["id": job["id"] as? String ?? ""], model: model) } }
+                }
             }
+            Divider()
         }
     }
-    private func starter() -> String { Self.sentences.randomElement()! }
+    private func starter() -> String { RecallSpeechSamples.long[0] }
     private func refresh() async throws {
         guard !refreshingBots else { return }
         refreshingBots = true

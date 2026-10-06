@@ -6,17 +6,17 @@
 
 BotSpeaker is a native macOS and Windows utility that turns meeting scripts into ElevenLabs speech and sends it to a virtual microphone. It lets you simulate additional attendees in Microsoft Teams, Zoom, Google Meet, and other meeting applications while retaining control over voice, timing, volume, and playback position.
 
-The macOS app uses SwiftUI and [BlackHole](https://existential.audio/blackhole/). The Windows app uses WPF and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
+The macOS app uses SwiftUI and bundles **DirectMic** for local speech and host participation in Recall.ai meetings. DirectMic sends speech directly into a microphone input without system playback. The Windows app uses WPF and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
 
 ## Download
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.5.7-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.7), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel.
-- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.5.7 binary. Windows remains the shared latest release, so specify the macOS version.
+- **macOS 14 or later:** [`BotSpeaker-0.5.13-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.13), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.5.13 binary. The version is pinned to this macOS release.
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.5.7
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.5.13
   ```
 - **Windows 10/11 x64:** [BotSpeaker 0.5.11 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker-Windows-x64-0.5.11.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
@@ -34,7 +34,10 @@ The repository and its release downloads are public.
 
 ## Features
 
+- Recall speech controls with named speaker selection, per-speaker message and voice drafts, 10 short and 10 long samples, and a bounded scrolling history
+
 - Native SwiftUI menu-bar app on macOS and native WPF app with tray controls on Windows
+- Bundled DirectMic driver and installer for Mac host speech in Recall.ai orchestrated meetings, with no separate download or source checkout required
 - Closing the Windows window fully quits; active playback or meetings require confirmation and cleanup before exit
 - One running instance per executable path; duplicate launches exit, while copies in different folders can run concurrently (macOS guard applies within the current user account)
 - Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
@@ -79,11 +82,11 @@ The repository and its release downloads are public.
 ## Runtime requirements
 
 - An ElevenLabs API key
-- **macOS:** macOS 14 or later; [BlackHole 2ch](https://existential.audio/blackhole/) or another virtual audio device for local microphone routing
+- **macOS:** macOS 14 or later. Use bundled DirectMic or a virtual audio loopback device such as BlackHole to feed local speech into a meeting microphone.
 - **Windows:** Windows 10/11 x64; [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) or another virtual audio device for local microphone routing
 - **Recall.ai bots:** a Recall API key; speech goes directly to the bot without a local virtual audio driver
 
-The Mac release bundles DirectMic for host speech in Recall orchestrated meetings. Enable **Include this computer as speaker 1**, enable **Send host speech directly to DirectMic**, then choose **Install DirectMic…**. Administrator authorization is required; installation briefly interrupts all Mac audio. Select DirectMic as the meeting microphone afterward. BlackHole and VB-Audio Virtual Cable remain separate downloads. See [DirectMic setup](docs/directmic.md).
+DirectMic installation requires administrator authorization and briefly interrupts all Mac audio. End calls and recordings before installing. See the Mac setup steps below or the [DirectMic setup guide](docs/directmic.md).
 
 ## Build from source
 
@@ -117,16 +120,24 @@ The Windows app encrypts the API key with Windows DPAPI for the current user.
 
 ## Route speech into a meeting
 
-### macOS
+### macOS: bundled DirectMic
 
-1. Install BlackHole 2ch.
-2. Open BotSpeaker settings and select **BlackHole 2ch** as the output device.
-3. In Microsoft Teams, Zoom, Google Meet, or another meeting app, select **BlackHole 2ch** as the microphone.
-4. Choose a bundled example or click **Add Text** to create a named custom script.
-5. Select an ElevenLabs voice and press **Play**.
-6. Use the compact volume slider beside the playback gear to control the signal delivered to BlackHole.
+Use DirectMic when this Mac provides the host voice in a Recall.ai orchestrated meeting.
 
-BlackHole is silent through local speakers by default. To monitor BotSpeaker locally, create a Multi-Output Device in Audio MIDI Setup containing BlackHole and headphones, select that device in BotSpeaker, and continue using BlackHole as the meeting microphone.
+1. Install the latest BotSpeaker Mac release and configure your ElevenLabs and Recall.ai API keys.
+2. Choose an orchestrated script and **Host in Recall.ai**.
+3. Enable **Include this computer as speaker 1**, then **Send host speech directly to DirectMic**.
+4. Choose **Install DirectMic…** and follow the administrator authorization prompt. The driver is bundled with the app.
+5. In Teams, Zoom, Google Meet, or your meeting app, select **DirectMic** as the microphone. Reopen the meeting app if it is not listed yet.
+6. Assign voices, arrange the turns, admit the Recall bots, and start the meeting.
+
+Host speech enters the microphone directly, without playing through a speaker or loopback output. See [DirectMic setup](docs/directmic.md) for installation and removal details.
+
+### macOS: other local playback workflows
+
+The **Speak** page, **Myself** on the Recall page, ordinary script playback, CLI `speak`/`play-audio`, and paired-machine orchestration use **Settings → Audio routing → Audio destination**. Select **DirectMic** there, then select **DirectMic** as the microphone in your meeting app. You can install the bundled driver from Settings.
+
+Alternatively, use a separate loopback device such as [BlackHole 2ch](https://existential.audio/blackhole/): select it as BotSpeaker’s audio destination and as the meeting app’s microphone. This is an optional setup for those workflows.
 
 ### Windows
 
@@ -230,7 +241,7 @@ botspeaker voices [--refresh] [--select NAME]
 botspeaker models                           # show available models and the saved selection
 botspeaker models --select eleven_flash_v2  # Flash v2 (English-only, default)
 botspeaker models --select eleven_v3        # Eleven v3, with expressive audio tags
-botspeaker outputs [--select "BlackHole 2ch"]
+botspeaker outputs [--select "OUTPUT_DEVICE_NAME"]
 botspeaker host [--name NAME]                # start hosting; prints the pairing code
 botspeaker join ABC123 [--name NAME]         # pair this machine to a host
 botspeaker leave

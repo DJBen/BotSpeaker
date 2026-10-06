@@ -12,6 +12,7 @@ final class AudioPlaybackController {
             if isPlaying && !oldValue { onPlaybackStarted?() }
         }
     }
+    private(set) var lastError: String?
     private(set) var hasAudio = false
     private(set) var currentTime: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
@@ -28,11 +29,13 @@ final class AudioPlaybackController {
     var volume: Float = 1 {
         didSet {
             node.volume = min(max(volume, 0), 1)
+            directMic?.volume = volume
         }
     }
 
     private struct PlaybackChunk {
         let file: AVAudioFile
+        let directMic: DirectMicPlayer?
         let timing: SpeechTiming
         let sourceRange: NSRange
         let startTime: TimeInterval
@@ -42,6 +45,8 @@ final class AudioPlaybackController {
         }
     }
 
+    @ObservationIgnored private var usesDirectMic = false
+    @ObservationIgnored private var directMic: DirectMicPlayer?
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private let node = AVAudioPlayerNode()
     @ObservationIgnored private var chunks: [PlaybackChunk] = []
@@ -65,9 +70,24 @@ final class AudioPlaybackController {
         guard let deviceID = AudioDeviceManager.deviceID(forUID: uid) else {
             throw AppError("The selected audio device is no longer available.")
         }
+        let destinationIsDirectMic = uid == DirectMicPlayer.deviceUID
+        // Prepare cached clips before switching so a failed conversion leaves playback intact.
+        let routedChunks = try chunks.map { chunk in
+            PlaybackChunk(file: chunk.file,
+                          directMic: destinationIsDirectMic ? (try chunk.directMic ?? DirectMicPlayer(url: chunk.file.url)) : nil,
+                          timing: chunk.timing, sourceRange: chunk.sourceRange, startTime: chunk.startTime)
+        }
+        updateCurrentTime()
         let shouldResume = playRequested
         let resumeTime = currentTime
         stopEngine()
+        chunks = routedChunks
+        usesDirectMic = destinationIsDirectMic
+        directMic = nil
+        if destinationIsDirectMic {
+            if hasAudio { try seek(to: resumeTime, resume: shouldResume) }
+            return
+        }
 
         guard let unit = engine.outputNode.audioUnit else {
             throw AppError("Could not access the Core Audio output unit.")
@@ -105,6 +125,7 @@ final class AudioPlaybackController {
         let startTime = chunks.last.map { $0.startTime + $0.duration } ?? 0
         let chunk = PlaybackChunk(
             file: file,
+            directMic: usesDirectMic ? try DirectMicPlayer(url: url) : nil,
             timing: timing,
             sourceRange: sourceRange,
             startTime: startTime
@@ -121,7 +142,7 @@ final class AudioPlaybackController {
             scheduleCurrentChunk()
             if playRequested {
                 try prepareEngine()
-                node.play()
+                startCurrentPlayer()
                 isPlaying = true
                 isBuffering = false
                 startTimer()
@@ -139,6 +160,9 @@ final class AudioPlaybackController {
     }
 
     func reset() {
+        directMic?.stop()
+        directMic = nil
+        lastError = nil
         node.stop()
         scheduledGeneration += 1
         chunks.removeAll()
@@ -160,6 +184,7 @@ final class AudioPlaybackController {
     }
 
     func play() {
+        lastError = nil
         playRequested = true
         guard hasAudio else {
             isBuffering = !generationComplete
@@ -175,9 +200,11 @@ final class AudioPlaybackController {
                     return
                 }
             }
+            // Rewinding via seek clears the request; restore it for replayed chunks.
+            playRequested = true
             if !isCurrentChunkScheduled { scheduleCurrentChunk() }
             try prepareEngine()
-            node.play()
+            startCurrentPlayer()
             isBuffering = false
             isPlaying = true
             startTimer()
@@ -188,6 +215,8 @@ final class AudioPlaybackController {
 
     func pause() {
         updateCurrentTime()
+        if usesDirectMic { startFrame = currentFrame }
+        directMic?.stop()
         node.pause()
         playRequested = false
         isBuffering = false
@@ -196,6 +225,7 @@ final class AudioPlaybackController {
     }
 
     func stop() {
+        directMic?.stop()
         node.stop()
         scheduledGeneration += 1
         currentChunkIndex = 0
@@ -234,6 +264,7 @@ final class AudioPlaybackController {
             AVAudioFramePosition(localTime * chunk.file.processingFormat.sampleRate),
             chunk.file.length
         )
+        directMic?.stop()
         node.stop()
         scheduledGeneration += 1
         currentChunkIndex = index
@@ -247,7 +278,7 @@ final class AudioPlaybackController {
             if resume {
                 playRequested = true
                 try prepareEngine()
-                node.play()
+                startCurrentPlayer()
                 isPlaying = true
                 isBuffering = false
                 startTimer()
@@ -270,6 +301,9 @@ final class AudioPlaybackController {
     }
 
     private var currentFrame: AVAudioFramePosition {
+        if usesDirectMic, let directMic, chunks.indices.contains(currentChunkIndex) {
+            return AVAudioFramePosition(directMic.currentTime * chunks[currentChunkIndex].file.processingFormat.sampleRate)
+        }
         guard let renderTime = node.lastRenderTime,
               let playerTime = node.playerTime(forNodeTime: renderTime) else { return startFrame }
         return startFrame + playerTime.sampleTime
@@ -279,6 +313,11 @@ final class AudioPlaybackController {
         guard chunks.indices.contains(currentChunkIndex) else { return }
         let chunk = chunks[currentChunkIndex]
         guard startFrame < chunk.file.length else { return }
+        if usesDirectMic {
+            directMic = chunk.directMic
+            isCurrentChunkScheduled = true
+            return
+        }
         let remaining = AVAudioFrameCount(min(
             chunk.file.length - startFrame,
             AVAudioFramePosition(UInt32.max)
@@ -312,7 +351,7 @@ final class AudioPlaybackController {
         if chunks.indices.contains(currentChunkIndex) {
             scheduleCurrentChunk()
             if playRequested {
-                node.play()
+                startCurrentPlayer()
                 isPlaying = true
                 isBuffering = false
                 startTimer()
@@ -347,7 +386,17 @@ final class AudioPlaybackController {
         updateTextProgress()
     }
 
+    private func startCurrentPlayer() {
+        if usesDirectMic, chunks.indices.contains(currentChunkIndex) {
+            let seconds = Double(startFrame) / chunks[currentChunkIndex].file.processingFormat.sampleRate
+            directMic?.play(from: seconds, volume: volume)
+        } else {
+            node.play()
+        }
+    }
+
     private func prepareEngine() throws {
+        if usesDirectMic { return }
         if !engine.isRunning {
             engine.prepare()
             try engine.start()
@@ -355,6 +404,7 @@ final class AudioPlaybackController {
     }
 
     private func stopEngine() {
+        directMic?.stop()
         node.stop()
         engine.stop()
         scheduledGeneration += 1
@@ -367,6 +417,16 @@ final class AudioPlaybackController {
         guard chunks.indices.contains(currentChunkIndex) else { return }
         let chunk = chunks[currentChunkIndex]
         let frame = min(currentFrame, chunk.file.length)
+        if usesDirectMic, isPlaying, let directMic, !directMic.isPlaying {
+            if let error = directMic.lastError {
+                lastError = error
+                finishPlayback()
+                onPlaybackFinished?()
+            } else {
+                reachedEnd(of: currentChunkIndex)
+            }
+            return
+        }
         currentTime = min(chunk.startTime + Double(frame) / chunk.file.processingFormat.sampleRate, duration)
         updateTextProgress()
     }

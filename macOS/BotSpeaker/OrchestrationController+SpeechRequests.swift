@@ -54,7 +54,7 @@ extension OrchestrationController {
             if audioURL == nil {
                 guard model.hasAPIKey else { throw AppError("Add your ElevenLabs API key in Settings.") }
             }
-            guard !model.selectedDeviceUID.isEmpty else { throw AppError("Choose an audio output in Settings.") }
+            guard !model.selectedDeviceUID.isEmpty else { throw AppError("Choose an audio destination in Settings.") }
             let id = "local-" + UUID().uuidString.lowercased()
             let request = SpeechRequest(
                 id: id,
@@ -426,6 +426,15 @@ extension OrchestrationController {
 
     func speechPlaybackDidFinish() {
         guard let id = activeSpeechRequestID, let request = speechRequestsByID[id] else { return }
+        if let error = model?.player.lastError {
+            switch request.target {
+            case .local:
+                finalizeLocalSpeechRequest(id: id, status: .failed, error: error, stopPlayback: false)
+            case .participant:
+                Task { await finishRemoteSpeechRequest(id: id, status: .failed, error: error, stopPlayback: false) }
+            }
+            return
+        }
         let completedCycles = request.completedCycles + 1
         updateSpeechRequest(id: id) { $0.completedCycles = completedCycles }
 

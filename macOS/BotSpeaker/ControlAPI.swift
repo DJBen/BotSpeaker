@@ -224,7 +224,7 @@ final class ControlAPI {
         let wanted = ((body["uid"] ?? body["name"] ?? body["output"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !wanted.isEmpty else { throw ControlError(400, "Send {\"uid\": ...} or {\"name\": ...}.", code: "bad_request") }
         model.refreshAudioDevices()
-        let devices = model.devices.outputDevices
+        let devices = model.devices.audioDestinations
         guard let match = devices.first(where: { $0.uid == wanted })
                 ?? devices.first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame })
                 ?? devices.first(where: { $0.name.localizedCaseInsensitiveContains(wanted) }) else {
@@ -345,7 +345,7 @@ final class ControlAPI {
     // MARK: Payloads
 
     private func statusPayload() -> [String: Any] {
-        let output = model.devices.outputDevices.first { $0.uid == model.selectedDeviceUID }
+        let output = model.devices.audioDestinations.first { $0.uid == model.selectedDeviceUID }
         let active = orchestration.speechRequests.last { !$0.status.isTerminal }
         return [
             "ok": true,
@@ -401,7 +401,7 @@ final class ControlAPI {
             "name": "This Mac",
             "kind": "local",
             "connected": true,
-            "output": model.devices.outputDevices.first { $0.uid == model.selectedDeviceUID }?.name ?? ""
+            "output": model.devices.audioDestinations.first { $0.uid == model.selectedDeviceUID }?.name ?? ""
         ]]
         guard orchestration.isHost else { return targets }
         for participant in orchestration.participants where participant.id != orchestration.localParticipantID {
@@ -417,7 +417,7 @@ final class ControlAPI {
     }
 
     private func outputsPayload() -> [[String: Any]] {
-        model.devices.outputDevices.map { ["uid": $0.uid, "name": $0.name, "selected": $0.uid == model.selectedDeviceUID] }
+        model.devices.audioDestinations.map { ["uid": $0.uid, "name": $0.name, "selected": $0.uid == model.selectedDeviceUID] }
     }
 
     private func payload(for request: SpeechRequest) -> [String: Any] {

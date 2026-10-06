@@ -86,12 +86,12 @@ struct RemoteModeView: View {
     }
 
     private var selectedDeviceName: String {
-        model.devices.outputDevices.first(where: { $0.uid == model.selectedDeviceUID })?.name
+        model.devices.audioDestinations.first(where: { $0.uid == model.selectedDeviceUID })?.name
             ?? "Output unavailable"
     }
 
     private var selectedDeviceAvailable: Bool {
-        model.devices.outputDevices.contains(where: { $0.uid == model.selectedDeviceUID })
+        model.devices.audioDestinations.contains(where: { $0.uid == model.selectedDeviceUID })
     }
 
     private func join() {

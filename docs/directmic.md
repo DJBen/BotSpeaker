@@ -9,7 +9,7 @@ BotSpeaker 0.5.7 includes a signed universal DirectMic driver inside the Mac app
 5. Select **DirectMic** as the microphone in your meeting app. Reopen the meeting app if needed; **Refresh status** refreshes BotSpeaker’s detection.
 6. Prepare and start the scripted meeting as usual. Host speech goes directly to the microphone input without playing through an output device.
 
-DirectMic is optional and is used only by the explicit Recall host routing option. It does not replace the microphone selection in other apps automatically. Installation or reinstallation restarts the system audio service, briefly interrupting all audio. It installs `/Library/Audio/Plug-Ins/HAL/DirectMic.driver`; no daemon or login item is installed.
+DirectMic is optional. Select it under **Settings → Audio routing → Audio destination** to use it for local speech, including **Myself** on the Recall page. It is also available through the explicit Recall host routing option. It does not replace the microphone selection in other apps automatically. Installation or reinstallation restarts the system audio service, briefly interrupting all audio. It installs `/Library/Audio/Plug-Ins/HAL/DirectMic.driver`; no daemon or login item is installed.
 
 To uninstall, end calls, select another microphone, remove `/Library/Audio/Plug-Ins/HAL/DirectMic.driver` using Finder with administrator authorization, then restart the Mac. Do not remove other audio plug-ins.
 

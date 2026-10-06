@@ -28,6 +28,7 @@ enum BlackHoleStatus: Equatable {
 @Observable
 final class AudioDeviceManager {
     private(set) var outputDevices: [AudioDevice] = []
+    private(set) var audioDestinations: [AudioDevice] = []
     private(set) var blackHoleStatus: BlackHoleStatus = .notInstalled(driverFolderReadable: true)
 
     /// Shell command that makes Core Audio rescan the HAL folder. Sandboxed apps cannot
@@ -43,6 +44,7 @@ final class AudioDeviceManager {
             if $0.isBlackHole != $1.isBlackHole { return $0.isBlackHole }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        audioDestinations = devices.filter { $0.uid == DirectMicPlayer.deviceUID } + outputDevices
     }
 
     private static func readBlackHoleStatus(devices: [AudioDevice]) -> BlackHoleStatus {

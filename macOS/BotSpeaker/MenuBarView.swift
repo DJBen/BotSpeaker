@@ -111,7 +111,7 @@ struct MainWindowView: View {
                                     isShowingRecallMeeting = false
                                 }
                             } else if isShowingRecall {
-                                RecallView(model: model)
+                                RecallView(model: model, orchestration: orchestration)
                             } else if isShowingRemoteMode {
                                 RemoteModeView(model: model, controller: orchestration)
                             } else if isShowingSpeak {
@@ -817,7 +817,7 @@ struct ComposerView: View {
             Divider()
             HStack {
                 Circle()
-                    .fill(model.devices.outputDevices.contains(where: { $0.uid == model.selectedDeviceUID }) ? .green : .orange)
+                    .fill(model.devices.audioDestinations.contains(where: { $0.uid == model.selectedDeviceUID }) ? .green : .orange)
                     .frame(width: 7, height: 7)
                 Text(selectedDeviceName)
                     .font(.caption)
@@ -1017,7 +1017,7 @@ struct ComposerView: View {
     }
 
     private var selectedDeviceName: String {
-        model.devices.outputDevices.first(where: { $0.uid == model.selectedDeviceUID })?.name ?? "Output unavailable"
+        model.devices.audioDestinations.first(where: { $0.uid == model.selectedDeviceUID })?.name ?? "Output unavailable"
     }
 
     private var primaryButtonTitle: String {

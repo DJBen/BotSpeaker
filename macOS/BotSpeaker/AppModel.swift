@@ -212,7 +212,7 @@ final class AppModel {
 
         switch devices.blackHoleStatus {
         case .active:
-            if selectedDeviceUID.isEmpty || devices.outputDevices.allSatisfy({ $0.uid != selectedDeviceUID }),
+            if selectedDeviceUID.isEmpty || devices.audioDestinations.allSatisfy({ $0.uid != selectedDeviceUID }),
                let blackHole = devices.outputDevices.first(where: { $0.isBlackHole }) {
                 selectedDeviceUID = blackHole.uid
             }
@@ -564,7 +564,7 @@ final class AppModel {
             throw AppError("Add your ElevenLabs API key in Settings.")
         }
         guard !selectedDeviceUID.isEmpty else {
-            throw AppError("Choose an audio output in Settings.")
+            throw AppError("Choose an audio destination in Settings.")
         }
 
         cancelGeneration(resetPlayer: true, notify: false)
@@ -617,7 +617,7 @@ final class AppModel {
     /// queued; completion arrives through `player.onPlaybackFinished`.
     func playAudioFile(url: URL, displayName: String) throws {
         guard !selectedDeviceUID.isEmpty else {
-            throw AppError("Choose an audio output in Settings.")
+            throw AppError("Choose an audio destination in Settings.")
         }
         cancelGeneration(resetPlayer: true, notify: false)
         try player.selectOutputDevice(uid: selectedDeviceUID)
@@ -691,7 +691,7 @@ final class AppModel {
         }
 
         guard !selectedDeviceUID.isEmpty else {
-            errorMessage = "Choose an audio output in Settings."
+            errorMessage = "Choose an audio destination in Settings."
             return
         }
 
