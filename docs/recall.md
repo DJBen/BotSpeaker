@@ -58,7 +58,7 @@ botspeaker recall remove BOT_ID
 `list` returns every paginated bot with its latest status and meeting ID.
 The GUI starts with a meeting setup screen. Enter a URL or ID and select Continue;
 The last confirmed meeting is remembered and prefilled on the next app launch.
-Change meeting returns to setup. Add bot opens a name prompt, alongside Refresh
+Change meeting returns to setup. Add bot opens a name and voice prompt, defaulting to a random available voice whose name is not already used by an unfinished bot in the meeting. Add 5 bots opens five editable name and voice rows, using different voice names when available. Both options use only the speaker name (for example, Alice), omitting descriptive voice suffixes while keeping the matching voice selected. If voices run out, names receive numeric suffixes; without a voice catalog, names default to BotSpeaker with numeric suffixes. Each bot keeps its selected speech voice when switching speakers. Batch creation reports individual failures and keeps successfully added bots. These actions sit alongside Refresh
 and Remove in the action row.
 The GUI uses a compact grid scoped to the selected meeting URL or ID and hides
 bots whose status is `done`. Known meeting IDs can also add bots: the app resolves their join URL and passcode

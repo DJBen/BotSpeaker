@@ -12,11 +12,11 @@ The macOS app uses SwiftUI and bundles **DirectMic** for local speech and host p
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.5.13-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.13), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
-- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.5.13 binary. The version is pinned to this macOS release.
+- **macOS 14 or later:** [`BotSpeaker-0.5.14-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.14), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.5.14 binary. The version is pinned to this macOS release.
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.5.13
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.5.14
   ```
 - **Windows 10/11 x64:** [BotSpeaker 0.5.11 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker-Windows-x64-0.5.11.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.

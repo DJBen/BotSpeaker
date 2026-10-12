@@ -21,7 +21,7 @@ public sealed class RecallView : UserControl
     private readonly ComboBox region = new() { ItemsSource = RecallController.Regions };
     private readonly TextBlock message = new() { TextWrapping = TextWrapping.Wrap }, scopeHint = new(), voiceHint = new() { TextWrapping = TextWrapping.Wrap };
     private readonly DataGrid bots = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.FullRow, Height = 125, HeadersVisibility = DataGridHeadersVisibility.Column, Margin = new Thickness(0, 6, 0, 4) };
-    private readonly TextBox meeting = new() { Padding = new Thickness(5), MinHeight = 28 }, name = new() { Text = "BotSpeaker" }, speech = new() { AcceptsReturn = true, Height = 125, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(5), TextWrapping = TextWrapping.Wrap }, interval = new() { Text = "0", Width = 65, Padding = new Thickness(5), MinHeight = 28 };
+    private readonly TextBox meeting = new() { Padding = new Thickness(5), MinHeight = 28 }, speech = new() { AcceptsReturn = true, Height = 125, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(5), TextWrapping = TextWrapping.Wrap }, interval = new() { Text = "0", Width = 65, Padding = new Thickness(5), MinHeight = 28 };
     private readonly ComboBox voice = new() { DisplayMemberPath = "DisplayName", SelectedValuePath = "Id", MinWidth = 220, Height = 24, Padding = new Thickness(6, 1, 6, 1), Margin = new Thickness(0, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center, IsTextSearchEnabled = true };
     private readonly RadioButton now = new() { Content = "Now", VerticalAlignment = VerticalAlignment.Center, IsChecked = true, Margin = new Thickness(0, 0, 16, 0) }, scheduled = new() { Content = "Schedule", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
     private readonly DatePicker date = new() { SelectedDate = DateTime.Today, Width = 125, Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,8,0) };
@@ -34,6 +34,8 @@ public sealed class RecallView : UserControl
     private readonly ListBox jobs = new() { DisplayMemberPath = "Label", SelectedValuePath = "Id", Height = 90 };
     private readonly DispatcherTimer botRefreshTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private bool refreshingBots;
+    private bool addingBots;
+    private readonly Dictionary<string, string> botVoices = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Dictionary<string, string> drafts = [];
     private List<BotRow> allBots = [];
@@ -101,13 +103,8 @@ public sealed class RecallView : UserControl
         bots.SelectedValuePath = "Id"; bots.SelectionChanged += (_, _) => { if (!filtering) SelectDraft(); };
         controls.Children.Add(bots); controls.Children.Add(scopeHint);
         var botActions = new StackPanel { Orientation = Orientation.Horizontal };
-        botActions.Children.Add(MakeButton("Add bot", async () => {
-            var botName = PromptBotName();
-            if (botName == null) return;
-            name.Text = botName;
-            var result = await controller.HandleAsync("add", new() { ["meetingUrl"] = selectedMeeting, ["name"] = botName });
-            await Refresh(); bots.SelectedValue = result["bot"]?["id"]?.GetValue<string>();
-        }));
+        botActions.Children.Add(MakeButton("Add bot", () => AddBots(1)));
+        botActions.Children.Add(MakeButton("Add 5 bots", () => AddBots(5)));
         botActions.Children.Add(MakeButton("Refresh bots", Refresh));
         botActions.Children.Add(MakeButton("Remove selected bot", async () => { await controller.HandleAsync("remove", new() { ["botId"] = SelectedBot().Id }); await Refresh(); })); controls.Children.Add(botActions);
         controls.Children.Add(new RecallScreenShareView(controller, () => bots.SelectedItem is BotRow selected
@@ -137,27 +134,88 @@ public sealed class RecallView : UserControl
         controls.Children.Add(new TextBlock { Text = "Keep the app running and awake. Playback may start after dispatch. Cancel stops future sends; audio already sent may continue.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,6,0,6) });
         controls.Children.Add(jobs); controls.Children.Add(MakeButton("Cancel selected speech job", async () => { await controller.HandleAsync("cancel", new() { ["id"] = jobs.SelectedValue?.ToString() }); Render(); }));
         botRefreshTimer.Tick += async (_, _) => {
-            if (settingsOnly || !IsVisible || !meetingReady || !controller.Configured || refreshingBots) return;
+            if (settingsOnly || !IsVisible || !meetingReady || !controller.Configured || refreshingBots || addingBots) return;
             try { await Refresh(); } catch (Exception error) { message.Text = "Bot refresh failed: " + error.Message; }
         };
         timer.Tick += (_, _) => Render();
         Loaded += async (_, _) => { Render(); timer.Start(); if (!settingsOnly) botRefreshTimer.Start(); if (!settingsOnly) { await model.LoadVoicesIfNeededAsync(); FilterVoices(); FilterBots(); } };
         Unloaded += (_, _) => { timer.Stop(); botRefreshTimer.Stop(); };
     }
-    private string? PromptBotName()
+    private sealed record BotDefault(string Name, string Voice);
+
+    private BotDefault[]? PromptBots(int count)
     {
-        var input = new TextBox { Text = "BotSpeaker", MaxLength = 100, MinHeight = 28, Padding = new Thickness(5), Margin = new Thickness(0,8,0,16) };
+        var used = allBots.Where(b => b.MeetingId == RecallController.MeetingId(selectedMeeting) && b.Status != "done" && b.Status != "fatal")
+            .Select(b => b.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var available = model.Voices.Where(v => !string.IsNullOrWhiteSpace(v.ShortName)).OrderBy(_ => Random.Shared.Next()).ToArray();
         var panel = new StackPanel { Margin = new Thickness(20) };
-        var dialog = new Window { Title = "Add bot", Owner = Window.GetWindow(this), Content = panel, Width = 380, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        panel.Children.Add(new TextBlock { Text = "Bot name", FontSize = 16, FontWeight = FontWeights.SemiBold }); panel.Children.Add(input);
+        var title = count == 1 ? "Add bot" : "Add 5 bots";
+        var dialog = new Window { Title = title, Owner = Window.GetWindow(this), Content = panel, Width = 600, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        panel.Children.Add(new TextBlock { Text = "Choose the names shown in the meeting and their voices.", Margin = new Thickness(0,0,0,12) });
+        var inputs = new List<(TextBox Name, ComboBox Voice)>();
+        var selectedVoices = new HashSet<string>();
+        for (var i = 0; i < count; i++)
+        {
+            var chosen = available.FirstOrDefault(v => !used.Contains(v.ShortName[..Math.Min(100, v.ShortName.Length)]))
+                ?? available.FirstOrDefault(v => !selectedVoices.Contains(v.Id))
+                ?? (available.Length == 0 ? null : available[i % available.Length]);
+            if (chosen != null) selectedVoices.Add(chosen.Id);
+            var baseName = chosen?.ShortName ?? "BotSpeaker";
+            baseName = baseName[..Math.Min(100, baseName.Length)];
+            var botName = baseName;
+            for (var suffix = 2; !used.Add(botName); suffix++)
+            {
+                var ending = $" {suffix}";
+                botName = baseName[..Math.Min(baseName.Length, 100 - ending.Length)] + ending;
+            }
+            var input = new TextBox { Text = botName, MaxLength = 100, MinHeight = 28, Padding = new Thickness(5), Width = 250, Margin = new Thickness(0,0,12,8) };
+            var picker = new ComboBox { ItemsSource = model.Voices.ToArray(), DisplayMemberPath = "Name", SelectedValuePath = "Id", SelectedValue = chosen?.Id, Width = 260, Margin = new Thickness(0,0,0,8) };
+            System.Windows.Automation.AutomationProperties.SetName(input, $"Bot {i + 1} name");
+            System.Windows.Automation.AutomationProperties.SetName(picker, $"Bot {i + 1} voice");
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(input); row.Children.Add(picker); panel.Children.Add(row);
+            inputs.Add((input, picker));
+        }
+        if (model.VoiceLoadError is string loadError) panel.Children.Add(new TextBlock { Text = loadError, TextWrapping = TextWrapping.Wrap });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var cancel = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(12,6,12,6), Margin = new Thickness(0,0,8,0) };
-        var add = new Button { Content = "Add bot", IsDefault = true, Padding = new Thickness(12,6,12,6) };
-        input.TextChanged += (_, _) => add.IsEnabled = !string.IsNullOrWhiteSpace(input.Text);
+        var add = new Button { Content = title, IsDefault = true, Padding = new Thickness(12,6,12,6) };
+        foreach (var input in inputs) input.Name.TextChanged += (_, _) => add.IsEnabled = inputs.All(row => !string.IsNullOrWhiteSpace(row.Name.Text));
         add.Click += (_, _) => dialog.DialogResult = true;
         actions.Children.Add(cancel); actions.Children.Add(add); panel.Children.Add(actions);
-        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
-        return dialog.ShowDialog() == true ? input.Text.Trim() : null;
+        dialog.Loaded += (_, _) => { inputs[0].Name.Focus(); inputs[0].Name.SelectAll(); };
+        return dialog.ShowDialog() == true ? inputs.Select(row => new BotDefault(row.Name.Text.Trim(), row.Voice.SelectedValue?.ToString() ?? "")).ToArray() : null;
+    }
+
+    private async Task AddBots(int count)
+    {
+        if (addingBots) return;
+        addingBots = true;
+        var failures = new List<string>();
+        try
+        {
+            var pending = PromptBots(count);
+            if (pending == null) return;
+            controls.IsEnabled = false;
+            string? firstCreated = null;
+            foreach (var item in pending)
+            {
+                try
+                {
+                    var result = await controller.HandleAsync("add", new() { ["meetingUrl"] = selectedMeeting, ["name"] = item.Name });
+                    if (result["bot"]?["id"]?.GetValue<string>() is string id)
+                    {
+                        botVoices[id] = item.Voice;
+                        firstCreated ??= id;
+                    }
+                }
+                catch (Exception error) { failures.Add($"{item.Name}: {error.Message}"); }
+            }
+            try { await Refresh(); } catch (Exception error) { failures.Add("Bot refresh failed: " + error.Message); }
+            if (firstCreated != null) bots.SelectedValue = firstCreated;
+            if (failures.Count > 0) throw new AppException(string.Join("\n", failures));
+        }
+        finally { addingBots = false; controls.IsEnabled = true; }
     }
     private static string Starter() => Sentences[Random.Shared.Next(Sentences.Length)];
     private void ApplyMeetingPaste(string text)
@@ -179,9 +237,17 @@ public sealed class RecallView : UserControl
     }
     private void SelectDraft()
     {
-        if (previousBot != null) drafts[previousBot] = speech.Text;
+        if (previousBot != null)
+        {
+            drafts[previousBot] = speech.Text;
+            botVoices[previousBot] = voice.SelectedValue?.ToString() ?? "";
+        }
         previousBot = (bots.SelectedItem as BotRow)?.Id;
-        if (bots.SelectedItem is BotRow row) speech.Text = drafts.GetValueOrDefault(row.Id) ?? Starter();
+        if (bots.SelectedItem is BotRow row)
+        {
+            speech.Text = drafts.GetValueOrDefault(row.Id) ?? Starter();
+            if (botVoices.TryGetValue(row.Id, out var selectedVoice)) voice.SelectedValue = selectedVoice;
+        }
     }
     private async Task Refresh()
     {

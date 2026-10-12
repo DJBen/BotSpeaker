@@ -7,7 +7,7 @@ struct RecallView: View {
     @State private var shortSampleIndex = 0
     @State private var longSampleIndex = 1
     @State private var meeting = ""
-    @State private var name = "BotSpeaker"
+    @State private var newBots: [VoiceSelection.BotDefault] = []
     @AppStorage("recallLastMeeting") private var lastMeeting = ""
     @State private var meetingDraft = ""
     @State private var passcode = ""
@@ -76,15 +76,33 @@ struct RecallView: View {
                 }
             }.padding(20).disabled(busy)
         }
-        .alert("Add bot", isPresented: $showingNamePrompt) {
-            TextField("Bot name", text: $name)
-            Button("Cancel", role: .cancel) { }
-            Button("Add bot") { perform {
-                let result = try await model.recall.handle("add", ["meetingUrl": meeting, "name": name.trimmingCharacters(in: .whitespacesAndNewlines)], model: model)
-                try await refresh()
-                bot = (result["bot"] as? [String: Any])?["id"] as? String
-            } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 100)
-        } message: { Text("Choose the name shown in the meeting.") }
+        .sheet(isPresented: $showingNamePrompt) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(newBots.count == 1 ? "Add bot" : "Add 5 bots").font(.title2.bold())
+                Text("Choose the names shown in the meeting and their voices.")
+                ForEach($newBots) { $item in
+                    HStack {
+                        TextField("Bot name", text: $item.name).textFieldStyle(.roundedBorder)
+                        Picker("Voice", selection: $item.voice) {
+                            Text("Select a voice").tag("")
+                            ForEach(model.voices) { Text($0.name).tag($0.id) }
+                        }.frame(width: 240)
+                    }
+                }
+                if let message = model.voiceLoadError { Text(message).foregroundStyle(.red) }
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { showingNamePrompt = false }
+                    Button(newBots.count == 1 ? "Add bot" : "Add 5 bots") {
+                        let pending = newBots
+                        showingNamePrompt = false
+                        perform { try await addBots(pending) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newBots.contains { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.name.count > 100 })
+                }
+            }.padding(20).frame(width: 580)
+        }
         .task {
             if meetingDraft.isEmpty { meetingDraft = lastMeeting }
             await model.loadVoicesIfNeeded()
@@ -149,9 +167,8 @@ struct RecallView: View {
                     TableColumn("ID", value: \.shortID).width(85)
                 }.frame(height: 125)
                 HStack {
-                    Button("Add bot") {
-                        name = "BotSpeaker"; showingNamePrompt = true
-                    }
+                    Button("Add bot") { promptBots(count: 1) }
+                    Button("Add 5 bots") { promptBots(count: 5) }
                     Button("Refresh bots") { perform { try await refresh() } }
                     Button("Remove selected bot") { perform {
                         guard let bot else { return }
@@ -311,6 +328,28 @@ struct RecallView: View {
             Divider()
         }
     }
+    private func promptBots(count: Int) {
+        newBots = VoiceSelection.botDefaults(count: count, voices: model.voices.map { ($0.id, $0.name) }, existingNames: visibleBots.map(\.name))
+        showingNamePrompt = true
+    }
+
+    private func addBots(_ pending: [VoiceSelection.BotDefault]) async throws {
+        var failures: [String] = []
+        var firstCreated: String?
+        for item in pending {
+            do {
+                let result = try await model.recall.handle("add", ["meetingUrl": meeting, "name": item.name.trimmingCharacters(in: .whitespacesAndNewlines)], model: model)
+                if let id = (result["bot"] as? [String: Any])?["id"] as? String {
+                    drafts[id] = SpeakerDraft(text: starter(), voice: item.voice, shortSampleIndex: 0, longSampleIndex: 1)
+                    if firstCreated == nil { firstCreated = id }
+                }
+            } catch { failures.append("\(item.name): \(error.localizedDescription)") }
+        }
+        do { try await refresh() } catch { failures.append("Bot refresh failed: " + error.localizedDescription) }
+        if let firstCreated { bot = firstCreated }
+        if !failures.isEmpty { throw AppError(failures.joined(separator: "\n")) }
+    }
+
     private func starter() -> String { RecallSpeechSamples.long[0] }
     private func refresh() async throws {
         guard !refreshingBots else { return }
