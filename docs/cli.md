@@ -118,8 +118,7 @@ and CLI regression tests without using an ElevenLabs account.
 ### Remote playback
 
 The CLI and the app share one session. `botspeaker host` runs the same code
-path as **Host Meeting**, so the pairing code shows up in the app's menu bar
-window, and a Mac that joins through **Remote Mode** appears in `botspeaker
+path as **Host Meeting**, so the pairing code shows up in the app's main window toolbar, and a Mac that joins through **Remote Mode** appears in `botspeaker
 targets`. Any mix works: host from the CLI and join from the app, or the other
 way round.
 

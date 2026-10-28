@@ -2,25 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct MenuBarView: View {
-    let model: AppModel
-
-    var body: some View {
-        Group {
-            if model.hasAPIKey {
-                ComposerView(model: model, player: model.player, context: .menuBar)
-            } else {
-                FirstRunView(model: model)
-            }
-        }
-        .frame(width: 440)
-        .task {
-            model.restoreLastPlayableScriptForMenuBar()
-            await model.loadVoicesIfNeeded()
-        }
-    }
-}
-
 struct MainWindowView: View {
     private enum DetailDestination: Hashable {
         case orchestration
@@ -134,8 +115,7 @@ struct MainWindowView: View {
                             } else {
                                 ComposerView(
                                     model: model,
-                                    player: model.player,
-                                    context: .mainWindow
+                                    player: model.player
                                 )
                             }
                         }
@@ -756,50 +736,18 @@ private struct ScriptRow: View {
 }
 
 struct ComposerView: View {
-    enum Context {
-        case mainWindow
-        case menuBar
-    }
-
     @Bindable var model: AppModel
     let player: AudioPlaybackController
-    @Environment(\.openWindow) private var openWindow
-    let context: Context
     @State private var sliderValue = 0.0
     @State private var isScrubbing = false
     @State private var templateError: String?
 
     var body: some View {
         VStack(spacing: 14) {
-            if context == .menuBar {
-                HStack {
-                    Label("Bot Speaker", systemImage: "waveform")
-                        .font(.headline)
-                    Spacer()
-                    SettingsLink {
-                        Image(systemName: "gearshape")
-                            .font(.title3)
-                            .frame(width: 28, height: 28)
-                    }
-                        .buttonStyle(.plain)
-                        .help("Settings")
-                }
-            }
-
             scriptHeader
 
             if !model.selectedScript.isCustom {
-                if context == .mainWindow {
-                    templateNameEntry
-                } else {
-                    Label(
-                        "Open the full app to create a named script before playback.",
-                        systemImage: "person.crop.circle.badge.plus"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                templateNameEntry
             }
 
             VoicePicker(model: model)
@@ -864,14 +812,6 @@ struct ComposerView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
-                if context == .menuBar {
-                    Button("Open Full App") { openWindow(id: "composer") }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                    Button("Quit") { NSApplication.shared.terminate(nil) }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                }
             }
         }
         .padding(16)
@@ -930,33 +870,6 @@ struct ComposerView: View {
                     .lineLimit(1)
             }
             Spacer()
-
-            if context == .menuBar {
-                Menu {
-                    if model.customScripts.isEmpty {
-                        Button("Create a named script in the full app") {
-                            openWindow(id: "composer")
-                        }
-                    } else {
-                        ForEach(model.playableScripts) { script in
-                            Button {
-                                model.selectScript(id: script.id)
-                            } label: {
-                                if script.id == model.selectedScriptID {
-                                    Label(script.title, systemImage: "checkmark")
-                                } else {
-                                    Text(script.title)
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Choose", systemImage: "chevron.up.chevron.down")
-                }
-                .menuStyle(.borderlessButton)
-                .help("Choose a saved script")
-                .disabled(model.isLocalPlaybackLocked)
-            }
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9))

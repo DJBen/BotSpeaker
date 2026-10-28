@@ -205,9 +205,6 @@ final class AppModel {
         // Property observers do not run inside init.
         refreshSelectedScript()
         text = initialScript.text
-        if initialScript.isCustom {
-            UserDefaults.standard.set(initialScript.id, forKey: Defaults.lastPlayableScriptID)
-        }
 
         hasAPIKey = (try? keychain.read())?.isEmpty == false
         player.isLooping = loopEnabled
@@ -331,22 +328,6 @@ final class AppModel {
         selectedScriptID = script.id
         text = script.text
         UserDefaults.standard.set(script.id, forKey: Defaults.selectedScriptID)
-        if script.isCustom {
-            UserDefaults.standard.set(script.id, forKey: Defaults.lastPlayableScriptID)
-        }
-    }
-
-    /// The main window may be browsing a non-playable template. When the menu
-    /// bar opens, return to the last saved transcript that was actually used.
-    func restoreLastPlayableScriptForMenuBar() {
-        guard !selectedScript.isCustom else { return }
-        let defaults = UserDefaults.standard
-        let requestedID = defaults.string(forKey: Defaults.lastPlayableScriptID)
-        let playable = requestedID.flatMap { id in
-            playableScripts.first(where: { $0.id == id })
-        } ?? playableScripts.first
-        guard let playable else { return }
-        selectScript(id: playable.id)
     }
 
     func prepareScriptEditor() {
@@ -380,17 +361,6 @@ final class AppModel {
         }
         customScripts.remove(at: index)
         persistCustomScripts()
-
-        if UserDefaults.standard.string(forKey: Defaults.lastPlayableScriptID) == scriptID {
-            if let replacement = customScripts.first {
-                UserDefaults.standard.set(
-                    "custom:\(replacement.id.uuidString)",
-                    forKey: Defaults.lastPlayableScriptID
-                )
-            } else {
-                UserDefaults.standard.removeObject(forKey: Defaults.lastPlayableScriptID)
-            }
-        }
 
         if editingCustomScriptID == id {
             editingCustomScriptID = nil
@@ -826,7 +796,6 @@ final class AppModel {
         static let loopEnabled = "loopEnabled"
         static let outputVolume = "outputVolume"
         static let selectedScriptID = "selectedScriptID"
-        static let lastPlayableScriptID = "lastPlayableScriptID"
         static let customScripts = "customScripts"
     }
 }
