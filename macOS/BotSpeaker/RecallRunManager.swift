@@ -5,6 +5,7 @@ struct RecallMeetingTurn {
     let botID: String
     let voice: String
     let text: String
+    var overlapWithPrevious = false
 }
 
 typealias RecallRequest = @MainActor (String, [String: Any]) async throws -> [String: Any]
@@ -16,6 +17,13 @@ enum RecallTurnRunner {
                     progress: (Int) -> Void, skipRequested: () -> Bool = { false },
                     preparing: (Int) -> Void = { _ in },
                     completed: (Int, [String: Any], Bool) -> Void = { _, _, _ in }) async throws {
+        var group: Set<String> = []
+        for (index, turn) in turns.enumerated() {
+            if !turn.overlapWithPrevious { group = [] }
+            guard !(index == 0 && turn.overlapWithPrevious), group.insert(turn.botID).inserted else {
+                throw AppError("Overlapping turns need different speakers and a preceding turn.")
+            }
+        }
         var pending: [String] = []
         do {
             for (index, turn) in turns.enumerated() {
@@ -26,15 +34,27 @@ enum RecallTurnRunner {
                 pending.append(id)
                 try await wait(id, expected: "prepared", request: request)
             }
-            for (index, id) in Array(pending).enumerated() {
+            let prepared = pending
+            var index = 0
+            while index < turns.count {
+                var end = index + 1
+                while end < turns.count && turns[end].overlapWithPrevious { end += 1 }
                 try Task.checkCancellation()
                 progress(index)
-                _ = try await request("dispatch", ["id": id])
-                try await wait(id, expected: "finished_dispatching", request: request, skipRequested: skipRequested)
-                let response = try await request("status", [:])
-                let job = (response["jobs"] as? [[String: Any]])?.first { $0["id"] as? String == id } ?? [:]
-                completed(index, job, skipRequested())
-                pending.removeAll { $0 == id }
+                // Dispatch all distinct speakers in the group before waiting for any of them.
+                for current in index..<end {
+                    try Task.checkCancellation()
+                    _ = try await request("dispatch", ["id": prepared[current]])
+                }
+                for current in index..<end {
+                    let id = prepared[current]
+                    try await wait(id, expected: "finished_dispatching", request: request, skipRequested: skipRequested)
+                    let response = try await request("status", [:])
+                    let job = (response["jobs"] as? [[String: Any]])?.first { $0["id"] as? String == id } ?? [:]
+                    completed(current, job, skipRequested())
+                    pending.removeAll { $0 == id }
+                }
+                index = end
             }
         } catch {
             // This cleanup is local cancellation, so it also works in a cancelled task.
@@ -96,7 +116,7 @@ final class RecallRunManager {
                 let voice = (item["voice"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let text = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !voice.isEmpty, !text.isEmpty else { throw AppError("Every turn needs voice and text.") }
-                return RecallMeetingTurn(botID: bot.uuidString.lowercased(), voice: voice, text: text)
+                return RecallMeetingTurn(botID: bot.uuidString.lowercased(), voice: voice, text: text, overlapWithPrevious: item["overlapWithPrevious"] as? Bool ?? false)
             }
             let run = Run(turns); runs.append(run)
             return ["ok": true, "meeting": run.snapshot]

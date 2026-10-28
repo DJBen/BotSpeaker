@@ -186,6 +186,10 @@ meeting. Paste the full Teams invitation, including its meeting ID
 and passcode, or enter a join URL. An existing key appears masked during
 onboarding; choose **Change** to replace it.
 
+On macOS, **Manage Bots** in the sidebar lists unfinished Recall bots across all meetings in the configured workspace and region. It includes bots stuck joining or waiting for admission, hides bots that have left, and lets you remove individual or selected bots without choosing a meeting. The list refreshes automatically every ten seconds.
+
+On macOS, **Orchestrated meeting → Import Meeting Plan…** adds reusable JSON scripts to the sidebar. **Export Plan…** saves a script for editing or sharing. Three longer five-speaker samples include varied turn lengths and simultaneous speech groups through Recall.ai. See the [meeting plan format and examples](docs/meeting-plans.md).
+
 For a scripted conversation, choose **Host in Recall.ai** on an orchestrated
 script, assign speaker names and voices, and choose **Arrange turns**. Admit
 the bots from the meeting lobby before starting. Both platforms prepare every turn’s

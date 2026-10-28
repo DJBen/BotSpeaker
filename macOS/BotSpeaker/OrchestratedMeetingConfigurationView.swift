@@ -24,8 +24,27 @@ struct OrchestratedMeetingConfigurationView: View {
     private var hostConfiguration: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(controller.selectedTemplate.title)
-                    .font(.headline)
+                HStack {
+                    Text(controller.selectedTemplate.title).font(.headline)
+                    Spacer()
+                    Button("Export Plan…", systemImage: "square.and.arrow.up") {
+                        do {
+                            let encoder = JSONEncoder()
+                            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                            let data = try encoder.encode(OrchestratedPlanFile(template: controller.selectedTemplate))
+                            let panel = NSSavePanel()
+                            panel.allowedContentTypes = [.json]
+                            panel.nameFieldStringValue = "meeting-plan.json"
+                            guard panel.runModal() == .OK, let url = panel.url else { return }
+                            try data.write(to: url, options: .atomic)
+                            recallSetupError = nil
+                        } catch { recallSetupError = error.localizedDescription }
+                    }
+                }
+                if !controller.selectedTemplate.overlapTurnIndices.isEmpty {
+                    Text("Includes simultaneous speech groups. Host in Recall.ai to play overlaps.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("Name the speakers and choose the ElevenLabs voice each paired client will use.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -88,7 +107,7 @@ struct OrchestratedMeetingConfigurationView: View {
                 }
                 .buttonStyle(.bordered)
                 .fixedSize()
-                .disabled(controller.isBusy)
+                .disabled(controller.isBusy || !controller.selectedTemplate.overlapTurnIndices.isEmpty)
                 Button("Host in Recall.ai") {
                     do {
                         try model.selectRecallMeeting(controller)

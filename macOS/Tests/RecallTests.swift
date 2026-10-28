@@ -115,6 +115,25 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition((listed["bots"] as? [[String: Any]])?.compactMap { $0["id"] as? String } == [MockHTTP.bot, MockHTTP.other])
         precondition(MockHTTP.requestedURLs.count == 2 && MockHTTP.requestedURLs.last == next,
                      "Pagination must preserve the trailing slash and encoded cursor: \(MockHTTP.requestedURLs)")
+        let departedRecords = RecallController.departedStatuses.sorted().enumerated().map { index, status in
+            ["id": "departed-\(index)", "status_changes": [["code": status]]] as [String: Any]
+        }
+        MockHTTP.listPages = [
+            ["results": departedRecords + [["id": MockHTTP.bot, "meeting_url": "https://teams.microsoft.com/meet/123", "status_changes": [["code": "joining_call"]]]], "next": next],
+            ["results": [["id": MockHTTP.other, "meeting_url": "https://teams.microsoft.com/meet/456", "status_changes": [["code": "in_waiting_room"]]], ["id": MockHTTP.stuck, "status_changes": []]], "next": NSNull()]
+        ]
+        let unfinished = try await request("list", ["activeOnly": true])["bots"] as! [[String: Any]]
+        precondition(Set(unfinished.compactMap { $0["id"] as? String }) == Set([MockHTTP.bot, MockHTTP.other, MockHTTP.stuck]))
+        precondition(Set(unfinished.compactMap { $0["meeting_id"] as? String }) == Set(["123", "456"]))
+        MockHTTP.requests = []
+        for bot in [MockHTTP.bot, MockHTTP.other] { _ = try await request("remove", ["botId": bot]) }
+        precondition(MockHTTP.requests.contains("/api/v1/bot/\(MockHTTP.bot)/leave_call/"))
+        precondition(MockHTTP.requests.contains("/api/v1/bot/\(MockHTTP.other)/leave_call/"))
+        MockHTTP.listPages = [["results": departedRecords, "next": NSNull()]]
+        let history = try await request("list")["bots"] as! [[String: Any]]
+        precondition(history.count == departedRecords.count)
+        MockHTTP.requests = []
+        print("PASS: global unfinished list follows pagination, excludes every departed status, preserves unknown/joining/waiting bots, and removes across meetings; ordinary list retains history")
         for invalid in [
             "http://\(controller.region).recall.ai/api/v1/bot/?page=2",
             "https://example.com/api/v1/bot/?page=2",
@@ -232,6 +251,44 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition(calls.filter { $0 != "status" } == ["prepare", "prepare", "dispatch", "dispatch"])
         print("PASS: all turns prepare before any dispatch")
 
+        var overlappingStates: [String: String] = [:]
+        var overlapDispatches: [String] = []
+        var overlapCompletions: [Int] = []
+        try await RecallTurnRunner.run([
+            RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "long"),
+            RecallMeetingTurn(botID: MockHTTP.other, voice: "v", text: "short", overlapWithPrevious: true),
+            RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "after")
+        ], request: { action, body in
+            if action == "prepare" {
+                let id = String(overlappingStates.count); overlappingStates[id] = "prepared"
+                return ["job": ["id": id]]
+            }
+            if action == "dispatch" {
+                let id = body["id"] as! String
+                overlapDispatches.append(id)
+                overlappingStates[id] = "dispatched"
+                if id == "1" {
+                    // The first job cannot finish until its overlapping partner starts.
+                    overlappingStates["0"] = "finished_dispatching"
+                    overlappingStates["1"] = "finished_dispatching"
+                }
+                if id == "2" {
+                    precondition(overlapCompletions == [0, 1])
+                    overlappingStates[id] = "finished_dispatching"
+                }
+            }
+            return ["jobs": overlappingStates.map { ["id": $0.key, "status": $0.value] }]
+        }, progress: { _ in }, completed: { index, _, _ in overlapCompletions.append(index) })
+        precondition(overlapDispatches == ["0", "1", "2"] && overlapCompletions == [0, 1, 2])
+        do {
+            try await RecallTurnRunner.run([
+                RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "a"),
+                RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "b", overlapWithPrevious: true)
+            ], request: { _, _ in fatalError("Invalid overlap must fail before requests") }, progress: { _ in })
+            fatalError("Accepted overlapping speech on one bot")
+        } catch {}
+        print("PASS: overlapping speakers dispatch together, next group waits, duplicate speakers rejected")
+
         var cancelled: [String] = []
         var heldStates: [String: String] = [:]
         let pendingRun = Task { @MainActor in
@@ -270,6 +327,40 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition(dispatches == 2 && cancelled == ["0"])
         precondition(completedTurns == [1] && skippedTurns == [0])
         print("PASS: Skip cancels only the current turn and advances")
+
+        cancelled = []; heldStates = [:]; dispatches = 0; completedTurns = []; skippedTurns = []
+        try await RecallTurnRunner.run([
+            RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "1"),
+            RecallMeetingTurn(botID: MockHTTP.other, voice: "v", text: "2", overlapWithPrevious: true),
+            RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "3")
+        ], request: { action, body in
+            if action == "prepare" { let id = String(heldStates.count); heldStates[id] = "prepared"; return ["job": ["id": id]] }
+            if action == "dispatch" { dispatches += 1; heldStates[body["id"] as! String] = dispatches < 3 ? "dispatched" : "finished_dispatching" }
+            if action == "cancel" { cancelled.append(body["id"] as! String) }
+            return ["jobs": heldStates.map { ["id": $0.key, "status": $0.value] }]
+        }, progress: { _ in }, skipRequested: { dispatches == 2 }, completed: { index, _, skipped in
+            if skipped { skippedTurns.append(index) } else { completedTurns.append(index) }
+        })
+        precondition(cancelled == ["0", "1"] && completedTurns == [2] && skippedTurns == [0, 1])
+
+        cancelled = []; heldStates = [:]
+        let overlappingRun = Task { @MainActor in
+            try await RecallTurnRunner.run([
+                RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "1"),
+                RecallMeetingTurn(botID: MockHTTP.other, voice: "v", text: "2", overlapWithPrevious: true),
+                RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "3")
+            ], request: { action, body in
+                if action == "prepare" { let id = String(heldStates.count); heldStates[id] = "prepared"; return ["job": ["id": id]] }
+                if action == "dispatch" { heldStates[body["id"] as! String] = "dispatched" }
+                if action == "cancel" { cancelled.append(body["id"] as! String) }
+                return ["jobs": heldStates.map { ["id": $0.key, "status": $0.value] }]
+            }, progress: { _ in })
+        }
+        while heldStates.values.filter({ $0 == "dispatched" }).count != 2 { try await Task.sleep(for: .milliseconds(10)) }
+        overlappingRun.cancel()
+        do { try await overlappingRun.value; fatalError("Cancelled overlap completed") } catch is CancellationError {}
+        precondition(Set(cancelled) == Set(["0", "1", "2"]))
+        print("PASS: Skip cancels an entire overlap group; Stop cancels both active speakers and future prepared speech")
 
     }
 }

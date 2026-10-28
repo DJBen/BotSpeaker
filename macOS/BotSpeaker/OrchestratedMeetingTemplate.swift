@@ -1,12 +1,14 @@
 import Foundation
 
-struct OrchestratedMeetingTemplate: Identifiable, Hashable {
+struct OrchestratedMeetingTemplate: Identifiable, Hashable, Codable {
     let id: String
     let title: String
     let detail: String
     let speakerRoles: [String]
     let defaultVoiceGenders: [String]
     let text: String
+
+    var overlapTurnIndices: [Int] = []
 
     var speakerCount: Int { speakerRoles.count }
     var turnCount: Int { (try? parsedTurns().count) ?? 0 }
@@ -114,7 +116,16 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable {
         """
     )
 
-    static let all = [quickFivePerson, quickFourPerson, launchReadiness, apiIncidentReview, performanceReviewOneOnOne]
+    static let all = [quickFivePerson, quickFourPerson, launchReadiness, apiIncidentReview, performanceReviewOneOnOne] + bundledPlans
+
+    private static let bundledPlans: [OrchestratedMeetingTemplate] = {
+        ["release-deep-dive", "incident-workshop", "customer-research"].compactMap { name in
+            guard let url = Bundle.main.url(forResource: name, withExtension: "json"),
+                  let data = try? Data(contentsOf: url),
+                  let plan = try? JSONDecoder().decode(OrchestratedPlanFile.self, from: data) else { return nil }
+            return try? plan.template(id: name)
+        }
+    }()
 
     private static let performanceReviewOneOnOneText = """
     {{speaker_1}}: Come in, sit down — and {{speaker_2}}, you can stop looking like you're walking into a root canal. [laughs] This is a good review. Short version first, because I know you hate suspense: strong year, exceeding expectations. The billing platform is more reliable because of you, and half the team asks "what would {{speaker_2}} do" during incidents, which is either a compliment or a cry for help.

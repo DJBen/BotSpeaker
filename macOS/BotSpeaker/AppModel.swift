@@ -4,6 +4,23 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    private(set) var importedMeetingTemplates: [OrchestratedMeetingTemplate] = {
+        guard let data = UserDefaults.standard.data(forKey: "importedMeetingTemplates") else { return [] }
+        return (try? JSONDecoder().decode([OrchestratedMeetingTemplate].self, from: data)) ?? []
+    }()
+    var meetingTemplates: [OrchestratedMeetingTemplate] { OrchestratedMeetingTemplate.all + importedMeetingTemplates }
+
+    func importMeetingPlan(from url: URL) throws -> OrchestratedMeetingTemplate {
+        let data = try Data(contentsOf: url)
+        let plan = try JSONDecoder().decode(OrchestratedPlanFile.self, from: data)
+        let template = try plan.template()
+        let updated = importedMeetingTemplates + [template]
+        let saved = try JSONEncoder().encode(updated)
+        UserDefaults.standard.set(saved, forKey: "importedMeetingTemplates")
+        importedMeetingTemplates = updated
+        return template
+    }
+
     let recall = RecallController()
     private(set) var recallMeeting = RecallMeetingPlan()
     private var recallMeetings: [String: RecallMeetingPlan] = [:]

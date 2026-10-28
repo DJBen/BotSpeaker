@@ -16,6 +16,7 @@ final class RecallMeetingPlan {
         let id = UUID()
         var speaker: Int
         var text: String
+        var overlapWithPrevious = false
     }
     var title = ""
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
@@ -46,7 +47,7 @@ final class RecallMeetingPlan {
         self.source = source; templateID = source.selectedTemplate.id
         title = source.selectedTemplate.title
         speakers = source.speakerConfigurations.map { Speaker(configuration: $0) }
-        turns = parsed.map { Turn(speaker: $0.speakerIndex, text: $0.text) }
+        turns = parsed.enumerated().map { Turn(speaker: $0.element.speakerIndex, text: $0.element.text, overlapWithPrevious: source.selectedTemplate.overlapTurnIndices.contains($0.offset)) }
     }
     func persistSpeakers() {
         source?.saveRecallSpeakerConfigurations(templateID: templateID, configurations: speakers.map(\.configuration))
@@ -121,7 +122,7 @@ final class RecallMeetingPlan {
                 preparing = true
                 let preparedTurns = turns.map { turn in
                     let speaker = speakers[turn.speaker]
-                    return RecallMeetingTurn(botID: isHost(turn.speaker) ? "local" : speaker.bot, voice: speaker.voice, text: resolved(turn.text))
+                    return RecallMeetingTurn(botID: isHost(turn.speaker) ? "local" : speaker.bot, voice: speaker.voice, text: resolved(turn.text), overlapWithPrevious: turn.overlapWithPrevious)
                 }
                 try await RecallTurnRunner.run(preparedTurns, request: { action, body in
                     if body["botId"] as? String == "local" || local.owns(body["id"] as? String) {
@@ -133,7 +134,9 @@ final class RecallMeetingPlan {
                 }, progress: { index in
                     if origin == nil { origin = Date() }
                     preparing = false; skipRequested = false
-                    message = "Turn \(index + 1) of \(turns.count) · \(speakerName(turns[index].speaker))\n\n\(preparedTurns[index].text)"
+                    var end = index + 1
+                    while end < turns.count && turns[end].overlapWithPrevious { end += 1 }
+                    message = (index..<end).map { "Turn \($0 + 1) of \(turns.count) · \(speakerName(turns[$0].speaker))\n\n\(preparedTurns[$0].text)" }.joined(separator: "\n\nOverlapping with\n\n")
                 }, skipRequested: { skipRequested }, preparing: { index in
                     message = "Preparing turn \(index + 1) of \(turns.count)…"
                 }, completed: { index, job, skipped in
@@ -176,10 +179,10 @@ struct RecallMeetingView: View {
                 }
                 if plan.running {
                     HStack {
-                        Button("Skip turn") { plan.skipRequested = true }.disabled(plan.skipRequested || plan.preparing)
+                        Button("Skip turn / overlap group") { plan.skipRequested = true }.disabled(plan.skipRequested || plan.preparing)
                         Button("Stop meeting") { plan.stop() }
                     }
-                    Text("Skip advances to the next turn. Audio already sent may finish playing over the next speaker.").font(.caption)
+                    Text("Skip advances past the current turn or simultaneous group. Audio already sent may finish playing over the next speaker.").font(.caption)
                 } else {
                     controls.disabled(plan.busy)
                 }
@@ -287,6 +290,7 @@ struct RecallMeetingView: View {
                         Button("↓") { plan.turns.swapAt(index, index+1) }.disabled(index == plan.turns.count-1)
                         Button("Remove turn") { plan.turns.remove(at: index) }
                     }
+                    Toggle("Start together with previous turn (different speaker)", isOn: $plan.turns[index].overlapWithPrevious)
                     TextEditor(text: Binding(get: { plan.resolved(plan.turns[index].text) }, set: { plan.turns[index].text = $0 })).frame(minHeight: 90)
                 }
             }

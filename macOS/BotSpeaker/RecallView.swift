@@ -53,7 +53,7 @@ struct RecallView: View {
     }
     private var visibleBots: [BotRow] {
         let scope = RecallController.meetingID(meeting)
-        return bots.filter { !scope.isEmpty && $0.meetingID == scope && !["done", "fatal"].contains($0.status) }
+        return bots.filter { !scope.isEmpty && $0.meetingID == scope && !RecallController.departedStatuses.contains($0.status) }
     }
     var body: some View {
         ScrollView {

@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "title": "Five-person incident recovery workshop",
+  "speakers": [
+    {
+      "role": "Incident Lead",
+      "gender": "female"
+    },
+    {
+      "role": "Reliability Engineer",
+      "gender": "male"
+    },
+    {
+      "role": "Backend Engineer",
+      "gender": "female"
+    },
+    {
+      "role": "Customer Support",
+      "gender": "male"
+    },
+    {
+      "role": "Operations Analyst",
+      "gender": "female"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": 1,
+      "text": "Let's start with the purpose of this review. We are here to understand why yesterday's processing delay lasted forty minutes and to decide which changes would have shortened it. We are not ranking who worked hardest during the incident. The timeline begins at nine twelve, when queue age started increasing, and ends at nine fifty-two, when normal processing resumed. Some customers saw documents waiting, while others received repeated progress notifications. We have not found missing documents, but that statement must stay separate from whether the experience was acceptable. Reliability, describe the first signal and why it did not immediately lead to a page."
+    },
+    {
+      "speaker": 2,
+      "text": "The first signal was oldest-item age, which crossed our dashboard's warning line at nine twelve. It did not page because that metric was informational rather than part of the paging policy. Our active policy used average worker utilization and aggregate error rate. Both looked normal: workers were busy, and they were successfully retrying a request that could not make progress. The system was doing work, just not useful work. At nine nineteen, a support report reached the on-call channel, and that became the effective alert. I want a queue-age page tied to the customer wait objective, with a separate check that completed items are advancing. That gives us evidence about outcomes instead of activity."
+    },
+    {
+      "speaker": 4,
+      "text": "The customer report arrived earlier than that.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 2,
+      "text": "Right, earlier in the support system. I meant when engineering saw it. That difference is part of the delay, and we should capture both timestamps rather than choose the one that makes our response look faster."
+    },
+    {
+      "speaker": 4,
+      "text": "The first customer wrote at nine fifteen. Their message said that uploading worked but the document remained in processing. Our agent checked the status page, saw all systems operational, and asked for the file type. That was a reasonable question under the existing playbook, but it delayed correlation with two similar reports. We need a way to group reports by symptom even if the ticket categories differ. One customer chose uploads, another chose search, and another chose billing because they thought their plan had expired. I propose a short incident intake template asking when the problem began, which workspace is affected, and whether any items completed recently. We should avoid asking people to upload their private documents again just to prove a delay."
+    },
+    {
+      "speaker": 3,
+      "text": "The technical trigger was a database migration that changed how a lease expired. One worker could renew its lease while another worker interpreted that lease as available. Both then retried the same item. Our uniqueness check prevented a duplicate result, which is why we did not see duplicate documents, but contention consumed the available worker slots. The migration passed a test with one worker and a test with many independent documents. It did not pass through a scenario where two workers competed for the same expired lease. That is the missing case. I will add a deterministic test using a controlled clock, and I will document the invariant: only one worker may own an unexpired lease for a particular item."
+    },
+    {
+      "speaker": 5,
+      "text": "Can we quantify the customer impact without counting every retry as a new affected document? The first draft of the report says twelve thousand operations were delayed. That number came from request logs, so it includes repeated attempts. My current reconstruction finds about nine hundred distinct documents across forty-one workspaces. The exact count is still provisional because we need to reconcile retries that crossed the incident boundary. I would rather publish a bounded estimate with the method than an impressive-looking precise number that we know measures the wrong thing. We should also separate customers delayed by thirty seconds from customers who waited most of the incident."
+    },
+    {
+      "speaker": 1,
+      "text": "Yes. Use distinct document identifiers and wait-duration bands, and label the result provisional until reconciliation finishes. Please include the number of workspaces with no successful completion during the incident. That is more meaningful than a global average that includes unaffected traffic. Backend, explain the mitigation choice. The timeline shows that we increased worker count before rolling back the migration. Did that help, do nothing, or make contention worse? I want the evidence for whichever answer we settle on."
+    },
+    {
+      "speaker": 3,
+      "text": "It made contention worse for roughly four minutes. We interpreted the backlog as insufficient capacity and doubled the pool. More workers competed for the same leases, increasing lock wait. The clue was that throughput stayed flat while active connections rose sharply. Once we connected that to the migration, rollback became the obvious option. We lost time checking whether rollback would invalidate work already in progress. The migration had a rollback script, but the runbook did not say whether it was safe with active workers. We paused intake, drained the uncontested work, reverted the lease calculation, and restarted the pool gradually. That sequence worked, but we invented too much of it under pressure."
+    },
+    {
+      "speaker": 2,
+      "text": "The gradual restart was important.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 3,
+      "text": "Absolutely. Restarting every worker at once would have created another burst of competing lease requests. We started with a quarter of the pool, watched queue age fall, then added capacity in two steps. For future changes, I want the deployment checklist to state which rollback steps require a pause and which preserve in-flight work. The author should demonstrate that sequence before production deployment. A file named rollback is not evidence that anyone has exercised it."
+    },
+    {
+      "speaker": 4,
+      "text": "While that was happening, our customer updates were too vague. We posted that some users might experience delays, then repeated essentially the same sentence fifteen minutes later. Customers were asking whether they should cancel and upload again. We could have answered that directly: keep the original upload, and do not retry unless support asks you to. That guidance would have reduced both customer anxiety and extra load. I will write an initial response template with three separate pieces: what people may observe, what they should do now, and when they will hear from us again. It must allow us to say that we do not yet know the cause without making the entire update useless."
+    },
+    {
+      "speaker": 5,
+      "text": "I can supply the duration bands for that follow-up.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 4,
+      "text": "Great. Please make them readable without a chart. Some of our contacts will forward the message to colleagues on mobile, and the important statement should survive that forwarding. We should not send every customer a detailed description of database leases. They need to know whether their documents completed, whether they need to take action, and what we are changing to prevent a repeat. Technical detail can live in the incident report for the customers who want it."
+    },
+    {
+      "speaker": 1,
+      "text": "Let's test the proposed alert against the actual timeline. If queue age had paged at nine fourteen, what would the on-call engineer have done differently? An earlier page is useful only if the first investigation steps distinguish capacity shortage from contention. I want a runbook that begins with completion rate, oldest-item age, and lock wait on one screen. If completion rate is flat while lock wait rises, adding workers should not be the default response. Reliability, can we make that view available without requiring access to three different systems?"
+    },
+    {
+      "speaker": 2,
+      "text": "Yes. The dashboard can combine those existing signals, and the alert can link to a view with the incident time range already selected. I will also add the most recent deployment and migration markers. The first question during this incident was what changed, but we spent several minutes assembling an answer from chat messages. A deployment marker does not prove causation, so the runbook should say to compare timing and verify a mechanism. Still, it is a useful starting point. I want one rehearsal next week where the responder gets the alert and has to identify contention without being told which change triggered it."
+    },
+    {
+      "speaker": 3,
+      "text": "I can build a safe rehearsal using a synthetic queue with no customer data. We will introduce the old lease behavior behind a test-only switch, verify that the queue backs up, and then ask the responder to follow the runbook. We should measure time to recognize the symptom, time to choose a safe mitigation, and time until completions resume. I would also like a second responder to take over midway through. During yesterday's event, most of the state lived in one person's head. A handoff exercise will show whether our incident notes are actually enough for someone else to continue."
+    },
+    {
+      "speaker": 5,
+      "text": "For measurement, let's keep the clocks consistent. The support system, deployment log, and dashboard currently display different time zones. I will normalize the report to one timeline and retain the original timestamps in the evidence table. We should define recovery as sustained normal queue age, not the first successful completion after rollback. There were successful completions throughout the incident, so using that milestone would produce a misleadingly short duration. My proposal is five consecutive minutes inside the normal range, with no new growth in the affected queue. We can report mitigation time separately from full recovery."
+    },
+    {
+      "speaker": 1,
+      "text": "That distinction works. Now let's discuss ownership and what we will explicitly defer. We cannot fix every observability weakness this week. The required work is the lease regression test, the exercised rollback sequence, the queue-age alert, the combined dashboard, and the customer response template. The broader project to redesign all worker scheduling is not an incident action unless we can explain why these smaller changes are insufficient. I want each action to have a verifiable completion condition. Closing a ticket because a document was written is not enough if the action was to prove that a responder could recover the queue."
+    },
+    {
+      "speaker": 2,
+      "text": "For the alert, completion means a synthetic backlog triggers a page, the page links to the correct dashboard, and the responder can distinguish it from a routine short burst. I will test both sides. An alert that fires on every ordinary spike will be muted, and then we will be back where we started. We can use a sustained threshold plus a faster condition for severe growth. I will review the proposed thresholds against the last month of traffic before enabling paging, then watch the first week for noise. The dashboard itself can ship sooner because it does not wake anyone up."
+    },
+    {
+      "speaker": 4,
+      "text": "For support, completion means an agent who was not in this review can use the template to answer a realistic customer question. I will ask two agents to work through the scenario independently. If they have to ask engineering what processing means, the wording needs another pass. We also need a clear escalation trigger: three similar reports in a short interval should prompt an incident check even when the public status page is green. The status page is an output of our response, not an independent proof that nothing is wrong."
+    },
+    {
+      "speaker": 3,
+      "text": "My test will fail on the old lease logic and pass on the fixed logic. I will include that demonstration in the review so we know the test would have caught this incident. For rollback, I will record the exact commands against the synthetic environment, the expected observations after each step, and the point at which it is safe to resume intake. I want another engineer to execute the procedure from the written instructions. If I have to explain a missing step verbally, that is a defect in the runbook and we will fix it before marking the action complete."
+    },
+    {
+      "speaker": 5,
+      "text": "I will finish impact reconciliation tomorrow. The final report will give unique affected documents, workspaces, wait-duration bands, and the uncertainty around events at the boundaries. I will also check whether repeated progress notifications created additional support contacts after processing recovered. We often stop measuring when the technical graph returns to normal, but customers may still be dealing with confusing messages. That does not extend the infrastructure incident indefinitely; it tells us there is follow-up work. I will keep technical recovery and customer follow-up as separate milestones so neither disappears inside a single number."
+    },
+    {
+      "speaker": 1,
+      "text": "Before we close, does anyone disagree with the central finding? We deployed a lease behavior change without a contention test, detected customer delay through support because our alerts measured activity, and initially applied a capacity mitigation that increased contention. Recovery succeeded once we connected the behavior to the migration and restarted gradually. That is a chain of conditions, not one person's mistake. The review will preserve the decisions we made with the information available at the time, including the wrong turn on worker count. Future responders should be able to recognize that pattern sooner because we wrote it down honestly."
+    },
+    {
+      "speaker": 2,
+      "text": "I agree with that finding. One final addition: the responder should have explicit authority to pause intake when continued retries threaten recovery. Yesterday we waited for a product approval because the runbook called it a customer-visible action. Pausing intake was customer-visible, but so was allowing documents to wait indefinitely. Let's define a bounded emergency authority with immediate notification, then review its use afterward. That would remove a coordination delay without making the action invisible to the rest of the team."
+    },
+    {
+      "speaker": 1,
+      "text": "Agreed. I will write that authority into the incident policy and review it with the service owner today. Backend owns the regression and rollback exercise by Friday. Reliability owns the dashboard and tested paging rule by Thursday. Support owns the response template and agent exercise by Wednesday. Analysis owns the impact report tomorrow. We will meet for fifteen minutes next week to inspect evidence for those actions and run the handoff rehearsal. Thank you for keeping this concrete. Please add corrections to the timeline while the details are fresh, especially where an internal timestamp differs from the first customer report."
+    }
+  ]
+}

@@ -492,7 +492,7 @@ final class OrchestrationController {
                 return
             }
             if let templateID = room["scriptTemplateID"] as? String,
-               let template = OrchestratedMeetingTemplate.all.first(where: { $0.id == templateID }) {
+               let template = model?.meetingTemplates.first(where: { $0.id == templateID }) {
                 selectTemplate(template)
             }
             if let scriptText = room["scriptText"] as? String { meetingScriptText = scriptText }

@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "title": "Five-person customer research planning",
+  "speakers": [
+    {
+      "role": "Research Lead",
+      "gender": "female"
+    },
+    {
+      "role": "Product Manager",
+      "gender": "male"
+    },
+    {
+      "role": "Designer",
+      "gender": "female"
+    },
+    {
+      "role": "Data Analyst",
+      "gender": "male"
+    },
+    {
+      "role": "Customer Partner",
+      "gender": "female"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": 1,
+      "text": "Today we need to turn last month's interviews into a research plan we can actually execute. We heard that project setup feels slow, but that phrase covers several different problems: choosing a template, understanding permissions, inviting colleagues, and finding the first useful task. If we treat all of those as one funnel, we may improve the easiest step while missing the reason teams leave. I would like each of us to describe the strongest evidence we have, the uncertainty around it, and one question the next study should answer. We will finish with a participant mix, a session outline, and a decision rule for what happens after the study."
+    },
+    {
+      "speaker": 2,
+      "text": "From the product side, the decision is whether to simplify the initial setup or preserve the current flexibility and improve guidance. Our largest customers value custom roles and multiple workspace types. New small teams often have no idea which options they need. The proposed design starts with a sensible default and lets people adjust it later, but that could create migration work for teams that choose the wrong starting point. I do not want research to become a vote on which mockup looks friendlier. We need to observe whether people can reach a useful outcome and whether they understand the choices they have made. A quick completion with the wrong permissions is not a successful setup."
+    },
+    {
+      "speaker": 3,
+      "text": "That is exactly the tension in the prototypes. The first version asks only for a project name and a teammate, then creates a default structure. The second asks about the team's work and offers a recommended structure with an explanation. The third keeps the existing options but groups them more clearly. I can make all three look polished, so visual preference will not tell us much. I suggest giving participants a realistic task with a constraint, such as inviting an external reviewer who should see one folder but not the rest. We can then observe whether the interface helps them reason about that constraint without coaching."
+    },
+    {
+      "speaker": 5,
+      "text": "Please include people who invite contractors.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 3,
+      "text": "Yes. The external reviewer case came directly from a contractor workflow, and we should preserve that context. We should also include a participant who works alone at first and adds colleagues later. An onboarding flow that assumes everyone already has a team can make an individual feel stuck before they have even tried the product. I will make sure the prototypes allow skipping invitations and returning to them after creating content. The study should reveal whether people notice that path and whether the language makes it feel like a valid choice."
+    },
+    {
+      "speaker": 4,
+      "text": "The analytics support that distinction. About a third of new workspaces create content before inviting anyone, while another group sends invitations immediately and creates content only after a teammate joins. Those are different sequences leading to the same eventual behavior. A single funnel that requires invitations first incorrectly counts the content-first group as drop-offs. I will build a path analysis with both sequences and separate truly inactive workspaces from workspaces that took another route. We also need to filter internal test accounts and automated integrations. Otherwise a batch of programmatically created workspaces can make the setup flow appear much faster than a human experience actually is."
+    },
+    {
+      "speaker": 1,
+      "text": "Good. For the qualitative study, I propose twelve participants across three groups: new small teams, established teams trying a new project, and people coordinating external contributors. Twelve is enough to uncover recurring usability problems in this focused scope, but it is not enough to estimate a precise population success rate. We will report observations and patterns rather than imply statistical certainty. Each session will begin with the participant describing a recent real project, then use that context to frame the task. We should avoid recruiting only enthusiastic customers who already know our vocabulary and can work around confusing labels."
+    },
+    {
+      "speaker": 5,
+      "text": "Recruitment can cover those groups, but we need to be realistic about availability. External coordinators are often busiest near delivery deadlines, so a full hour may be hard to schedule. I can offer shorter sessions and several time windows without changing the core task. I also want participants to know that we are evaluating the product, not their competence. Some customers apologize when they cannot find a control, and that changes how freely they describe confusion. The invitation should explain that getting stuck is useful information and that they can stop at any point. We should use a sandbox with fictional content so they do not feel pressure to show confidential client work."
+    },
+    {
+      "speaker": 2,
+      "text": "Agreed on the sandbox."
+    },
+    {
+      "speaker": 4,
+      "text": "And let's capture prior experience explicitly.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 1,
+      "text": "Both points belong in the protocol. We will ask how often participants create projects, whether they have administered permissions before, and which collaboration tools they use. Those answers will help explain differences without becoming excuses to dismiss a difficult session. If every novice fails and every expert succeeds, that is a product finding. It is not a reason to remove novices from the sample. We will also rotate prototype order so the first version does not always pay the cost of teaching the basic concepts. Participants should get the same task wording and equivalent fictional materials in each condition."
+    },
+    {
+      "speaker": 3,
+      "text": "I want to be careful about showing every participant all three versions. Once someone learns the permission model in the first prototype, the later versions may look easier even if they are not. We could use the first task as our strongest behavioral observation and treat later versions as comparisons about specific interactions. Alternatively, we could assign one primary version per participant and use a shorter follow-up only where needed. My preference is the second approach. It gives us fewer observations per version, but those observations are less contaminated by practice. We can make a focused iteration after the first four sessions if a severe issue makes one version impossible to use."
+    },
+    {
+      "speaker": 4,
+      "text": "That works if we document the iteration. I will maintain a version log linking each session to the exact prototype shown, the task wording, and any moderator assistance. We should not combine completion times across changed versions as if the task stayed constant. For each attempt, I suggest recording whether the participant completed the task independently, needed a neutral prompt, needed direct instruction, or ended with incorrect permissions. Time can be a secondary measure. A participant who spends an extra minute checking access may be demonstrating healthy caution rather than struggling. The interpretation needs the observation notes alongside the number."
+    },
+    {
+      "speaker": 5,
+      "text": "Customers will ask what happened after they participated. Can we commit to a short follow-up explaining what we learned and which changes we are exploring? We should avoid promising that their preferred version will ship, but we can acknowledge the contribution with something more useful than a generic thank-you. I can draft a message that describes themes without quoting other participants or exposing their organizations. If we include a quote in an internal presentation, we should preserve the permission attached to that session and remove identifying details that are not needed to understand the finding."
+    },
+    {
+      "speaker": 2,
+      "text": "Yes, and I will own the product decision after the synthesis. My proposed gate is that no version advances with a repeated critical permission misunderstanding. Among versions that clear that gate, we will compare whether people reach a useful project state and can explain how to change the setup later. If the evidence is mixed, the next step may be a narrower prototype revision rather than an immediate production experiment. I do not want a calendar deadline to turn uncertainty into a confident recommendation. We can still make progress by identifying which assumption failed and testing a smaller change."
+    },
+    {
+      "speaker": 1,
+      "text": "Then we have a plan. Design will prepare the three prototypes and a stable sandbox by Monday. Analysis will define the observation sheet, version log, and alternative onboarding paths. Our customer partner will recruit across the three groups and send the session invitation for review. Product will write the decision criteria before the first session so we do not move them afterward. I will pilot the protocol with someone outside the project, revise unclear task wording, and moderate the study. We will reserve synthesis time immediately after each session while details are fresh. The final readout will separate observations, interpretations, and recommendations, with direct links to the evidence behind each conclusion."
+    }
+  ]
+}

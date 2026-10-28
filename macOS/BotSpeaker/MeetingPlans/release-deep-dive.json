@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "title": "Five-person release deep dive",
+  "speakers": [
+    {
+      "role": "Product Lead",
+      "gender": "female"
+    },
+    {
+      "role": "Engineering Lead",
+      "gender": "male"
+    },
+    {
+      "role": "Designer",
+      "gender": "female"
+    },
+    {
+      "role": "Quality Lead",
+      "gender": "male"
+    },
+    {
+      "role": "Support Lead",
+      "gender": "female"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": 1,
+      "text": "Thanks for setting aside a full hour. Our quick release check left several questions open, so today I want to work through the actual customer journey rather than collect five green status lights. We are launching shared project folders to a small pilot next Tuesday. A customer should be able to create a folder, invite two colleagues, move an existing document into it, and understand who can see that document at every step. We will review reliability, permissions, onboarding, and support readiness, then make a launch decision with named owners. Please interrupt if a statement sounds more confident than the evidence behind it. Engineering, walk us through the riskiest transition first."
+    },
+    {
+      "speaker": 2,
+      "text": "The riskiest transition is moving a private document into a shared folder while someone else is editing it. We now treat that as one server operation. The document keeps its identifier and revision history, but its effective access changes when the move commits. Existing editors receive an access refresh before the next save. In our tests, a disconnected editor could briefly display old content, but could not successfully write after access was revoked. That distinction matters because a screenshot of an old screen is not proof of a new permission failure. We need the test report to separate visible cached content from actions the server actually accepted. The remaining issue is the notification delay when a laptop wakes after a long sleep."
+    },
+    {
+      "speaker": 4,
+      "text": "And the sleep case is still open.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 2,
+      "text": "Correct. I do not want anyone to hear that explanation as a claim that every transition passed. We reproduced a delayed notification on two machines this morning. The server rejected the stale save correctly, but the interface showed a generic connection error. I can fix the message today; I cannot promise that the operating system will deliver a background notification immediately. The product requirement should be a clear recovery path when the app resumes, not an impossible guarantee about background delivery."
+    },
+    {
+      "speaker": 3,
+      "text": "That recovery path is where I think the current design falls short. The error says that something went wrong and offers Try Again. From the customer's perspective, trying again is reasonable, but it repeats an operation that will never succeed with their current access. I propose a dedicated message explaining that the document's sharing settings changed, followed by a button to return to the folder. If they have unsaved edits, we should preserve a local copy and explain where it went. We must not silently discard their work just because the access check behaved correctly. I have a draft with two versions, one for an editor who still has viewing access and another for someone whose access was removed entirely."
+    },
+    {
+      "speaker": 5,
+      "text": "Please make the copy location explicit."
+    },
+    {
+      "speaker": 3,
+      "text": "Yes, an actual filename and a button to reveal it. We can avoid displaying sensitive document text inside the error itself. I also want the folder name shown consistently on the move confirmation and the resulting breadcrumb. Several research participants thought they were copying a document because the old menu used the word Add. Changing the label to Move helps, but the confirmation should also explain that colleagues with access to the destination folder will gain access to the document. That is the moment when a person can make an informed choice, and it deserves more than a tiny tooltip."
+    },
+    {
+      "speaker": 5,
+      "text": "Support sees this confusion already in the internal preview. People ask whether removing a teammate from a folder deletes that teammate's edits, and whether moving a document changes its owner. Those are different questions, but our current help article answers them in one dense paragraph. I will split it into three examples with screenshots. The first example will show a normal move with inherited access. The second will show removing a teammate while retaining revision history. The third will show a failed save after access changes. For that last one, I need the final recovery interface before I can publish instructions. Otherwise we will train customers to look for a button that does not exist."
+    },
+    {
+      "speaker": 1,
+      "text": "That sounds like a launch dependency, not a documentation follow-up. Quality, what would you need to call this ready? Please distinguish the small pilot from a general release. We can accept a known limitation if it is bounded and clearly communicated, but we cannot accept losing work or exposing content to someone who should not see it. I also want to know whether our test accounts represent real team structures. Five accounts with identical permissions are easy to reason about and very different from an actual workspace with guests, admins, and people who belong to multiple folders."
+    },
+    {
+      "speaker": 4,
+      "text": "For the pilot, I need successful runs across three permission structures: an ordinary member inviting another member, an administrator moving a document into a restricted folder, and an external guest losing access during an edit. Each run must include a browser refresh, a disconnected interval, and a second device. We already covered the straightforward paths. The gaps are recovery after sleep and a guest who has access through two separate memberships. Revoking one membership should not remove legitimate access through the other. I will record both the expected effective permission and the observed result, because simply saying that a removal passed hides which membership was removed. That matrix will take most of tomorrow, assuming the candidate build is available by breakfast."
+    },
+    {
+      "speaker": 2,
+      "text": "I can have the candidate ready tonight."
+    },
+    {
+      "speaker": 5,
+      "text": "And I need a stable build for screenshots.",
+      "overlapWithPrevious": true
+    },
+    {
+      "speaker": 2,
+      "text": "Use the same candidate as quality. I will post its identifier in the release note and stop pushing cosmetic changes into it once testing begins. If we need a functional fix, we will issue a new candidate and call out which cases need another run. One more operational detail: the feature flag gates new folder creation, but existing shared folders remain usable when we disable the flag. A rollback therefore stops expansion; it does not magically reverse access changes that customers already made. We need to be precise about that in the incident instructions."
+    },
+    {
+      "speaker": 1,
+      "text": "Agreed. Let's define the response now. A confirmed access leak pauses new invitations immediately and pages the incident lead. A recovery-message defect without data loss blocks expansion but does not require disabling existing folders. A lost-edit report is treated as a potential data-loss incident until we can recover the local copy and verify the timeline. Support should not have to decide which engineering team owns that report before escalating it. I will own the pilot roster and make sure each organization has a named contact. We are starting with three organizations, not the seven originally proposed, because we need enough attention to investigate each report carefully."
+    },
+    {
+      "speaker": 3,
+      "text": "I will deliver the final recovery screens by three today and sit with engineering during implementation. The acceptance criteria will include keyboard focus and screen-reader text, not just the visual layout. When the message appears, focus should land on its heading, and the preserved-copy action should have a clear accessible name. A person should be able to complete recovery without hunting through a disappearing notification. I will also remove the optimistic success toast from the move operation until the server confirms the change. Showing success before a permissions decision finishes creates exactly the wrong kind of confidence."
+    },
+    {
+      "speaker": 4,
+      "text": "One clarification before we close: passing tomorrow's matrix authorizes the three-organization pilot only. It does not automatically authorize broad availability. I will attach the environment, build identifier, account roles, and unresolved limitations to the report. We should schedule a separate review after a week of actual usage, including support reports and failed move attempts. If the pilot produces no complaints but almost nobody uses shared folders, that is weak evidence, not a clean bill of health."
+    },
+    {
+      "speaker": 1,
+      "text": "Then the decision is a conditional pilot. Engineering owns the recovery behavior and tonight's candidate. Design owns the final screens and accessibility checks. Quality owns the permission matrix and its evidence. Support owns the examples and escalation instructions. I own the roster and the final go decision tomorrow afternoon. No one should interpret silence in the channel as approval. We will write the decision down after the evidence is reviewed, and if a gate fails, we move the date instead of redefining the gate. Thanks, everyone. Please stay for two minutes if you need to coordinate the screenshot handoff."
+    }
+  ]
+}

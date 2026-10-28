@@ -112,6 +112,9 @@ final class RecallController {
             if let scope = body["meetingId"] as? String, !scope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 bots = bots.filter { $0["meeting_id"] as? String == Self.meetingID(scope) }
             }
+            if body["activeOnly"] as? Bool == true {
+                bots = bots.filter { !Self.departedStatuses.contains($0["status"] as? String ?? "unknown") }
+            }
             return ["ok": true, "bots": bots]
         case "add":
             let meeting = try await resolveMeetingURL(required(body, "meetingUrl"), passcode: body["passcode"] as? String, model: model)
