@@ -50,16 +50,6 @@ struct BotSpeakerApp: App {
         }
         .defaultSize(width: 1040, height: 720)
 
-        MenuBarExtra {
-            MenuBarView(model: model)
-                .disabled(model.isShuttingDown)
-        } label: {
-            Image(systemName: model.player.isPlaying ? "waveform.circle.fill" : "waveform")
-                .symbolRenderingMode(.monochrome)
-                .accessibilityLabel("Bot Speaker")
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView(model: model, updates: updates)
                 .disabled(model.isShuttingDown)

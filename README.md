@@ -36,7 +36,7 @@ The repository and its release downloads are public.
 
 - Recall speech controls with named speaker selection, per-speaker message and voice drafts, 10 short and 10 long samples, and a bounded scrolling history
 
-- Native SwiftUI menu-bar app on macOS and native WPF app with tray controls on Windows
+- Native SwiftUI desktop app in the Dock on macOS and native WPF app with tray controls on Windows
 - Bundled DirectMic driver and installer for Mac host speech in Recall.ai orchestrated meetings, with no separate download or source checkout required
 - Closing the Windows window fully quits; active playback or meetings require confirmation and cleanup before exit
 - One running instance per executable path; duplicate launches exit, while copies in different folders can run concurrently (macOS guard applies within the current user account)
