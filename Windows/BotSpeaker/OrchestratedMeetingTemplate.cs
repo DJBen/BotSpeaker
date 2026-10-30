@@ -70,6 +70,12 @@ public sealed record OrchestratedMeetingTemplate(
 
         {{speaker_4}}: I bring good news for once! [cheerful] Customers love this thing. Pilot teams say it saves them ten, fifteen minutes per meeting. The bad news — [sighs] — is they keep calling the draft "the record." Which it is not. If we don't hammer "editable draft" into every screen and every training doc, someone is going to file an action item straight from a hallucination, and the escalation will have my name on it.
 
+        {{speaker_1}}: Before we move on, what happens if the organizer joins late? The calendar invite is not proof that everyone saw the notice.
+
+        {{speaker_3}}: Exactly. [serious] We check the notice state when processing starts, including people who arrived after the meeting began. If that check fails, the job stays blocked. Nobody gets to click through a warning and generate anyway. For the pilot, I want the evidence attached to each test case: who joined, what they could see, and whether generation was allowed. We also need a case where someone reconnects from another device. That's the sort of ordinary behavior that disappears from a tidy demo and immediately shows up with a real customer.
+
+        {{speaker_4}}: Good. Put that in training.
+
         {{speaker_1}}: [laughs] Noted. Okay, latency. Median is six seconds, but the tail reaches the high twenties. Do we need a week of shadowing, or is forty-eight hours enough? I want a number, not a vibe. And before anyone says "it depends"—
 
         {{speaker_2}}: [jumping in] —It depends. [laughs] Kidding! Forty-eight hours, if we define the evidence up front. Replay on ten thousand meetings already brought the ninety-fifth percentile under eleven seconds with no quality drop. Shadow traffic, one canary org, a rollback exercise, and if anything crosses a threshold, the clock resets. Adding five more days after clean evidence is just… superstition. [dry] Comforting, expensive superstition.
@@ -82,11 +88,19 @@ public sealed record OrchestratedMeetingTemplate(
 
         {{speaker_2}}: Agreed. There's a real "delayed" state, and support gets the exact state table before training. Screenshots and all.
 
+        {{speaker_1}}: And restarting? Do we accidentally send two drafts?
+
+        {{speaker_2}}: No duplicate drafts. [firm] Each meeting keeps the same job identifier through a retry, and publishing the result is idempotent. But there's a distinction worth making: turning the switch back on does not automatically release everything that accumulated behind it. An operator reviews the delayed jobs first. We recheck access and retention before resuming, because a participant might have requested deletion while we were paused. If that happened, the job is cancelled, not resurrected. I'll demonstrate that sequence during the rollback exercise so support sees the actual screens and the audit trail together.
+
         {{speaker_1}}: Okay, German. [sighs] Action-item recall is still a few points behind English. I say we keep it, label it beta, and gate it per language. Objections?
 
         {{speaker_4}}: Keep it — two of the five customers joined specifically for German. But the account team says "beta" out loud before enablement, and the weekly report breaks omissions out by language. No hiding it in a blended average.
 
         {{speaker_3}}: Agreed, as long as a German regression pauses German only. And on my deletion drill: support runs it while engineering watches. If the runbook needs an engineer at the keyboard, it failed. My no-go lines are written down — notice failure entering generation, derived content outliving its window, or transcript text showing up in audit logs.
+
+        {{speaker_4}}: One last scenario. [thoughtful] A customer opens a draft and says an action item belongs to the wrong person. We need a correction path that takes seconds, and we need to know whether that correction means the model was wrong or the transcript was ambiguous. My team can collect the example with permission, link it to the source, and record the language. We should never ask them to paste a whole confidential meeting into a support ticket. I'll add a short exercise to onboarding: fix an owner, remove an unsupported claim, then check the source before sharing. That makes "editable draft" a habit instead of a disclaimer.
+
+        {{speaker_3}}: Yes. Minimum necessary evidence, every time.
 
         {{speaker_1}}: Then here's the decision: conditional go, five customers. {{speaker_2}} owns audit events and the canary. {{speaker_3}} owns notice and the deletion drill. {{speaker_4}} owns training and the escalation roster. Any function can pull the brake without a committee vote. [relieved] And can I just say — third attempt at scheduling this meeting, and we actually made a decision. I'm framing this calendar invite. Thanks, everyone.
         """);

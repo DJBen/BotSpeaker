@@ -1,24 +1,22 @@
 # BotSpeaker
 
-**You can test a multi-party meeting in the same room with distinctive bot speakers.**
+BotSpeaker simulates multi-person meetings with scripted speakers and distinct ElevenLabs voices. Use Recall.ai bots, pair Macs and Windows PCs, or send speech from one computer into a meeting through a virtual microphone.
 
-<img width="463" height="609" alt="Screenshot 2026-08-11 at 6 26 49 PM" src="https://github.com/user-attachments/assets/dc4b369e-45b9-4c7f-9f81-0f75ef43c896" />
+![BotSpeaker on macOS: the expanded four-speaker launch-readiness meeting](docs/screenshots/launch-readiness.png)
 
-BotSpeaker is a native macOS and Windows utility that turns meeting scripts into ElevenLabs speech and sends it to a virtual microphone. It lets you simulate additional attendees in Microsoft Teams, Zoom, Google Meet, and other meeting applications while retaining control over voice, timing, volume, and playback position.
-
-The macOS app uses SwiftUI and bundles **DirectMic** for local speech and host participation in Recall.ai meetings. DirectMic sends speech directly into a microphone input without system playback. The Windows app uses WPF and [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
+The macOS app is a native SwiftUI desktop app with bundled **DirectMic** routing. The Windows app uses WPF and supports [VB-Audio Virtual Cable](https://vb-audio.com/Cable/). Both include a command-line interface for scripts and agents.
 
 ## Download
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.5.14-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.5.14), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
-- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.5.14 binary. The version is pinned to this macOS release.
+- **macOS 14 or later:** [`BotSpeaker-0.6.2-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.6.2), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.6.2 binary. The version is pinned to this macOS release.
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.5.14
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.6.2
   ```
-- **Windows 10/11 x64:** [BotSpeaker 0.5.11 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.11/BotSpeaker-Windows-x64-0.5.11.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
+- **Windows 10/11 x64:** [BotSpeaker 0.5.12 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker-Windows-x64-0.5.12.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
 
   ```powershell
@@ -27,57 +25,28 @@ The macOS app uses SwiftUI and bundles **DirectMic** for local speech and host p
 
 The repository and its release downloads are public.
 
-## Example configurations
-| Mac | Windows |
-| --- | --- |
-| <img width="304" height="300" alt="Screenshot 2026-08-13 at 1 18 01 PM" src="https://github.com/user-attachments/assets/3c9ad85e-ef01-4839-9e5d-017787c66d33" /> | <img width="304" alt="image" src="https://github.com/user-attachments/assets/69365248-974d-42ac-8f32-c263a2e6defa" /> |
+## Meeting workflows
 
-## Features
+- **Recall.ai bots:** paste a meeting URL or Teams invitation, assign names and voices, prepare the conversation, and run it with individual speaker bots. On macOS, **Manage Bots** lists unfinished bots across meetings.
+- **Paired computers:** choose **Host Meeting**, pair attendees using the host code, prepare each speaker, and control turn handoffs from the host. Macs and Windows PCs can participate together.
+- **Local speech:** use **Speak**, a saved script, or the CLI to play text or recorded audio. On macOS, route speech directly to DirectMic; on Windows, use a virtual audio cable.
 
-- Recall speech controls with named speaker selection, per-speaker message and voice drafts, 10 short and 10 long samples, and a bounded scrolling history
+![BotSpeaker on macOS: ad hoc speech controls](docs/screenshots/speak.png)
 
-- Native SwiftUI desktop app in the Dock on macOS and native WPF app with tray controls on Windows
-- Bundled DirectMic driver and installer for Mac host speech in Recall.ai orchestrated meetings, with no separate download or source checkout required
-- Closing the Windows window fully quits; active playback or meetings require confirmation and cleanup before exit
-- One running instance per executable path; duplicate launches exit, while copies in different folders can run concurrently (macOS guard applies within the current user account)
-- Automatic macOS update checks powered by Sparkle, with a manual **Check for Updates…** action
-- Windows installer builds use Velopack for background downloads and an explicit **Restart to update** tray action; portable ZIPs remain manual-update builds
-- ElevenLabs API-key setup, validation, and platform-encrypted storage
-- ElevenLabs voice selection
-- Saved speech-model selection in Settings or `botspeaker models --select ID`: Flash v2 (`eleven_flash_v2`) by default, or Eleven v3 (`eleven_v3`). Flash v2 is English-only; use v3 for the bundled templates' expressive audio tags. Each machine uses its own saved model for local and remote-requested speech.
-- Speech generated at a 1.1× default speed for a more natural meeting pace
-- Sequential, sentence-aware speech generation for long scripts
-- Persistent audio-chunk caching per script, voice, and model
-- Three launch-retrospective role templates written for Eleven v3 audio tags, with one-time speaker-name substitution
-- One host-controlled, four-speaker **AI meeting assistant launch readiness** conversation
-- Side-by-side script library and playback workspace, plus named custom scripts
-- Play, pause, stop, seek, and progress-aware text highlighting
-- Persistent output-volume control applied before audio reaches the virtual device
-- Multi-machine meeting orchestration across macOS and Windows: the host owns a
-  shared `{{speaker_1}}`-style script, assigns roles by client order, and controls
-  automatic handoff, pause, resume, skip, and stop
-- Ahead-of-time orchestration preparation that caches every assigned paragraph
-  before playback and reuses unchanged text and voice results across meetings
-- A **Speak** page for ad hoc text: play it on this machine at any time, or, while
-  hosting, on any paired attendee; attendees get the same box in Remote Mode.
-  Recent requests from the app and the CLI are listed with their pass count and a
-  cancel control, and script templates stay available while hosting
-- Loop-until-stopped and repeat-N playback for ad hoc speech and recorded audio
-- A `botspeaker` command-line tool for macOS and Windows that speaks text,
-  plays audio files, picks voices and outputs, hosts or joins meetings, and
-  targets paired attendees, with `--json` output for scripts
-- A loopback HTTP control API with a per-launch bearer token behind the CLI,
-  usable from `curl` or any language
-- A ready-made agent skill (`cli/skills/botspeaker/SKILL.md`) so Claude Code and
-  similar LLM agents can speak into a meeting
-- Self-updating CLI on macOS (`botspeaker upgrade`) with a reminder whenever the
-  Sparkle-updated app gets ahead of it
-- Timestamped JSON transcript export with both playback-device and
-  server-received start/end times for every speaker turn
-- Optional looping, disabled by default
-- Recall.ai meeting bots with individual voices, scheduled speech, and orchestrated turns
-- Start and stop a remote bot's test screen share from Recall controls, during orchestrated meetings, or through the CLI/API
-- Recall CLI controls (Windows 0.5.5 and macOS 0.5.6) for Teams invitation input, meeting-scoped bot cleanup, prepared speech, job waits, and JSON meeting plans
+## Scripts and playback
+
+The built-in library includes short release and sprint checks, an API incident review, a performance-review 1:1, and the four-speaker **AI meeting assistant launch readiness** conversation. The launch review now has **21 turns**, with about **50% more spoken words** and utterances ranging from quick acknowledgments to extended explanations. Actual duration depends on the selected voices and speech model.
+
+On macOS, import and export reusable JSON meeting plans. Three longer five-speaker examples cover release readiness, incident recovery, and customer research, including simultaneous speech groups for Recall.ai. See the [meeting plan guide](docs/meeting-plans.md).
+
+- Choose speaker names and voices, preview scripts, and prepare audio before starting.
+- Play, pause, stop, seek, and follow highlighted text; repeat ad hoc speech or audio a fixed number of times or until stopped.
+- Reuse cached speech for unchanged text, voice, and model combinations.
+- Select Flash v2 (English-only, the default) or Eleven v3 in Settings. Use v3 for the expressive audio tags in the built-in conversations.
+- Start or stop a bot's test screen share and export timestamped ground truth for meeting evaluation.
+- Control the running app through the CLI or its authenticated loopback HTTP API.
+
+macOS releases are signed, notarized, and update through Sparkle. Windows installer releases use Velopack; portable ZIP builds update manually. API keys are stored using the macOS Keychain or Windows DPAPI.
 
 ## Runtime requirements
 
@@ -193,7 +162,7 @@ On macOS, **Orchestrated meeting → Import Meeting Plan…** adds reusable JSON
 For a scripted conversation, choose **Host in Recall.ai** on an orchestrated
 script, assign speaker names and voices, and choose **Arrange turns**. Admit
 the bots from the meeting lobby before starting. Both platforms prepare every turn’s
-audio before playback in the current source. Returning to the same sidebar item preserves progress
+audio before playback. Returning to the same sidebar item preserves progress
 for the current app session. After stopping or finishing, use **Remove all bots**
 to make the speaker bots leave.
 
