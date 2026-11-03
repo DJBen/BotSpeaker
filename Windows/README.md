@@ -12,7 +12,7 @@ Core features shared with the macOS app, plus Windows-specific controls:
 - Sequential, sentence-aware speech generation for long scripts (identical chunking to macOS)
 - A shared FIFO queue limits ElevenLabs synthesis to six concurrent requests per app process, including requests from the CLI and Recall jobs. Waiting requests can be cancelled; cached audio bypasses the queue. Separate app processes or computers do not share this limit. Temporary network failures, timeouts, HTTP 408/429, and HTTP 500/502/503/504 retry up to three times after the initial attempt, with 1/2/4-second backoff plus jitter (or a longer `Retry-After`). Backoff releases the queue slot and remains cancellable.
 - Persistent audio-chunk caching per script, voice, and model
-- Three read-only launch-retrospective templates written for Eleven v3 audio tags, plus named custom scripts with a separate editor window
+- Three read-only launch-retrospective templates with plain spoken text for Flash v2, plus named custom scripts with a separate editor window
 - Play, pause, stop, seek, and progress-aware text highlighting driven by ElevenLabs character timestamps
 - Persistent output-volume control applied before audio reaches the virtual cable
 - Cross-platform meeting orchestration where the host distributes one

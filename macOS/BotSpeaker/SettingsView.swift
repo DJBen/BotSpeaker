@@ -18,7 +18,7 @@ struct SettingsView: View {
                     Text("Flash v2 (default)").tag("eleven_flash_v2")
                     Text("Eleven v3").tag("eleven_v3")
                 }
-                Text("Flash v2 is English-only. Choose Eleven v3 for expressive audio tags in the bundled templates.")
+                Text("Flash v2 is English-only. Built-in scripts use plain spoken text compatible with both models.")
                     .font(.caption).foregroundStyle(.secondary)
                 VoicePicker(model: model)
                 Text("This is the default voice for scripts and local speech. Both models use the same account voice list, but delivery can differ. Professional voice clones may sound less faithful with v3.")

@@ -24,8 +24,7 @@ public sealed record ExampleScenario(string Id, string Title, IReadOnlyList<Exam
 /// A role-specific script from a coordinated meeting scenario. Built-in
 /// scripts are templates: {{name}} is resolved once when a user creates a
 /// named copy, so playback and caching never depend on mutable profile data.
-/// Scripts are written for ElevenLabs v3: bracketed audio tags such as
-/// [laughs] or [sighs] steer the expressive delivery.
+/// Scripts use plain spoken text for Flash v2 compatibility.
 /// </summary>
 public sealed record ExampleExcerpt(string Id, string Role, string Meeting, string Text)
 {

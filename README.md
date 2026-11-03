@@ -10,11 +10,11 @@ The macOS app is a native SwiftUI desktop app with bundled **DirectMic** routing
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.6.3-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.6.3), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
-- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.6.3 binary. The version is pinned to this macOS release.
+- **macOS 14 or later:** [`BotSpeaker-0.6.4-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.6.4), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.6.4 binary. The version is pinned to this macOS release.
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.6.3
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.6.4
   ```
 - **Windows 10/11 x64:** [BotSpeaker 0.5.12 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker-Windows-x64-0.5.12.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
@@ -43,7 +43,7 @@ On macOS, import and export reusable JSON meeting plans. Three longer five-speak
 - Choose speaker names and voices, preview scripts, and prepare audio before starting.
 - Play, pause, stop, seek, and follow highlighted text; repeat ad hoc speech or audio a fixed number of times or until stopped.
 - Reuse cached speech for unchanged text, voice, and model combinations.
-- Select Flash v2 (English-only, the default) or Eleven v3 in Settings. Use v3 for the expressive audio tags in the built-in conversations.
+- Select Flash v2 (English-only, the default) or Eleven v3 in Settings. Built-in conversations use plain spoken text compatible with both models.
 - Start or stop a bot's test screen share and export timestamped ground truth for meeting evaluation.
 - Control the running app through the CLI or its authenticated loopback HTTP API.
 
