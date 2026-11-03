@@ -10,6 +10,31 @@ struct OrchestratedMeetingTemplate: Identifiable, Hashable, Codable {
 
     var overlapTurnIndices: [Int] = []
 
+    /// Stable fictional casts, independent of voice catalog names. Imported plans
+    /// use the fallback cast until the user supplies their own names.
+    var defaultSpeakerNames: [String] {
+        let casts: [String: [String]] = [
+            "meeting-assistant-launch-readiness": ["Daniel Kim", "Amara Okafor", "Rafael Costa", "Priya Shah"],
+            "api-latency-incident-review": ["Omar Haddad", "Mei Chen", "Gabriel Santos"],
+            "performance-review-one-on-one": ["Sofia Martinez", "Arjun Patel"],
+            "five-person-release-check": ["Aisha Rahman", "Lucas Oliveira", "Hana Suzuki", "Kwame Mensah", "Elena Petrova"],
+            "four-person-sprint-check": ["Fatima Hassan", "Diego Rivera", "Ji-woo Park", "Noah Williams"],
+            "release-deep-dive": ["Maya Thompson", "Ethan Nguyen", "Isabella Rossi", "Yusuf Ahmed", "Zoe Mensah"],
+            "incident-workshop": ["Leila Mansour", "Carlos Mendes", "Anika Rao", "David Chen", "Grace Nwosu"],
+            "customer-research": ["Nadia Ali", "Mateo Garcia", "Yuna Sato", "Samuel Okoro", "Clara Dubois"]
+        ]
+        let fallback = ["Aisha Rahman", "Daniel Kim", "Sofia Martinez", "Omar Haddad", "Mei Chen", "Gabriel Santos",
+                        "Priya Shah", "Kwame Mensah", "Elena Petrova", "Lucas Oliveira", "Hana Suzuki", "Noah Williams"]
+        return casts[id] ?? Array(fallback.prefix(speakerCount))
+    }
+
+    func speakerName(slot: Int, savedName: String?) -> String {
+        if let savedName, !savedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return savedName
+        }
+        return defaultSpeakerNames[slot - 1]
+    }
+
     var speakerCount: Int { speakerRoles.count }
     var turnCount: Int { (try? parsedTurns().count) ?? 0 }
 

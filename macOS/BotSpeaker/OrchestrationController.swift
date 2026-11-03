@@ -318,7 +318,7 @@ final class OrchestrationController {
             return OrchestratedSpeakerConfiguration(
                 slot: slot,
                 role: role,
-                name: saved?.name ?? "",
+                name: template.speakerName(slot: slot, savedName: saved?.name),
                 voiceID: saved?.voiceID ?? model?.voiceID ?? "",
                 voiceName: saved?.voiceName ?? model?.selectedVoiceName ?? "Choose a voice"
             )

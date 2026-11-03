@@ -21,16 +21,20 @@ final class RecallMeetingPlan {
     var title = ""
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
     var passcode = ""
-    var includeHost = false
-    var useDirectMic = false
-    var hostName = ""
+    var includeHost = false { didSet { persistHostPreferences() } }
+    var useDirectMic = false { didSet { persistHostPreferences() } }
+    var hostName = "" { didSet { persistHostPreferences() } }
     var exportGroundTruth = false
     var artifactURL: URL?
     func isHost(_ index: Int) -> Bool { includeHost && index == 0 }
     func speakerName(_ index: Int) -> String { isHost(index) ? hostName.trimmingCharacters(in: .whitespacesAndNewlines) : speakers[index].name }
     var preparing = false
     var step = 0
-    var speakers: [Speaker] = []
+    var speakers: [Speaker] = [] {
+        didSet {
+            if oldValue.map(\.configuration) != speakers.map(\.configuration) { persistSpeakers() }
+        }
+    }
     var turns: [Turn] = []
     var message = ""
     var busy = false
@@ -38,6 +42,7 @@ final class RecallMeetingPlan {
     var skipRequested = false
     @ObservationIgnored private var source: OrchestrationController?
     @ObservationIgnored private var templateID = ""
+    @ObservationIgnored private var restoringPreferences = false
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var task: Task<Void, Never>?
 
@@ -45,9 +50,21 @@ final class RecallMeetingPlan {
         guard speakers.isEmpty else { return }
         let parsed = try OrchestratedScriptParser.parse(source.meetingScriptText, speakerCount: source.selectedTemplate.speakerCount)
         self.source = source; templateID = source.selectedTemplate.id
+        restoringPreferences = true
+        let hostPreferences = UserDefaults.standard.dictionary(forKey: "orchestratedMeetingHostPreferences")?[templateID] as? [String: Any]
+        hostName = hostPreferences?["name"] as? String ?? source.speakerConfigurations.first?.name ?? ""
+        includeHost = hostPreferences?["includeHost"] as? Bool ?? false
+        useDirectMic = hostPreferences?["useDirectMic"] as? Bool ?? false
+        restoringPreferences = false
         title = source.selectedTemplate.title
         speakers = source.speakerConfigurations.map { Speaker(configuration: $0) }
         turns = parsed.enumerated().map { Turn(speaker: $0.element.speakerIndex, text: $0.element.text, overlapWithPrevious: source.selectedTemplate.overlapTurnIndices.contains($0.offset)) }
+    }
+    private func persistHostPreferences() {
+        guard !restoringPreferences, !templateID.isEmpty else { return }
+        var saved = UserDefaults.standard.dictionary(forKey: "orchestratedMeetingHostPreferences") ?? [:]
+        saved[templateID] = ["name": hostName, "includeHost": includeHost, "useDirectMic": useDirectMic]
+        UserDefaults.standard.set(saved, forKey: "orchestratedMeetingHostPreferences")
     }
     func persistSpeakers() {
         source?.saveRecallSpeakerConfigurations(templateID: templateID, configurations: speakers.map(\.configuration))
@@ -188,7 +205,6 @@ struct RecallMeetingView: View {
                 }
             }.padding(22)
         }
-        .onChange(of: plan.speakers) { _, _ in plan.persistSpeakers() }
         .task {
             await model.loadVoicesIfNeeded()
             while !Task.isCancelled {

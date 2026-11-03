@@ -24,6 +24,14 @@ public sealed record OrchestratedMeetingTemplate(
     IReadOnlyList<string> DefaultVoiceGenders,
     string Text)
 {
+    public IReadOnlyList<string> DefaultSpeakerNames => Id switch
+    {
+        "meeting-assistant-launch-readiness" => ["Daniel Kim", "Amara Okafor", "Rafael Costa", "Priya Shah"],
+        "api-latency-incident-review" => ["Omar Haddad", "Mei Chen", "Gabriel Santos"],
+        "performance-review-one-on-one" => ["Sofia Martinez", "Arjun Patel"],
+        _ => ["Aisha Rahman", "Daniel Kim", "Sofia Martinez", "Omar Haddad", "Mei Chen", "Gabriel Santos", "Priya Shah", "Kwame Mensah", "Elena Petrova", "Lucas Oliveira", "Hana Suzuki", "Noah Williams"]
+    };
+
     public int SpeakerCount => SpeakerRoles.Count;
     public int TurnCount => ParseTurns(Text).Count;
 

@@ -6,7 +6,22 @@ struct AppError: LocalizedError {
 }
 struct ElevenLabsVoice { static func shortName(from name: String) -> String { name } }
 @main struct MeetingGroundTruthTests {
+    static func checkNames(_ template: OrchestratedMeetingTemplate) {
+        precondition(template.defaultSpeakerNames.count == template.speakerCount)
+        precondition(Set(template.defaultSpeakerNames).count == template.speakerCount)
+        for slot in 1...template.speakerCount {
+            let name = template.speakerName(slot: slot, savedName: nil)
+            precondition(name.split(separator: " ").count >= 2)
+            precondition(template.speakerName(slot: slot, savedName: "") == name)
+            precondition(template.speakerName(slot: slot, savedName: "   ") == name)
+            precondition(template.speakerName(slot: slot, savedName: "Renée O’Connor") == "Renée O’Connor")
+            var speaker = OrchestratedSpeakerConfiguration(slot: slot, role: "Test", name: name, voiceID: "a", voiceName: "Voice A")
+            speaker.voiceID = "b"; speaker.voiceName = "Voice B"
+            precondition(speaker.name == name)
+        }
+    }
     static func main() throws {
+        for template in OrchestratedMeetingTemplate.all { checkNames(template) }
         for template in [OrchestratedMeetingTemplate.quickFivePerson, .quickFourPerson] {
             let turns = try template.parsedTurns()
             precondition(Set(turns.map(\.speakerIndex)).count == template.speakerCount)
@@ -19,6 +34,8 @@ struct ElevenLabsVoice { static func shortName(from name: String) -> String { na
             let data = try Data(contentsOf: url)
             let file = try JSONDecoder().decode(OrchestratedPlanFile.self, from: data)
             let template = try file.template(id: name)
+            checkNames(template)
+            checkNames(try file.template(id: "imported-plan"))
             let turns = try template.parsedTurns()
             let lengths = turns.map { $0.text.split(whereSeparator: \.isWhitespace).count }
             precondition(template.speakerCount == 5 && Set(turns.map(\.speakerIndex)).count == 5)

@@ -312,7 +312,7 @@ public sealed partial class OrchestrationController : INotifyPropertyChanged
             {
                 Slot = slot,
                 Role = role,
-                Name = preference?.Name ?? "",
+                Name = string.IsNullOrWhiteSpace(preference?.Name) ? template.DefaultSpeakerNames[index] : preference.Name,
                 VoiceId = preference?.VoiceId ?? _model.VoiceId,
                 VoiceName = preference?.VoiceName ?? _model.SelectedVoiceName,
             };
