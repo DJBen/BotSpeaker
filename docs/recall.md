@@ -286,21 +286,30 @@ quit cancels their pending local jobs. Plans and jobs are not restored after exi
 
 ### Include this computer and export ground truth (macOS)
 
-In **Host in Recall.ai**, enter the meeting invitation, then enable **Include this
-computer as speaker 1**. Enter **Host Speaker name** exactly as this machine appears
-in the meeting. A five-person script invites four bots; a four-person script
-invites three. Choose speaker 1's voice as usual. Host turns play through the app's
-selected output device: route that virtual device (for example BlackHole) into the
-meeting microphone and unmute the host. All clips prepare before any turn plays.
-The new **Five-person release check** and **Four-person sprint check** scenarios use
-short turns alternating the host with other attendees.
+In **Host in Recall.ai**, enter the meeting invitation, then select **Play locally**
+for each speaker that should use this computer. You can select none, one, several,
+or all speakers, including speakers other than speaker 1. Each keeps their own
+editable name and ElevenLabs voice. Only unselected speakers receive Recall bots;
+a five-person script with two local speakers invites three bots.
+
+Assignments and the DirectMic option are saved per meeting plan. Existing speaker-1
+host selections and host names migrate automatically. To change assignments after
+inviting bots, remove the bots and choose **Change meeting**.
+
+Local turns use DirectMic when enabled, otherwise the app's selected output device.
+Route that virtual device into the meeting microphone and unmute the host. All
+clips prepare before any turn plays. Overlapping local speakers require a virtual
+output such as BlackHole; DirectMic supports sequential local speakers, and the
+app rejects simultaneous local turns on DirectMic before playback. The **Five-person
+release check** and **Four-person sprint check** scenarios use short turns
+alternating speaker 1 with other attendees.
 
 Enable **Produce ground truth after the meeting** to save a `gt_final.json`
 automatically after successful completion. **Reveal ground truth artifact** opens
 its location under `~/Library/Application Support/BotSpeaker/GroundTruth/<run UUID>/`.
 The `gt_final_v1` payload contains the meeting ID, roster, stable seat-based speaker
-keys, host `recorder` flag, scripted text (without bracketed voice directions), and
-millisecond turn intervals. Duplicate display names retain distinct speaker keys.
+keys, `recorder` flag for each local speaker, scripted text (without bracketed
+voice directions), and millisecond turn intervals. Duplicate display names retain distinct speaker keys.
 Stopped or failed runs do not produce a final artifact; skipped turns are omitted.
 
 These are orchestration estimates, not human-reviewed or recording-aligned truth.

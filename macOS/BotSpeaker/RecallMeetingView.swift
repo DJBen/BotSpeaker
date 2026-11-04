@@ -21,13 +21,12 @@ final class RecallMeetingPlan {
     var title = ""
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
     var passcode = ""
-    var includeHost = false { didSet { persistHostPreferences() } }
+    var localSpeakerIndices: Set<Int> = [] { didSet { persistHostPreferences() } }
     var useDirectMic = false { didSet { persistHostPreferences() } }
-    var hostName = "" { didSet { persistHostPreferences() } }
     var exportGroundTruth = false
     var artifactURL: URL?
-    func isHost(_ index: Int) -> Bool { includeHost && index == 0 }
-    func speakerName(_ index: Int) -> String { isHost(index) ? hostName.trimmingCharacters(in: .whitespacesAndNewlines) : speakers[index].name }
+    func isLocal(_ index: Int) -> Bool { localSpeakerIndices.contains(index) }
+    func speakerName(_ index: Int) -> String { speakers[index].name }
     var preparing = false
     var step = 0
     var speakers: [Speaker] = [] {
@@ -52,18 +51,23 @@ final class RecallMeetingPlan {
         self.source = source; templateID = source.selectedTemplate.id
         restoringPreferences = true
         let hostPreferences = UserDefaults.standard.dictionary(forKey: "orchestratedMeetingHostPreferences")?[templateID] as? [String: Any]
-        hostName = hostPreferences?["name"] as? String ?? source.speakerConfigurations.first?.name ?? ""
-        includeHost = hostPreferences?["includeHost"] as? Bool ?? false
-        useDirectMic = hostPreferences?["useDirectMic"] as? Bool ?? false
-        restoringPreferences = false
+        let preferences = RecallLocalSpeakerPreferences(saved: hostPreferences, speakerCount: source.speakerConfigurations.count)
+        localSpeakerIndices = preferences.indices
+        useDirectMic = preferences.useDirectMic
         title = source.selectedTemplate.title
         speakers = source.speakerConfigurations.map { Speaker(configuration: $0) }
+        if let name = preferences.legacyHostName, !speakers.isEmpty { speakers[0].name = name }
+        restoringPreferences = false
+        persistHostPreferences()
         turns = parsed.enumerated().map { Turn(speaker: $0.element.speakerIndex, text: $0.element.text, overlapWithPrevious: source.selectedTemplate.overlapTurnIndices.contains($0.offset)) }
     }
     private func persistHostPreferences() {
         guard !restoringPreferences, !templateID.isEmpty else { return }
         var saved = UserDefaults.standard.dictionary(forKey: "orchestratedMeetingHostPreferences") ?? [:]
-        saved[templateID] = ["name": hostName, "includeHost": includeHost, "useDirectMic": useDirectMic]
+        var preferences = RecallLocalSpeakerPreferences(saved: nil, speakerCount: speakers.count)
+        preferences.indices = localSpeakerIndices
+        preferences.useDirectMic = useDirectMic
+        saved[templateID] = preferences.saved
         UserDefaults.standard.set(saved, forKey: "orchestratedMeetingHostPreferences")
     }
     func persistSpeakers() {
@@ -95,7 +99,7 @@ final class RecallMeetingPlan {
         }
     }
     func toggleBot(_ index: Int, model: AppModel) async throws {
-        guard !isHost(index) else { return }
+        guard !isLocal(index) else { return }
         if speakers[index].bot.isEmpty {
             let name = speakers[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { throw AppError("Enter a speaker name.") }
@@ -123,14 +127,20 @@ final class RecallMeetingPlan {
     }
     func start(_ model: AppModel) async throws {
         guard !turns.isEmpty, turns.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw AppError("Add nonempty speech for each turn.") }
-        guard !includeHost || !hostName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AppError("Enter the Host Speaker name shown in the meeting.") }
         guard turns.allSatisfy({ speakers.indices.contains($0.speaker) }) else { throw AppError("A turn has an invalid speaker.") }
+        let outputDevice = useDirectMic ? DirectMicPlayer.deviceUID : model.selectedDeviceUID
+        var preferences = RecallLocalSpeakerPreferences(saved: nil, speakerCount: speakers.count)
+        preferences.indices = localSpeakerIndices
+        if outputDevice == DirectMicPlayer.deviceUID,
+           preferences.hasOverlappingLocalSpeakers(turns.map { ($0.speaker, $0.overlapWithPrevious) }) {
+            throw AppError("DirectMic supports one local speaker at a time. For overlapping local speakers, turn off DirectMic here and select a virtual output such as BlackHole in Settings, or remove the overlap between their turns.")
+        }
         try await refresh(model)
-        guard speakers.indices.allSatisfy({ isHost($0) || speakers[$0].status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
+        guard speakers.indices.allSatisfy({ isLocal($0) || speakers[$0].status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
         running = true
         artifactURL = nil
         task = Task {
-            let local = LocalMeetingSpeech(outputDevice: useDirectMic ? DirectMicPlayer.deviceUID : model.selectedDeviceUID)
+            let local = LocalMeetingSpeech(outputDevice: outputDevice)
             defer { local.stop() }
             var origin: Date?
             var recorded: [[String: Any]] = []
@@ -139,10 +149,10 @@ final class RecallMeetingPlan {
                 preparing = true
                 let preparedTurns = turns.map { turn in
                     let speaker = speakers[turn.speaker]
-                    return RecallMeetingTurn(botID: isHost(turn.speaker) ? "local" : speaker.bot, voice: speaker.voice, text: resolved(turn.text), overlapWithPrevious: turn.overlapWithPrevious)
+                    return RecallMeetingTurn(botID: isLocal(turn.speaker) ? "local:\(turn.speaker)" : speaker.bot, voice: speaker.voice, text: resolved(turn.text), overlapWithPrevious: turn.overlapWithPrevious)
                 }
                 try await RecallTurnRunner.run(preparedTurns, request: { action, body in
-                    if body["botId"] as? String == "local" || local.owns(body["id"] as? String) {
+                    if (body["botId"] as? String)?.hasPrefix("local:") == true || local.owns(body["id"] as? String) {
                         return try await local.handle(action, body, model: model)
                     }
                     var response = try await model.recall.handle(action, body, model: model)
@@ -159,10 +169,10 @@ final class RecallMeetingPlan {
                 }, completed: { index, job, skipped in
                     guard !skipped, let origin, let start = job["acceptedAtEpoch"] as? Double,
                           let duration = job["durationSeconds"] as? Double else { return }
-                    recorded.append(MeetingGroundTruth.turn(speaker: turns[index].speaker, name: speakerName(turns[index].speaker), text: preparedTurns[index].text, start: start - origin.timeIntervalSince1970, duration: duration, local: isHost(turns[index].speaker)))
+                    recorded.append(MeetingGroundTruth.turn(speaker: turns[index].speaker, name: speakerName(turns[index].speaker), text: preparedTurns[index].text, start: start - origin.timeIntervalSince1970, duration: duration, local: isLocal(turns[index].speaker)))
                 })
                 if exportGroundTruth, let origin {
-                    artifactURL = try MeetingGroundTruth.save(meetingID: RecallController.meetingID(meeting), names: speakers.indices.map { speakerName($0) }, host: includeHost ? 0 : nil, origin: origin, turns: recorded)
+                    artifactURL = try MeetingGroundTruth.save(meetingID: RecallController.meetingID(meeting), names: speakers.indices.map { speakerName($0) }, localSpeakers: localSpeakerIndices, origin: origin, turns: recorded)
                 }
                 message = "All turns dispatched. Use Remove all bots to make the speaker bots leave."
             } catch {
@@ -221,16 +231,22 @@ struct RecallMeetingView: View {
             Text("Paste a meeting invitation, join link, or Teams meeting ID.")
             TextEditor(text: $plan.meeting).frame(height: 90).border(.secondary.opacity(0.3))
             SecureField("Teams passcode (for a meeting ID)", text: $plan.passcode).textFieldStyle(.roundedBorder)
-            GroupBox("Host participation and ground truth") {
+            GroupBox("Local speakers and ground truth") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Include this computer as speaker 1", isOn: $plan.includeHost)
-                    if plan.includeHost {
-                        TextField("Host Speaker name", text: $plan.hostName).textFieldStyle(.roundedBorder)
-                        Toggle("Send host speech directly to DirectMic", isOn: $plan.useDirectMic)
-                        if plan.useDirectMic {
-                            DirectMicSetupView()
-                        }
-                        Text("Use this computer’s display name in the meeting. Invites \(max(0, plan.speakers.count - 1)) bots. Host audio uses DirectMic when enabled, otherwise the selected app output device. Select the same device as your meeting microphone.").font(.caption)
+                    ForEach(plan.speakers.indices, id: \.self) { index in
+                        Toggle("Speaker \(index + 1): \(plan.speakerName(index)) · Play locally", isOn: Binding(
+                            get: { plan.isLocal(index) },
+                            set: { selected in
+                                if selected { plan.localSpeakerIndices.insert(index) }
+                                else { plan.localSpeakerIndices.remove(index) }
+                            }
+                        ))
+                    }
+                    Text("Select any number of speakers to play through this computer. Each keeps their own name and voice. Invites \(plan.speakers.count - plan.localSpeakerIndices.count) bots.").font(.caption)
+                    if !plan.localSpeakerIndices.isEmpty {
+                        Toggle("Send local speech directly to DirectMic", isOn: $plan.useDirectMic)
+                        if plan.useDirectMic { DirectMicSetupView() }
+                        Text("Local audio uses DirectMic when enabled, otherwise the selected app output device. Select the same device as your meeting microphone.").font(.caption)
                     }
                     Toggle("Produce ground truth after the meeting", isOn: $plan.exportGroundTruth)
                     if plan.exportGroundTruth {
@@ -241,7 +257,6 @@ struct RecallMeetingView: View {
             HStack {
                 Button("Back") { onBack() }
                 Button("Continue to bots") { plan.perform {
-                    guard !plan.includeHost || !plan.hostName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AppError("Enter the Host Speaker name.") }
                     guard model.recall.configured else { throw AppError("Configure Recall first.") }
                     plan.meeting = try await model.recall.resolveMeetingURL(plan.meeting, passcode: plan.passcode, model: model)
                     plan.passcode = ""
@@ -254,9 +269,7 @@ struct RecallMeetingView: View {
             ForEach(plan.speakers.indices, id: \.self) { index in
                 GroupBox("Speaker \(index + 1)") {
                     VStack(alignment: .leading) {
-                        if plan.isHost(index) { Text("\(plan.speakerName(index)) · This computer") } else {
-                            TextField("Speaker name", text: $plan.speakers[index].name).textFieldStyle(.roundedBorder).disabled(!plan.speakers[index].bot.isEmpty)
-                        }
+                        TextField("Speaker name", text: $plan.speakers[index].name).textFieldStyle(.roundedBorder).disabled(!plan.speakers[index].bot.isEmpty)
                         Picker("Voice", selection: Binding(get: { plan.speakers[index].voice }, set: { plan.selectVoice(index, voice: $0, model: model) })) {
                             ForEach(model.voices) { voice in Text(voice.name).tag(voice.id) }
                         }.labelsHidden().controlSize(.small)
@@ -264,7 +277,7 @@ struct RecallMeetingView: View {
                             if !plan.speakers[index].bot.isEmpty {
                                 Button("Remove bot") { plan.perform { try await plan.toggleBot(index, model: model) } }
                             }
-                            Text(plan.isHost(index) ? "Local playback" : plan.speakers[index].status).foregroundStyle(.secondary)
+                            Text(plan.isLocal(index) ? "Local playback" : plan.speakers[index].status).foregroundStyle(.secondary)
                         }
                     }.padding(6)
                 }
@@ -275,7 +288,7 @@ struct RecallMeetingView: View {
                 Button("Remove all bots") { plan.perform { await plan.removeAllBots(model) } }
                     .disabled(plan.speakers.allSatisfy { $0.bot.isEmpty })
                 Button("Arrange turns") { plan.perform {
-                    for index in plan.speakers.indices where !plan.isHost(index) && plan.speakers[index].bot.isEmpty {
+                    for index in plan.speakers.indices where !plan.isLocal(index) && plan.speakers[index].bot.isEmpty {
                         plan.message = "Adding \(plan.speakers[index].name) to the meeting…"
                         try await plan.toggleBot(index, model: model)
                     }
@@ -286,7 +299,7 @@ struct RecallMeetingView: View {
                     .disabled(plan.speakers.indices.contains { plan.speakerName($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || plan.speakers[$0].voice.isEmpty }).buttonStyle(.borderedProminent)
             }
         } else {
-            ForEach(plan.speakers.indices, id: \.self) { i in Text("\(plan.speakerName(i)): \(plan.isHost(i) ? "This computer" : plan.speakers[i].status)").font(.caption) }
+            ForEach(plan.speakers.indices, id: \.self) { i in Text("\(plan.speakerName(i)): \(plan.isLocal(i) ? "This computer" : plan.speakers[i].status)").font(.caption) }
             Text("Turns play in order. All audio is prepared before playback. Timing uses clip duration; Recall does not confirm when playback ends.").font(.caption)
             HStack {
                 Button("Back to bots") { plan.step = 1 }

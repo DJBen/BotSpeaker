@@ -255,11 +255,13 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         var overlapDispatches: [String] = []
         var overlapCompletions: [Int] = []
         try await RecallTurnRunner.run([
-            RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "long"),
-            RecallMeetingTurn(botID: MockHTTP.other, voice: "v", text: "short", overlapWithPrevious: true),
+            RecallMeetingTurn(botID: "local:1", voice: "voice-a", text: "long"),
+            RecallMeetingTurn(botID: "local:3", voice: "voice-b", text: "short", overlapWithPrevious: true),
             RecallMeetingTurn(botID: MockHTTP.bot, voice: "v", text: "after")
         ], request: { action, body in
             if action == "prepare" {
+                if overlappingStates.count == 0 { precondition(body["botId"] as? String == "local:1" && body["voice"] as? String == "voice-a") }
+                if overlappingStates.count == 1 { precondition(body["botId"] as? String == "local:3" && body["voice"] as? String == "voice-b") }
                 let id = String(overlappingStates.count); overlappingStates[id] = "prepared"
                 return ["job": ["id": id]]
             }

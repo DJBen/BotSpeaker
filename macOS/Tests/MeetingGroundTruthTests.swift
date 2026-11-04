@@ -21,6 +21,20 @@ struct ElevenLabsVoice { static func shortName(from name: String) -> String { na
         }
     }
     static func main() throws {
+        let defaults = RecallLocalSpeakerPreferences(saved: nil, speakerCount: 5)
+        precondition(defaults.indices.isEmpty && !defaults.useDirectMic)
+        let legacy = RecallLocalSpeakerPreferences(saved: ["includeHost": true, "name": " Alex ", "useDirectMic": true], speakerCount: 5)
+        precondition(legacy.indices == [0] && legacy.legacyHostName == "Alex" && legacy.useDirectMic)
+        precondition(RecallLocalSpeakerPreferences(saved: ["includeHost": false], speakerCount: 5).indices.isEmpty)
+        let multiple = RecallLocalSpeakerPreferences(saved: ["localSpeakerIndices": [1, 3, 3, -1, 9], "includeHost": true], speakerCount: 5)
+        precondition(multiple.indices == [1, 3] && multiple.legacyHostName == nil)
+        precondition(RecallLocalSpeakerPreferences(saved: multiple.saved, speakerCount: 5).indices == [1, 3])
+        precondition(RecallLocalSpeakerPreferences(saved: ["localSpeakerIndices": [Int](), "includeHost": true], speakerCount: 5).indices.isEmpty)
+        precondition(RecallLocalSpeakerPreferences(saved: ["localSpeakerIndices": [0, 1, 2]], speakerCount: 3).indices.count == 3)
+        precondition(multiple.hasOverlappingLocalSpeakers([(1, false), (0, true), (3, true)]))
+        precondition(!multiple.hasOverlappingLocalSpeakers([(1, false), (0, true), (3, false)]))
+        precondition(!multiple.hasOverlappingLocalSpeakers([(0, false), (3, true)]))
+        print("PASS: local speaker defaults, legacy migration, multiple/all/no seats, invalid seats, persistence")
         for template in OrchestratedMeetingTemplate.all { checkNames(template) }
         for template in [OrchestratedMeetingTemplate.quickFivePerson, .quickFourPerson] {
             let turns = try template.parsedTurns()
@@ -67,7 +81,7 @@ struct ElevenLabsVoice { static func shortName(from name: String) -> String { na
         let turn = MeetingGroundTruth.turn(speaker: 1, name: "Same name", text: "[laughs] Hello.", start: 1.234, duration: 0.765, local: false)
         precondition(turn["start_ms"] as? Int == 1234 && turn["end_ms"] as? Int == 1999)
         precondition(turn["text"] as? String == "Hello.")
-        let url = try MeetingGroundTruth.save(meetingID: "test-meeting", names: ["Same name", "Same name"], host: 0, origin: Date(timeIntervalSince1970: 0), turns: [turn])
+        let url = try MeetingGroundTruth.save(meetingID: "test-meeting", names: ["Same name", "Same name"], localSpeakers: [0], origin: Date(timeIntervalSince1970: 0), turns: [turn])
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         precondition(url.lastPathComponent == "gt_final.json")
         let data = try Data(contentsOf: url)
@@ -77,6 +91,12 @@ struct ElevenLabsVoice { static func shortName(from name: String) -> String { na
         precondition(speakers[0]["recorder"] as? Bool == true && speakers[1]["recorder"] == nil)
         precondition(speakers[0]["speaker_key"] as? String != speakers[1]["speaker_key"] as? String)
         precondition((artifact["timing"] as! [String: Any])["recording_aligned"] as? Bool == false)
+        let multiURL = try MeetingGroundTruth.save(meetingID: "multi-local", names: ["Remote", "Local A", "Local B"], localSpeakers: [1, 2], origin: Date(), turns: [])
+        defer { try? FileManager.default.removeItem(at: multiURL.deletingLastPathComponent()) }
+        let multiArtifact = try JSONSerialization.jsonObject(with: Data(contentsOf: multiURL)) as! [String: Any]
+        let multiSpeakers = multiArtifact["speakers"] as! [[String: Any]]
+        precondition(multiSpeakers[0]["recorder"] == nil && multiSpeakers[1]["recorder"] as? Bool == true && multiSpeakers[2]["recorder"] as? Bool == true)
+        print("PASS: multiple local identities in ground truth")
         print("PASS: short host-alternating scenarios, timing, unique speaker keys, host identity, JSON schema round-trip")
     }
 }

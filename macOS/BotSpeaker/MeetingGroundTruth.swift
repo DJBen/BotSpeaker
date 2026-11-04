@@ -10,12 +10,12 @@ enum MeetingGroundTruth {
          "confidence": "low", "cluster": NSNull(), "provenance": "orchestrated",
          "why": local ? "Script identity; local playback start plus clip duration. Not recording-aligned." : "Script identity; Recall acceptance plus clip duration. Remote playback latency is unknown."]
     }
-    static func save(meetingID: String, names: [String], host: Int?, origin: Date, turns: [[String: Any]]) throws -> URL {
+    static func save(meetingID: String, names: [String], localSpeakers: Set<Int>, origin: Date, turns: [[String: Any]]) throws -> URL {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let speakers: [[String: Any]] = names.enumerated().map { index, name in
             var speaker: [String: Any] = ["speaker_key": key(index), "name": name, "ax_pids": [Int]()]
-            if index == host { speaker["recorder"] = true }
+            if localSpeakers.contains(index) { speaker["recorder"] = true }
             return speaker
         }
         let artifact: [String: Any] = ["schema": "gt_final_v1", "meeting_id": meetingID, "speakers": speakers,
