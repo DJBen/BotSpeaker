@@ -237,6 +237,49 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition(!controller.hasPendingJobs)
         print("PASS: late preparation failure sends no partial meeting; shutdown cancels held jobs")
 
+        var localStates: [String: String] = [:]
+        var localActions: [String] = []
+        let localRequest: RecallRequest = { action, body in
+            localActions.append(action)
+            if action == "prepare" {
+                let id = "local-job-\(localStates.count)"
+                localStates[id] = "prepared"
+                return ["job": ["id": id]]
+            }
+            if action == "dispatch" { localStates[body["id"] as! String] = "finished_dispatching" }
+            if action == "cancel" { localStates[body["id"] as! String] = "cancelled" }
+            return ["jobs": localStates.map { ["id": $0.key, "status": $0.value] }]
+        }
+        let localOnlyRequest: RecallRequest = { action, body in
+            try await RecallMeetingRequestRouter.handle(action, body, usesRecall: false,
+                ownsLocalJob: { localStates[$0 ?? ""] != nil }, local: localRequest,
+                remote: { _, _ in fatalError("All-local playback must never contact Recall") })
+        }
+        try await RecallTurnRunner.run([
+            RecallMeetingTurn(botID: "local:0", voice: "a", text: "one"),
+            RecallMeetingTurn(botID: "local:1", voice: "b", text: "two", overlapWithPrevious: true)
+        ], request: localOnlyRequest, progress: { _ in })
+        precondition(localActions.filter { $0 != "status" } == ["prepare", "prepare", "dispatch", "dispatch"])
+        _ = try await localOnlyRequest("cancel", ["id": "local-job-0"])
+        precondition(localStates["local-job-0"] == "cancelled")
+        var remoteActions: [String] = []
+        let mixedRequest: RecallRequest = { action, body in
+            try await RecallMeetingRequestRouter.handle(action, body, usesRecall: true,
+                ownsLocalJob: { localStates[$0 ?? ""] != nil }, local: localRequest,
+                remote: { action, _ in
+                    remoteActions.append(action)
+                    return ["jobs": [["id": "remote-job", "status": "prepared"]]]
+                })
+        }
+        let mixedStatus = try await mixedRequest("status", [:])
+        precondition((mixedStatus["jobs"] as? [[String: Any]])?.count == 3)
+        _ = try await mixedRequest("prepare", ["botId": "local:2"])
+        _ = try await mixedRequest("cancel", ["id": "local-job-2"])
+        precondition(remoteActions == ["status"])
+        _ = try await mixedRequest("dispatch", ["id": "remote-job"])
+        precondition(remoteActions == ["status", "dispatch"])
+        print("PASS: all-local preparation/playback/status/cancel never contacts Recall; mixed routing merges status and preserves remote dispatch")
+
         var calls: [String] = []
         var states: [String: String] = [:]
         try await RecallTurnRunner.run([

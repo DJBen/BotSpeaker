@@ -22,9 +22,9 @@ struct ElevenLabsVoice { static func shortName(from name: String) -> String { na
     }
     static func main() throws {
         let defaults = RecallLocalSpeakerPreferences(saved: nil, speakerCount: 5)
-        precondition(defaults.indices.isEmpty && !defaults.useDirectMic)
+        precondition(defaults.indices.isEmpty)
         let legacy = RecallLocalSpeakerPreferences(saved: ["includeHost": true, "name": " Alex ", "useDirectMic": true], speakerCount: 5)
-        precondition(legacy.indices == [0] && legacy.legacyHostName == "Alex" && legacy.useDirectMic)
+        precondition(legacy.indices == [0] && legacy.legacyHostName == "Alex")
         precondition(RecallLocalSpeakerPreferences(saved: ["includeHost": false], speakerCount: 5).indices.isEmpty)
         let multiple = RecallLocalSpeakerPreferences(saved: ["localSpeakerIndices": [1, 3, 3, -1, 9], "includeHost": true], speakerCount: 5)
         precondition(multiple.indices == [1, 3] && multiple.legacyHostName == nil)

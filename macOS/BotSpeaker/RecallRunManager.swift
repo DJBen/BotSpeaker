@@ -10,6 +10,24 @@ struct RecallMeetingTurn {
 
 typealias RecallRequest = @MainActor (String, [String: Any]) async throws -> [String: Any]
 
+/// Keeps local-only plans independent of Recall, including status polling and cancellation.
+@MainActor
+enum RecallMeetingRequestRouter {
+    static func handle(_ action: String, _ body: [String: Any], usesRecall: Bool,
+                       ownsLocalJob: (String?) -> Bool,
+                       local: RecallRequest, remote: RecallRequest) async throws -> [String: Any] {
+        if !usesRecall || (body["botId"] as? String)?.hasPrefix("local:") == true || ownsLocalJob(body["id"] as? String) {
+            return try await local(action, body)
+        }
+        var response = try await remote(action, body)
+        if action == "status" {
+            let localResponse = try await local(action, body)
+            response["jobs"] = (response["jobs"] as? [[String: Any]] ?? []) + (localResponse["jobs"] as? [[String: Any]] ?? [])
+        }
+        return response
+    }
+}
+
 /// Shared by GUI and CLI: prepare the whole script before dispatching any audio.
 @MainActor
 enum RecallTurnRunner {

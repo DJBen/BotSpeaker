@@ -3,14 +3,12 @@ import Foundation
 /// Local playback assignments are saved by speaker seat for each meeting template.
 struct RecallLocalSpeakerPreferences {
     var indices: Set<Int>
-    var useDirectMic: Bool
     let legacyHostName: String?
 
     init(saved: [String: Any]?, speakerCount: Int) {
         let seats = saved?["localSpeakerIndices"] as? [Int]
         let legacyHost = seats == nil && saved?["includeHost"] as? Bool == true
         indices = Set((seats ?? (legacyHost ? [0] : [])).filter { (0..<speakerCount).contains($0) })
-        useDirectMic = saved?["useDirectMic"] as? Bool ?? false
         let name = (saved?["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         legacyHostName = legacyHost && name?.isEmpty == false ? name : nil
     }
@@ -26,6 +24,6 @@ struct RecallLocalSpeakerPreferences {
     }
 
     var saved: [String: Any] {
-        ["localSpeakerIndices": indices.sorted(), "useDirectMic": useDirectMic]
+        ["localSpeakerIndices": indices.sorted()]
     }
 }

@@ -20,6 +20,7 @@ final class LocalMeetingSpeech {
     func owns(_ id: String?) -> Bool { id.map { players[$0] != nil } ?? false }
     func stop() { for player in players.values { player.stop() } }
     func handle(_ action: String, _ body: [String: Any], model: AppModel) async throws -> [String: Any] {
+        if action == "status" { return ["jobs": currentJobs] }
         if action == "prepare" {
             guard !outputDevice.isEmpty, AudioDeviceManager.deviceID(forUID: outputDevice) != nil else {
                 throw AppError("Select an available output device for the host speaker.")

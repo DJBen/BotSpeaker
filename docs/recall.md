@@ -292,11 +292,18 @@ or all speakers, including speakers other than speaker 1. Each keeps their own
 editable name and ElevenLabs voice. Only unselected speakers receive Recall bots;
 a five-person script with two local speakers invites three bots.
 
-Assignments and the DirectMic option are saved per meeting plan. Existing speaker-1
+When every speaker is local, the meeting link, Teams passcode, and Recall configuration
+are unnecessary and hidden. Choose **Continue to speakers**, confirm names and voices,
+then **Arrange turns** and **Start playback**. This mode does not contact Recall or
+create bots; ElevenLabs credentials are still needed to synthesize speech. Ground-truth
+exports use a unique local run ID instead of a conferencing meeting ID.
+
+Local speaker assignments are saved per meeting plan. Existing speaker-1
 host selections and host names migrate automatically. To change assignments after
 inviting bots, remove the bots and choose **Change meeting**.
 
-Local turns use DirectMic when enabled, otherwise the app's selected output device.
+Local turns use the audio destination selected in Settings, including DirectMic.
+There is no separate per-meeting audio destination override.
 Route that virtual device into the meeting microphone and unmute the host. All
 clips prepare before any turn plays. Overlapping local speakers require a virtual
 output such as BlackHole; DirectMic supports sequential local speakers, and the
