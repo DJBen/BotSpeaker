@@ -10,11 +10,11 @@ The macOS app is a native SwiftUI desktop app with bundled **DirectMic** routing
 
 [Download the latest BotSpeaker builds from GitHub Releases](https://github.com/DJBen/BotSpeaker/releases).
 
-- **macOS 14 or later:** [`BotSpeaker-0.7.1-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.7.1), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
-- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.7.1 binary. The version is pinned to this macOS release.
+- **macOS 14 or later:** [`BotSpeaker-0.7.2-universal.dmg`](https://github.com/DJBen/BotSpeaker/releases/tag/0.7.2), signed with Developer ID and notarized by Apple. Supports Apple Silicon and Intel; includes the DirectMic driver and installer.
+- **macOS command line tool** (optional, for scripts and LLM agents): install or update it with one line. The command below installs the signed macOS 0.7.2 binary. The version is pinned to this macOS release.
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.7.1
+  curl -fsSL https://raw.githubusercontent.com/DJBen/BotSpeaker/main/scripts/install-cli.sh | bash -s -- --version 0.7.2
   ```
 - **Windows 10/11 x64:** [BotSpeaker 0.5.12 installer](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker.Windows-win-Setup.exe), with host participation, automatic update downloads and Desktop/Start menu shortcuts. Existing portable users should install once. A [portable ZIP](https://github.com/DJBen/BotSpeaker/releases/download/0.5.12/BotSpeaker-Windows-x64-0.5.12.zip) is also available for manual updates. Both are self-contained and currently unsigned, so Windows SmartScreen may warn on first launch.
 - **Windows command line tool** `botspeaker-cli` (optional, for scripts and LLM agents; needs the Windows app from 0.4.1 or later): install or update it with one line in PowerShell.
@@ -284,6 +284,8 @@ For multi-speaker playback, create a JSON plan with a `turns` array containing
 ```powershell
 botspeaker-cli recall meeting-create --file plan.json
 botspeaker-cli recall meeting-start PLAN_ID
+# After stopping, restart at any one-based turn:
+botspeaker-cli recall meeting-start PLAN_ID --start-turn 5
 botspeaker-cli recall meeting-status PLAN_ID
 botspeaker-cli recall meeting-skip PLAN_ID
 botspeaker-cli recall meeting-stop PLAN_ID
@@ -347,3 +349,5 @@ The same versioned GitHub Release is used for every platform. On the Windows rel
 The script verifies matching app and CLI versions, publishes self-contained win-x64 builds, and creates portable ZIPs/checksums plus a Velopack installer, full update package, and feed under a fresh `dist/windows-<version>-<id>/` directory. The installer bundles the matching CLI. Pass `-BuildOnly` to build locally without publishing or changing tags; this also permits a dirty working tree. Pass `-CertificateThumbprint <sha1>` instead of `-AllowUnsigned` to sign the app, CLI, and Velopack installer/updater binaries; unsigned builds require the explicit flag. Publishing refuses a dirty working tree, a tag that does not match `HEAD`, and existing asset names. The update feed uploads after its packages. Either platform can create the shared release first; the other adds its artifacts afterward. See [Windows installation and update verification](Windows/README.md#install-and-update) for migration and testing.
 
 The macOS publisher also builds, signs, and attaches the `botspeaker` CLI binary with its checksum, signs the DMG with BotSpeaker's Sparkle EdDSA key, and attaches `appcast.xml` to the GitHub Release. The Sparkle private key is stored in the login Keychain under Sparkle's default account (`ed25519`); the key was rotated for 0.2.0, so 0.1.x installs must update manually; preserve or securely export this key before moving release production to another Mac. Sparkle fetches updates anonymously from GitHub Releases, which works because the repository and its release assets are public.
+
+On macOS, the local and Recall meeting screens keep a full turn preview visible during playback, with per-turn status and session history. After stopping, choose **Start here** beside any turn. Starting inside an overlap group begins with that turn and its following overlap partners. Earlier turns are not replayed. CLI `recall meeting-status PLAN_ID` returns the full `turns` preview and timestamped `history`; `meeting-start --start-turn N` uses the same one-based numbering. History is retained for the in-memory plan; Recall completion reflects estimated dispatch timing, not confirmed remote playback.

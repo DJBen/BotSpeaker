@@ -20,10 +20,12 @@ struct Recall: AsyncParsableCommand {
     @Option(help: "Meeting URL or ID for list and remove-all.") var meeting: String?
     @Option(help: "Teams passcode when adding by meeting ID.") var passcode: String?
     @Flag(name: [.short, .long], help: "Wait for speak, prepare, dispatch, or meeting-start.") var wait = false
+    @Option(help: "One-based turn to begin at; meeting-start only (including after stopping).") var startTurn: Int?
     @Option(help: "Maximum wait in seconds; work continues after timeout.") var timeout: Double = 3600
 
     func validate() throws {
         guard ["configure", "status", "list", "add", "remove", "remove-all", "screenshare-start", "screenshare-stop", "speak", "prepare", "dispatch", "cancel", "wait", "meeting-create", "meeting-start", "meeting-status", "meeting-skip", "meeting-stop", "meeting-wait"].contains(action) else { throw ValidationError("Unknown Recall action.") }
+        if let startTurn, action != "meeting-start" || startTurn < 1 { throw ValidationError("--start-turn requires meeting-start and a positive turn number.") }
         if loop && repeatCount != nil { throw ValidationError("Use --loop or --repeat, not both.") }
         if let repeatCount, repeatCount < 1 { throw ValidationError("--repeat must be positive.") }
         if let interval, !interval.isFinite || interval < 0 || interval > 86400 { throw ValidationError("--interval must be finite and between 0 and 86400 seconds.") }
@@ -65,6 +67,7 @@ struct Recall: AsyncParsableCommand {
             func read(_ path: String) throws -> String {
                 path == "-" ? String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? "" : try String(contentsOfFile: path, encoding: .utf8)
             }
+            if let startTurn { body["startTurn"] = startTurn }
             if let meeting { body["meetingId"] = meeting }
             if action == "add" {
                 body["meetingUrl"] = try file.map(read) ?? arguments.first

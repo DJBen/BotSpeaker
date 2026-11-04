@@ -17,6 +17,8 @@ final class RecallMeetingPlan {
         var speaker: Int
         var text: String
         var overlapWithPrevious = false
+        var status = "Upcoming"
+        var history: [String] = []
     }
     var title = ""
     var meeting = UserDefaults.standard.string(forKey: "recallLastMeeting") ?? ""
@@ -123,18 +125,21 @@ final class RecallMeetingPlan {
     func resolved(_ text: String) -> String {
         speakers.enumerated().reduce(text) { $0.replacingOccurrences(of: "{{speaker_\($1.offset + 1)}}", with: speakerName($1.offset)) }
     }
-    func start(_ model: AppModel) async throws {
+    func start(_ model: AppModel, startingAt start: Int = 0) async throws {
+        guard !running else { throw AppError("Stop playback before choosing another turn.") }
+        guard turns.indices.contains(start) else { throw AppError("Choose a turn in the plan.") }
         guard !turns.isEmpty, turns.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw AppError("Add nonempty speech for each turn.") }
         guard turns.allSatisfy({ speakers.indices.contains($0.speaker) }) else { throw AppError("A turn has an invalid speaker.") }
         let outputDevice = model.selectedDeviceUID
         var preferences = RecallLocalSpeakerPreferences(saved: nil, speakerCount: speakers.count)
         preferences.indices = localSpeakerIndices
         if outputDevice == DirectMicPlayer.deviceUID,
-           preferences.hasOverlappingLocalSpeakers(turns.map { ($0.speaker, $0.overlapWithPrevious) }) {
+           preferences.hasOverlappingLocalSpeakers(turns[start...].enumerated().map { ($0.element.speaker, $0.offset > 0 && $0.element.overlapWithPrevious) }) {
             throw AppError("DirectMic supports one local speaker at a time. For overlapping local speakers, select a virtual output such as BlackHole in Settings, or remove the overlap between their turns.")
         }
         try await refresh(model)
-        guard speakers.indices.allSatisfy({ isLocal($0) || speakers[$0].status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
+        guard Set(turns[start...].map(\.speaker)).allSatisfy({ isLocal($0) || speakers[$0].status == "in_call_recording" }) else { throw AppError("Wait until every speaker bot is in_call_recording. Admit bots from the lobby if needed.") }
+        for index in start..<turns.count { turns[index].status = "Upcoming" }
         running = true
         artifactURL = nil
         task = Task {
@@ -149,20 +154,26 @@ final class RecallMeetingPlan {
                     let speaker = speakers[turn.speaker]
                     return RecallMeetingTurn(botID: isLocal(turn.speaker) ? "local:\(turn.speaker)" : speaker.bot, voice: speaker.voice, text: resolved(turn.text), overlapWithPrevious: turn.overlapWithPrevious)
                 }
-                try await RecallTurnRunner.run(preparedTurns, request: { action, body in
+                try await RecallTurnRunner.run(preparedTurns, startingAt: start, request: { action, body in
                     try await RecallMeetingRequestRouter.handle(action, body, usesRecall: !allSpeakersLocal,
                         ownsLocalJob: { local.owns($0) },
                         local: { try await local.handle($0, $1, model: model) },
                         remote: { try await model.recall.handle($0, $1, model: model) })
                 }, progress: { index in
                     if origin == nil { origin = Date() }
+                    for current in turns.indices where turns[current].status == "Preparing" { turns[current].status = "Upcoming" }
                     preparing = false; skipRequested = false
                     var end = index + 1
                     while end < turns.count && turns[end].overlapWithPrevious { end += 1 }
+                    for current in index..<end { turns[current].status = "Playing" }
                     message = (index..<end).map { "Turn \($0 + 1) of \(turns.count) · \(speakerName(turns[$0].speaker))\n\n\(preparedTurns[$0].text)" }.joined(separator: "\n\nOverlapping with\n\n")
                 }, skipRequested: { skipRequested }, preparing: { index in
+                    for current in turns.indices where turns[current].status == "Preparing" { turns[current].status = "Upcoming" }
+                    turns[index].status = "Preparing"
                     message = "Preparing turn \(index + 1) of \(turns.count)…"
                 }, completed: { index, job, skipped in
+                    turns[index].status = skipped ? "Skipped" : "Completed"
+                    turns[index].history.append("\(Date().formatted(date: .omitted, time: .standard)) · \(turns[index].status)")
                     guard !skipped, let origin, let start = job["acceptedAtEpoch"] as? Double,
                           let duration = job["durationSeconds"] as? Double else { return }
                     recorded.append(MeetingGroundTruth.turn(speaker: turns[index].speaker, name: speakerName(turns[index].speaker), text: preparedTurns[index].text, start: start - origin.timeIntervalSince1970, duration: duration, local: isLocal(turns[index].speaker)))
@@ -172,6 +183,10 @@ final class RecallMeetingPlan {
                 }
                 message = allSpeakersLocal ? "All local turns finished." : "All turns dispatched. Use Remove all bots to make the speaker bots leave."
             } catch {
+                for index in turns.indices where ["Playing", "Preparing"].contains(turns[index].status) {
+                    turns[index].status = Task.isCancelled ? "Stopped" : "Failed"
+                    turns[index].history.append("\(Date().formatted(date: .omitted, time: .standard)) · \(turns[index].status)")
+                }
                 message = Task.isCancelled
                     ? (allSpeakersLocal ? "Local playback stopped." : "Stopped. Audio already sent may finish playing. Use Remove all bots when finished.")
                     : error.localizedDescription
@@ -209,6 +224,7 @@ struct RecallMeetingView: View {
                 } else {
                     controls.disabled(plan.busy)
                 }
+                if plan.step == 2 { turnTimeline }
             }.padding(22)
         }
         .task {
@@ -221,6 +237,35 @@ struct RecallMeetingView: View {
             }
         }
     }
+    private var turnTimeline: some View {
+        GroupBox("Turn preview and history") {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(plan.turns.indices, id: \.self) { index in
+                    let turn = plan.turns[index]
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("\(index + 1). \(plan.speakerName(turn.speaker))").font(.headline)
+                            if turn.overlapWithPrevious { Label("Overlap", systemImage: "person.2.wave.2").font(.caption) }
+                            Spacer()
+                            Text(turn.status).foregroundStyle(turn.status == "Playing" ? Color.accentColor : .secondary)
+                            if !plan.running {
+                                Button("Start here") { plan.perform { try await plan.start(model, startingAt: index) } }
+                                    .disabled(plan.busy)
+                            }
+                        }
+                        Text(plan.resolved(turn.text)).textSelection(.enabled)
+                        if !turn.history.isEmpty {
+                            Text(turn.history.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(turn.status == "Playing" ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }.padding(6)
+        }
+    }
+
     @ViewBuilder private var controls: some View {
         if plan.step == 0 {
             if !plan.allSpeakersLocal {
@@ -315,19 +360,21 @@ struct RecallMeetingView: View {
                 Button("Add turn") { plan.turns.append(.init(speaker: 0, text: "Enter speech here.")) }
                 Button(plan.allSpeakersLocal ? "Start playback" : "Start meeting") { plan.perform { try await plan.start(model) } }.buttonStyle(.borderedProminent)
             }
-            ForEach(plan.turns.indices, id: \.self) { index in
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("\(index + 1).")
-                        Picker("Speaker", selection: $plan.turns[index].speaker) {
-                            ForEach(plan.speakers.indices, id: \.self) { i in Text(plan.speakerName(i)).tag(i) }
-                        }.labelsHidden()
-                        Button("↑") { plan.turns.swapAt(index, index-1) }.disabled(index == 0)
-                        Button("↓") { plan.turns.swapAt(index, index+1) }.disabled(index == plan.turns.count-1)
-                        Button("Remove turn") { plan.turns.remove(at: index) }
+            DisclosureGroup("Edit turns") {
+                ForEach(plan.turns.indices, id: \.self) { index in
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("\(index + 1).")
+                            Picker("Speaker", selection: $plan.turns[index].speaker) {
+                                ForEach(plan.speakers.indices, id: \.self) { i in Text(plan.speakerName(i)).tag(i) }
+                            }.labelsHidden()
+                            Button("↑") { plan.turns.swapAt(index, index-1) }.disabled(index == 0)
+                            Button("↓") { plan.turns.swapAt(index, index+1) }.disabled(index == plan.turns.count-1)
+                            Button("Remove turn") { plan.turns.remove(at: index) }
+                        }
+                        Toggle("Start together with previous turn (different speaker)", isOn: $plan.turns[index].overlapWithPrevious)
+                        TextEditor(text: Binding(get: { plan.resolved(plan.turns[index].text) }, set: { plan.turns[index].text = $0 })).frame(minHeight: 90)
                     }
-                    Toggle("Start together with previous turn (different speaker)", isOn: $plan.turns[index].overlapWithPrevious)
-                    TextEditor(text: Binding(get: { plan.resolved(plan.turns[index].text) }, set: { plan.turns[index].text = $0 })).frame(minHeight: 90)
                 }
             }
         }

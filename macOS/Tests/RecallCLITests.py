@@ -91,6 +91,12 @@ try:
     assert calls[0][1] == plan
     run('meeting-start', 'plan', '--wait')
     assert [c[0] for c in calls] == ['/v1/recall/meeting-start', '/v1/recall/meeting-status']
+    if '--windows' not in sys.argv:
+        run('meeting-start', 'plan', '--start-turn', '5')
+        assert calls[0][1] == {'id': 'plan', 'startTurn': 5}
+        for args in [('meeting-start', 'plan', '--start-turn', '0'), ('meeting-status', 'plan', '--start-turn', '2')]:
+            run(*args, code=usage_error_code)
+            assert not calls
     for action in ('meeting-status', 'meeting-skip', 'meeting-stop', 'meeting-wait'):
         run(action, 'plan')
         assert calls[0][1] == {'id': 'plan'}

@@ -294,6 +294,54 @@ final class MockHTTP: URLProtocol, @unchecked Sendable {
         precondition(calls.filter { $0 != "status" } == ["prepare", "prepare", "dispatch", "dispatch"])
         print("PASS: all turns prepare before any dispatch")
 
+        let restartTurns = [
+            RecallMeetingTurn(botID: "local:0", voice: "v", text: "omit"),
+            RecallMeetingTurn(botID: "local:1", voice: "v", text: "selected", overlapWithPrevious: true),
+            RecallMeetingTurn(botID: "local:2", voice: "v", text: "partner", overlapWithPrevious: true)
+        ]
+        var restartStates: [String: String] = [:]
+        var restartProgress: [Int] = []
+        var restartCompleted: [Int] = []
+        var restartText: [String] = []
+        let restartRequest: RecallRequest = { action, body in
+            if action == "prepare" {
+                restartText.append(body["text"] as! String)
+                let id = String(restartStates.count); restartStates[id] = "prepared"
+                return ["job": ["id": id]]
+            }
+            if action == "dispatch" { restartStates[body["id"] as! String] = "finished_dispatching" }
+            return ["jobs": restartStates.map { ["id": $0.key, "status": $0.value] }]
+        }
+        try await RecallTurnRunner.run(restartTurns, startingAt: 1, request: restartRequest,
+            progress: { restartProgress.append($0) }, completed: { index, _, _ in restartCompleted.append(index) })
+        precondition(restartText == ["selected", "partner"] && restartProgress == [1] && restartCompleted == [1, 2])
+        for invalid in [-1, 3] {
+            do {
+                try await RecallTurnRunner.run(restartTurns, startingAt: invalid, request: restartRequest, progress: { _ in })
+                fatalError("Accepted out-of-range start")
+            } catch {}
+        }
+        let manager = RecallRunManager()
+        let managerRequest: RecallRequest = { action, body in
+            if action == "list" { return ["bots": [["id": MockHTTP.bot, "status": "in_call_recording"]]] }
+            return try await restartRequest(action, body)
+        }
+        let created = try await manager.handle("meeting-create", ["turns": [
+            ["botId": MockHTTP.bot, "voice": "v", "text": "first"],
+            ["botId": MockHTTP.bot, "voice": "v", "text": "second"]]], request: managerRequest)
+        let restartID = (created["meeting"] as! [String: Any])["id"] as! String
+        for _ in 0..<2 {
+            _ = try await manager.handle("meeting-stop", ["id": restartID], request: managerRequest)
+            _ = try await manager.handle("meeting-start", ["id": restartID, "startTurn": 2], request: managerRequest)
+            for _ in 0..<100 where manager.hasActiveRuns { try await Task.sleep(for: .milliseconds(10)) }
+            precondition(!manager.hasActiveRuns)
+        }
+        let snapshot = manager.snapshots[0]
+        let preview = snapshot["turns"] as! [[String: Any]]
+        precondition(preview[0]["status"] as? String == "upcoming" && preview[1]["status"] as? String == "completed")
+        precondition((snapshot["history"] as! [[String: Any]]).count == 2)
+        print("PASS: restart at selected overlapping turn, original indices, range validation, preview and repeated-run history")
+
         var overlappingStates: [String: String] = [:]
         var overlapDispatches: [String] = []
         var overlapCompletions: [Int] = []

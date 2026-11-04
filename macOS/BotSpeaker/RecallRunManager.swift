@@ -28,13 +28,14 @@ enum RecallMeetingRequestRouter {
     }
 }
 
-/// Shared by GUI and CLI: prepare the whole script before dispatching any audio.
+/// Shared by GUI and CLI: prepare the selected suffix before dispatching any audio.
 @MainActor
 enum RecallTurnRunner {
-    static func run(_ turns: [RecallMeetingTurn], request: RecallRequest,
+    static func run(_ turns: [RecallMeetingTurn], startingAt start: Int = 0, request: RecallRequest,
                     progress: (Int) -> Void, skipRequested: () -> Bool = { false },
                     preparing: (Int) -> Void = { _ in },
                     completed: (Int, [String: Any], Bool) -> Void = { _, _, _ in }) async throws {
+        guard turns.indices.contains(start) else { throw AppError("Start turn is outside the plan.") }
         var group: Set<String> = []
         for (index, turn) in turns.enumerated() {
             if !turn.overlapWithPrevious { group = [] }
@@ -44,7 +45,8 @@ enum RecallTurnRunner {
         }
         var pending: [String] = []
         do {
-            for (index, turn) in turns.enumerated() {
+            for index in start..<turns.count {
+                let turn = turns[index]
                 try Task.checkCancellation()
                 preparing(index)
                 let response = try await request("prepare", ["botId": turn.botID, "voice": turn.voice, "text": turn.text])
@@ -53,7 +55,7 @@ enum RecallTurnRunner {
                 try await wait(id, expected: "prepared", request: request)
             }
             let prepared = pending
-            var index = 0
+            var index = start
             while index < turns.count {
                 var end = index + 1
                 while end < turns.count && turns[end].overlapWithPrevious { end += 1 }
@@ -62,10 +64,10 @@ enum RecallTurnRunner {
                 // Dispatch all distinct speakers in the group before waiting for any of them.
                 for current in index..<end {
                     try Task.checkCancellation()
-                    _ = try await request("dispatch", ["id": prepared[current]])
+                    _ = try await request("dispatch", ["id": prepared[current - start]])
                 }
                 for current in index..<end {
-                    let id = prepared[current]
+                    let id = prepared[current - start]
                     try await wait(id, expected: "finished_dispatching", request: request, skipRequested: skipRequested)
                     let response = try await request("status", [:])
                     let job = (response["jobs"] as? [[String: Any]])?.first { $0["id"] as? String == id } ?? [:]
@@ -106,10 +108,16 @@ final class RecallRunManager {
         var error: String?
         var index = -1
         var skip = false
+        var turnStatuses: [String]
+        var history: [[String: Any]] = []
         @ObservationIgnored var task: Task<Void, Never>?
-        init(_ turns: [RecallMeetingTurn]) { self.turns = turns }
+        init(_ turns: [RecallMeetingTurn]) { self.turns = turns; turnStatuses = turns.map { _ in "upcoming" } }
         var snapshot: [String: Any] {
-            ["id": id, "status": status, "turnIndex": index, "turnCount": turns.count, "error": error as Any? ?? NSNull()]
+            ["id": id, "status": status, "turnIndex": index, "turnCount": turns.count, "error": error as Any? ?? NSNull(),
+             "turns": turns.enumerated().map { index, turn in
+                 ["turn": index + 1, "botId": turn.botID, "voice": turn.voice, "text": turn.text,
+                  "overlapWithPrevious": turn.overlapWithPrevious, "status": turnStatuses[index]] as [String: Any]
+             }, "history": history]
         }
     }
     private var runs: [Run] = []
@@ -144,8 +152,13 @@ final class RecallRunManager {
         case "meeting-status": break
         case "meeting-start":
             guard run.task == nil else { throw AppError("Meeting is already running.") }
-            let bots = Set(run.turns.map(\.botID))
+            if let value = body["startTurn"], !(value is Int) { throw AppError("startTurn must be an integer.") }
+            let startTurn = body["startTurn"] as? Int ?? 1
+            guard (1...run.turns.count).contains(startTurn) else { throw AppError("startTurn must be between 1 and the turn count.") }
+            let start = startTurn - 1
+            let bots = Set(run.turns[start...].map(\.botID))
             guard !runs.contains(where: { $0.task != nil && $0.turns.contains { bots.contains($0.botID) } }) else { throw AppError("A speaker bot is already used by another running meeting plan.") }
+            for index in start..<run.turns.count { run.turnStatuses[index] = "upcoming" }
             run.status = "starting"; run.error = nil; run.index = -1; run.skip = false
             run.task = Task {
                 defer { run.task = nil }
@@ -155,12 +168,26 @@ final class RecallRunManager {
                     let ready = Set((response["bots"] as? [[String: Any]] ?? []).filter { $0["status"] as? String == "in_call_recording" }.compactMap { $0["id"] as? String })
                     guard bots.isSubset(of: ready) else { throw AppError("Every speaker bot must be in_call_recording before starting.") }
                     run.status = "preparing"
-                    try await RecallTurnRunner.run(run.turns, request: request, progress: { index in
+                    try await RecallTurnRunner.run(run.turns, startingAt: start, request: request, progress: { index in
+                        for current in run.turns.indices where run.turnStatuses[current] == "preparing" { run.turnStatuses[current] = "upcoming" }
                         run.index = index; run.skip = false; run.status = "running"
-                    }, skipRequested: { run.skip }, preparing: { run.index = $0 })
+                        var end = index + 1
+                        while end < run.turns.count && run.turns[end].overlapWithPrevious { end += 1 }
+                        for current in index..<end { run.turnStatuses[current] = "playing" }
+                    }, skipRequested: { run.skip }, preparing: { index in
+                        for current in run.turns.indices where run.turnStatuses[current] == "preparing" { run.turnStatuses[current] = "upcoming" }
+                        run.index = index; run.turnStatuses[index] = "preparing"
+                    }, completed: { index, _, skipped in
+                        run.turnStatuses[index] = skipped ? "skipped" : "completed"
+                        run.history.append(["turn": index + 1, "status": run.turnStatuses[index], "at": Date().timeIntervalSince1970])
+                    })
                     run.status = "finished"
                 } catch {
                     run.status = Task.isCancelled ? "stopped" : "failed"
+                    for index in run.turns.indices where ["playing", "preparing"].contains(run.turnStatuses[index]) {
+                        run.turnStatuses[index] = run.status
+                        run.history.append(["turn": index + 1, "status": run.status, "at": Date().timeIntervalSince1970])
+                    }
                     if !Task.isCancelled { run.error = error.localizedDescription }
                 }
             }
